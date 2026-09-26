@@ -26,6 +26,8 @@
 
 #include <vector>
 #include "Enjin/ECS/Components/BrushSolid.h"
+#include "Enjin/ECS/Components/BoundaryPolygon.h"
+#include "Enjin/ECS/Components/WallPath.h"
 #include "Enjin/Geometry/VoxelEdit.h"
 
 namespace Enjin {
@@ -245,6 +247,15 @@ inline constexpr f32 kCreativeSurfaceWidth = kCreativeRailWidth + kCreativeOptio
 // nothing and looks like a broken tool.
 inline constexpr f32 kCreativeMinDragLength = 0.05f;
 
+// A wall's height and thickness, for the tool that draws one and for the boxes
+// that change one after it is built. Ranges are what a room blockout wants, not
+// what the maths permits: a 40 m wall is a mistake, and a slider that reaches it
+// makes the useful part of the range unusable.
+inline constexpr f32 kCreativeWallHeightMin = 0.25f;
+inline constexpr f32 kCreativeWallHeightMax = 12.0f;
+inline constexpr f32 kCreativeWallThicknessMin = 0.05f;
+inline constexpr f32 kCreativeWallThicknessMax = 2.0f;
+
 // What a bowed span costs.
 //
 // Brush CSG has no curved face, so a curve is always N straight pieces and the
@@ -319,6 +330,115 @@ inline constexpr f32 kCreativeMinBrushExtent = 0.05f;
 ENJIN_API bool ResizeBrushByGrip(ECS::BrushSolidComponent::Brush& brush,
                                  BrushGrip grip,
                                  const Math::Vector3& worldPoint);
+
+// ---------------------------------------------------------------------------
+// Shape handles: what you grab on something that is already built.
+//
+// Building used to be the end of it. A wall you drew in the wrong place was
+// deleted and drawn again, and a pond was the rectangle you dragged. These are
+// the handles that let a thing be reshaped after it exists, the way a room is
+// in The Sims: pull a corner, bow a wall, drag a shoreline out.
+//
+// Every drag is computed from the state the gesture STARTED with and where the
+// cursor is now, never from the previous frame. A drag that accumulated per
+// frame would drift, and one that briefly collapsed a shape would lose it.
+// ---------------------------------------------------------------------------
+enum class ShapeHandleKind : u8 {
+    WallPoint = 0,   // a corner or an end of a drawn wall line
+    WallBow,         // the middle of a span; drag sideways to curve it
+    OutlinePoint,    // a point on a water outline
+    OutlineEdge,     // the middle of an outline edge; drags the whole edge
+    RectGrip,        // an edge or corner of a flat rectangle (surface water)
+    BoxGrip,         // an edge or corner of a single-brush solid (a floor, a box)
+    Count
+};
+
+struct ShapeHandle {
+    ShapeHandleKind kind = ShapeHandleKind::WallPoint;
+    i32 index = -1;              // point, span, edge, or BrushGrip for RectGrip
+    Math::Vector3 position;      // WORLD
+};
+
+// Points are drawn round and edges square, the same rule the brush grips use,
+// so which kind you have hold of reads without moving the mouse.
+ENJIN_API bool ShapeHandleIsRound(const ShapeHandle& handle);
+
+// Handles for each shape. `origin` is the entity's world position, because the
+// points are stored relative to it.
+ENJIN_API void WallPathHandles(const ECS::WallPathComponent& path, const Math::Vector3& origin,
+                               std::vector<ShapeHandle>& out);
+ENJIN_API void OutlineHandles(const ECS::BoundaryPolygonComponent& outline,
+                              const Math::Vector3& origin, std::vector<ShapeHandle>& out);
+ENJIN_API void RectHandles(const Math::Vector3& centre, f32 width, f32 depth,
+                           std::vector<ShapeHandle>& out);
+
+// Apply a drag. `start` is the shape as it was when the handle was pressed;
+// `worldPoint` is the snapped ground point under the cursor. Returns false and
+// leaves the shape as it was when the drag would collapse it.
+ENJIN_API bool DragWallPathHandle(ECS::WallPathComponent& path, const ECS::WallPathComponent& start,
+                                  const ShapeHandle& handle, const Math::Vector3& origin,
+                                  const Math::Vector3& worldPoint);
+ENJIN_API bool DragOutlineHandle(ECS::BoundaryPolygonComponent& outline,
+                                 const ECS::BoundaryPolygonComponent& start,
+                                 const ShapeHandle& handle, const Math::Vector3& origin,
+                                 const Math::Vector3& worldPoint);
+// A flat rectangle held by its centre and size (Water3D's settings). The edge
+// opposite the grip stays where it is, exactly as a brush grip does.
+ENJIN_API bool DragRectGrip(Math::Vector3& centre, f32& width, f32& depth,
+                            BrushGrip grip, const Math::Vector3& worldPoint);
+
+// Adding and removing points. A wall keeps at least two, an outline three.
+ENJIN_API bool InsertWallPoint(ECS::WallPathComponent& path, usize span);
+ENJIN_API bool RemoveWallPoint(ECS::WallPathComponent& path, usize point);
+ENJIN_API bool InsertOutlinePoint(ECS::BoundaryPolygonComponent& outline, usize edge);
+ENJIN_API bool RemoveOutlinePoint(ECS::BoundaryPolygonComponent& outline, usize point);
+
+// Recover the line from walls built before the line was kept.
+//
+// Walls from before WallPathComponent existed are only brushes: an upright box
+// per segment, turned about Y, standing on its foot. The line is the two ends of
+// each box's long axis at its foot, with each interior corner where two
+// neighbouring segments' lines cross (the mitre extends both past it).
+//
+// Cuts made after the wall (Subtract brushes at the end of the list, a doorway)
+// are left where they are and counted out of `builtBrushes`.
+//
+// Needs two segments or more. A single box is refused: it could as well be a
+// plank as a wall, and as a box it keeps its height and thickness grips.
+//
+// It checks itself: the recovered line is rebuilt and must reproduce the
+// original brushes to within a centimetre, or it is refused. So a floor, a
+// block, or anything else that was never a drawn wall keeps its grips and is
+// never silently turned into something else. Returns false then.
+ENJIN_API bool RecoverWallPath(const ECS::BrushSolidComponent& solid, ECS::WallPathComponent& out);
+
+// Everything a reshape can change on one entity, so a drag is ONE undo step
+// whatever it touched. Filled and applied by the editor; plain data here.
+struct CreativeShapeState {
+    bool hasBrushes = false;
+    bool hasWall = false;
+    ECS::WallPathComponent wall;
+    std::vector<ECS::BrushSolidComponent::Brush> brushes;
+    bool hasOutline = false;
+    std::vector<Math::Vector2> outline;
+    bool hasSurface = false;
+    Math::Vector3 surfaceCentre;
+    f32 surfaceWidth = 0.0f;
+    f32 surfaceDepth = 0.0f;
+};
+
+// Rebuild the brushes a wall line made, in place. Only the first
+// `path.builtBrushes` are replaced; anything after them (a doorway cut through
+// the wall) is kept. Returns false, leaving `solid` untouched, when the line
+// builds nothing.
+ENJIN_API bool RebuildWallPath(ECS::WallPathComponent& path, ECS::BrushSolidComponent& solid);
+
+// Change a built wall's height and thickness, clamped to the Wall tool's range.
+// The wall grows up from its foot and out either side of its line, so its
+// corners stay joined; cuts after the wall are kept as RebuildWallPath keeps
+// them. Returns false, leaving both untouched, when the line builds nothing.
+ENJIN_API bool ResizeWallPath(ECS::WallPathComponent& path, ECS::BrushSolidComponent& solid,
+                              f32 height, f32 thickness);
 
 // One editable number on the surface, bound straight to the tool's settings.
 //

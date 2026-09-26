@@ -221,16 +221,16 @@ u32 BuildToolFields(BuildTool tool, BuildToolSettings& s,
 
     switch (tool) {
         case BuildTool::Wall:
-            add("Height",    &s.height,    0.25f, 12.0f, "m");
-            add("Thickness", &s.thickness, 0.05f,  2.0f, "m");
+            add("Height",    &s.height,    kCreativeWallHeightMin, kCreativeWallHeightMax, "m");
+            add("Thickness", &s.thickness, kCreativeWallThicknessMin, kCreativeWallThicknessMax, "m");
             break;
         case BuildTool::Floor:
             add("Thickness", &s.thickness, 0.05f,  2.0f, "m");
             add("Elevation", &s.elevation, -20.0f, 20.0f, "m");
             break;
         case BuildTool::Path:
-            add("Height",    &s.height,    0.25f, 12.0f, "m");
-            add("Thickness", &s.thickness, 0.05f,  2.0f, "m");
+            add("Height",    &s.height,    kCreativeWallHeightMin, kCreativeWallHeightMax, "m");
+            add("Thickness", &s.thickness, kCreativeWallThicknessMin, kCreativeWallThicknessMax, "m");
             add("Segments",  &s.segments,
                 static_cast<f32>(kCreativePathSegmentsMin),
                 static_cast<f32>(kCreativePathSegmentsMax), "");
@@ -900,6 +900,338 @@ void CreativeMode::BuildLadderVisual(const ToolPlacement& placement,
                alongX ? Math::Vector3(railOff, railHalf, halfThin * 0.6f)
                       : Math::Vector3(halfThin * 0.6f, railHalf, railOff));
     }
+}
+
+// --------------------------------------------------------------------------
+// Shape handles
+// --------------------------------------------------------------------------
+
+namespace {
+
+// The span's sideways direction, the same one the Path tool bows along, so a
+// bow authored while drawing and a bow dragged afterwards mean the same thing.
+bool SpanNormal(const Math::Vector3& a, const Math::Vector3& b, Math::Vector3& n) {
+    const Math::Vector3 d = b - a;
+    const f32 len = HorizontalLength(d);
+    if (len < 1e-4f) return false;
+    n = Math::Vector3(-d.z / len, 0.0f, d.x / len);
+    return true;
+}
+
+Math::Vector3 SpanMid(const Math::Vector3& a, const Math::Vector3& b) {
+    return Math::Vector3((a.x + b.x) * 0.5f, a.y, (a.z + b.z) * 0.5f);
+}
+
+} // namespace
+
+bool ShapeHandleIsRound(const ShapeHandle& handle) {
+    switch (handle.kind) {
+        case ShapeHandleKind::WallPoint:
+        case ShapeHandleKind::OutlinePoint: return true;
+        case ShapeHandleKind::RectGrip:
+        case ShapeHandleKind::BoxGrip:
+            return BrushGripIsCorner(static_cast<BrushGrip>(handle.index));
+        default: return false;
+    }
+}
+
+void WallPathHandles(const ECS::WallPathComponent& path, const Math::Vector3& origin,
+                     std::vector<ShapeHandle>& out) {
+    for (usize i = 0; i < path.points.size(); ++i) {
+        out.push_back({ShapeHandleKind::WallPoint, static_cast<i32>(i), origin + path.points[i]});
+    }
+    for (usize i = 0; i + 1 < path.points.size(); ++i) {
+        const Math::Vector3 a = path.points[i], b = path.points[i + 1];
+        Math::Vector3 n;
+        if (!SpanNormal(a, b, n)) continue;
+        const f32 bow = (i < path.bows.size()) ? path.bows[i] : 0.0f;
+        out.push_back({ShapeHandleKind::WallBow, static_cast<i32>(i), origin + SpanMid(a, b) + n * bow});
+    }
+}
+
+void OutlineHandles(const ECS::BoundaryPolygonComponent& outline, const Math::Vector3& origin,
+                    std::vector<ShapeHandle>& out) {
+    const usize n = outline.points.size();
+    if (n < 3) return;
+    auto world = [&](const Math::Vector2& p) {
+        return Math::Vector3(origin.x + p.x, origin.y, origin.z + p.y);
+    };
+    for (usize i = 0; i < n; ++i) {
+        out.push_back({ShapeHandleKind::OutlinePoint, static_cast<i32>(i), world(outline.points[i])});
+    }
+    for (usize i = 0; i < n; ++i) {
+        const Math::Vector2 m = (outline.points[i] + outline.points[(i + 1) % n]) * 0.5f;
+        out.push_back({ShapeHandleKind::OutlineEdge, static_cast<i32>(i), world(m)});
+    }
+}
+
+void RectHandles(const Math::Vector3& centre, f32 width, f32 depth, std::vector<ShapeHandle>& out) {
+    ECS::BrushSolidComponent::Brush box;
+    box.center = centre;
+    box.halfExtents = Math::Vector3(width * 0.5f, 0.0f, depth * 0.5f);
+    for (u8 g = 0; g < static_cast<u8>(BrushGrip::Count); ++g) {
+        out.push_back({ShapeHandleKind::RectGrip, static_cast<i32>(g),
+                       BrushGripPosition(box, static_cast<BrushGrip>(g))});
+    }
+}
+
+bool DragWallPathHandle(ECS::WallPathComponent& path, const ECS::WallPathComponent& start,
+                        const ShapeHandle& handle, const Math::Vector3& origin,
+                        const Math::Vector3& worldPoint) {
+    const Math::Vector3 local = worldPoint - origin;
+    const usize i = static_cast<usize>(handle.index);
+
+    if (handle.kind == ShapeHandleKind::WallPoint) {
+        if (handle.index < 0 || i >= start.points.size()) return false;
+        std::vector<Math::Vector3> next = start.points;
+        // Height stays where the wall stands; the ground under the cursor only
+        // says where on the floor plan the corner goes.
+        next[i] = Math::Vector3(local.x, start.points[i].y, local.z);
+        // A corner dropped onto its neighbour leaves a span of no length, and a
+        // wall of no length is nothing to rebuild.
+        auto tooClose = [&](usize j) {
+            return j < next.size() && HorizontalLength(next[j] - next[i]) < kCreativeMinDragLength;
+        };
+        if ((i > 0 && tooClose(i - 1)) || tooClose(i + 1)) return false;
+        path.points = std::move(next);
+        return true;
+    }
+
+    if (handle.kind == ShapeHandleKind::WallBow) {
+        if (handle.index < 0 || i + 1 >= start.points.size()) return false;
+        const Math::Vector3 a = start.points[i], b = start.points[i + 1];
+        Math::Vector3 n;
+        if (!SpanNormal(a, b, n)) return false;
+        const Math::Vector3 mid = SpanMid(a, b);
+        f32 bow = (local.x - mid.x) * n.x + (local.z - mid.z) * n.z;
+        // Snaps back to straight near the line, so a span that was only nudged
+        // stays one straight wall instead of a slight curve cut into segments.
+        if (std::fabs(bow) < kCreativePathMinBow) bow = 0.0f;
+        path.bows = start.bows;
+        path.bows.resize(start.points.size() - 1, 0.0f);
+        path.bows[i] = bow;
+        return true;
+    }
+    return false;
+}
+
+bool DragOutlineHandle(ECS::BoundaryPolygonComponent& outline,
+                       const ECS::BoundaryPolygonComponent& start,
+                       const ShapeHandle& handle, const Math::Vector3& origin,
+                       const Math::Vector3& worldPoint) {
+    const usize n = start.points.size();
+    if (n < 3 || handle.index < 0 || static_cast<usize>(handle.index) >= n) return false;
+    const usize i = static_cast<usize>(handle.index);
+    std::vector<Math::Vector2> next = start.points;
+
+    if (handle.kind == ShapeHandleKind::OutlinePoint) {
+        next[i] = Math::Vector2(worldPoint.x - origin.x, worldPoint.z - origin.z);
+    } else if (handle.kind == ShapeHandleKind::OutlineEdge) {
+        // The whole edge moves with the cursor, so a straight shore is pulled
+        // out as a straight shore. Measured from where the handle was when it
+        // was pressed: the edge's midpoint at the start of the drag.
+        const Math::Vector2 d(worldPoint.x - handle.position.x, worldPoint.z - handle.position.z);
+        next[i] = start.points[i] + d;
+        next[(i + 1) % n] = start.points[(i + 1) % n] + d;
+    } else {
+        return false;
+    }
+
+    // Refuse a ring with no area left: the surface builder would draw nothing
+    // and the pond would vanish under the cursor mid-drag.
+    f32 area = 0.0f;
+    for (usize k = 0; k < n; ++k) {
+        const auto& p = next[k]; const auto& q = next[(k + 1) % n];
+        area += p.x * q.y - q.x * p.y;
+    }
+    if (std::fabs(area) * 0.5f < kCreativeMinBrushExtent * kCreativeMinBrushExtent) return false;
+
+    outline.points = std::move(next);
+    outline.dirty = true;
+    return true;
+}
+
+bool DragRectGrip(Math::Vector3& centre, f32& width, f32& depth,
+                  BrushGrip grip, const Math::Vector3& worldPoint) {
+    ECS::BrushSolidComponent::Brush box;
+    box.center = centre;
+    box.halfExtents = Math::Vector3(width * 0.5f, 0.5f, depth * 0.5f);
+    const Math::Vector3 flat(worldPoint.x, centre.y, worldPoint.z);
+    if (!ResizeBrushByGrip(box, grip, flat)) return false;
+    centre = Math::Vector3(box.center.x, centre.y, box.center.z);
+    width = box.halfExtents.x * 2.0f;
+    depth = box.halfExtents.z * 2.0f;
+    return true;
+}
+
+bool InsertWallPoint(ECS::WallPathComponent& path, usize span) {
+    if (span + 1 >= path.points.size() || path.points.size() >= kCreativePathMaxPoints) return false;
+    const Math::Vector3 a = path.points[span], b = path.points[span + 1];
+    // On the curve when the span is bowed. The new corner lands on the wall that
+    // is already there; it gives the wall somewhere new to bend without moving it.
+    Math::Vector3 at = SpanMid(a, b);
+    Math::Vector3 n;
+    const f32 bow = (span < path.bows.size()) ? path.bows[span] : 0.0f;
+    if (SpanNormal(a, b, n)) at = at + n * bow;
+    path.bows.resize(path.points.size() - 1, 0.0f);
+    path.points.insert(path.points.begin() + static_cast<std::ptrdiff_t>(span + 1), at);
+    path.bows[span] = 0.0f;
+    path.bows.insert(path.bows.begin() + static_cast<std::ptrdiff_t>(span + 1), 0.0f);
+    return true;
+}
+
+bool RemoveWallPoint(ECS::WallPathComponent& path, usize point) {
+    if (path.points.size() <= 2 || point >= path.points.size()) return false;
+    path.bows.resize(path.points.size() - 1, 0.0f);
+    path.points.erase(path.points.begin() + static_cast<std::ptrdiff_t>(point));
+    // Removing an end drops its span. Removing a corner joins its two spans
+    // into one, which starts straight.
+    const usize drop = (point == 0) ? 0 : point - 1;
+    path.bows.erase(path.bows.begin() + static_cast<std::ptrdiff_t>(drop));
+    if (point > 0 && point < path.points.size() && drop < path.bows.size()) path.bows[drop] = 0.0f;
+    return true;
+}
+
+bool InsertOutlinePoint(ECS::BoundaryPolygonComponent& outline, usize edge) {
+    const usize n = outline.points.size();
+    if (n < 3 || edge >= n || n >= 4096) return false;
+    const Math::Vector2 m = (outline.points[edge] + outline.points[(edge + 1) % n]) * 0.5f;
+    outline.points.insert(outline.points.begin() + static_cast<std::ptrdiff_t>(edge + 1), m);
+    outline.dirty = true;
+    return true;
+}
+
+bool RemoveOutlinePoint(ECS::BoundaryPolygonComponent& outline, usize point) {
+    if (outline.points.size() <= 3 || point >= outline.points.size()) return false;
+    outline.points.erase(outline.points.begin() + static_cast<std::ptrdiff_t>(point));
+    outline.dirty = true;
+    return true;
+}
+
+bool RebuildWallPath(ECS::WallPathComponent& path, ECS::BrushSolidComponent& solid) {
+    BuildToolSettings s;
+    s.height = path.height;
+    s.thickness = path.thickness;
+    ECS::BrushSolidComponent built;
+    if (!CreativeMode::BuildPathBrushes(path.points, path.bows, path.segmentsPerBow, s, false, built)) {
+        return false;
+    }
+    const usize keepFrom = std::min<usize>(path.builtBrushes, solid.brushes.size());
+    std::vector<ECS::BrushSolidComponent::Brush> next = std::move(built.brushes);
+    const usize made = next.size();
+    next.insert(next.end(), solid.brushes.begin() + static_cast<std::ptrdiff_t>(keepFrom),
+                solid.brushes.end());
+    solid.brushes = std::move(next);
+    solid.dirty = true;
+    path.builtBrushes = static_cast<u32>(made);
+    return true;
+}
+
+bool ResizeWallPath(ECS::WallPathComponent& path, ECS::BrushSolidComponent& solid,
+                    f32 height, f32 thickness) {
+    ECS::WallPathComponent next = path;
+    next.height = std::clamp(height, kCreativeWallHeightMin, kCreativeWallHeightMax);
+    next.thickness = std::clamp(thickness, kCreativeWallThicknessMin, kCreativeWallThicknessMax);
+    ECS::BrushSolidComponent rebuilt = solid;
+    if (!RebuildWallPath(next, rebuilt)) return false;
+    path = std::move(next);
+    solid = std::move(rebuilt);
+    return true;
+}
+
+bool RecoverWallPath(const ECS::BrushSolidComponent& solid, ECS::WallPathComponent& out) {
+    // The wall is the leading run of Add brushes; anything after it must be a
+    // cut (a doorway), which a rebuild keeps. An Add after a cut is not a
+    // drawn wall with a door in it, and is refused.
+    usize n = 0;
+    while (n < solid.brushes.size() && solid.brushes[n].op == Geometry::BrushOp::Add) ++n;
+    for (usize i = n; i < solid.brushes.size(); ++i) {
+        if (solid.brushes[i].op != Geometry::BrushOp::Subtract) return false;
+    }
+    // One box is left alone. A one-segment wall and a plank or door slab made
+    // with the Box tool are the same brush, and as a box it keeps the grips that
+    // change its height and thickness; recovered as a wall it would lose them.
+    if (n < 2 || n > kCreativePathMaxPoints) return false;
+
+    struct Seg { Math::Vector3 a, b; };   // foot ends, XZ plus foot height
+    std::vector<Seg> segs;
+    segs.reserve(n);
+    const f32 height = solid.brushes[0].halfExtents.y * 2.0f;
+    const f32 thickness = solid.brushes[0].halfExtents.z * 2.0f;
+
+    for (usize k = 0; k < n; ++k) {
+        const auto& br = solid.brushes[k];
+        if (br.shape != ECS::BrushSolidComponent::Shape::Box) return false;
+        // Upright: turned about Y only, or it was never stood on a drawn line.
+        const Math::Vector3 up = br.rotation.Rotate(Math::Vector3(0.0f, 1.0f, 0.0f));
+        if (up.y < 0.999f) return false;
+        const Math::Vector3 h = br.halfExtents;
+        // Longer than it is thick, taller than it is thick, and one wall's
+        // thickness throughout. A floor fails the second, a block the first.
+        if (!(h.x > h.z && h.y > h.z)) return false;
+        if (std::fabs(h.y * 2.0f - height) > 0.01f || std::fabs(h.z * 2.0f - thickness) > 0.01f) return false;
+        const Math::Vector3 axis = br.rotation.Rotate(Math::Vector3(1.0f, 0.0f, 0.0f));
+        const Math::Vector3 foot(br.center.x, br.center.y - h.y, br.center.z);
+        segs.push_back({foot - axis * h.x, foot + axis * h.x});
+    }
+
+    // Orient each segment so it runs away from the one before it.
+    auto d2 = [](const Math::Vector3& p, const Math::Vector3& q) {
+        const f32 dx = p.x - q.x, dz = p.z - q.z;
+        return dx * dx + dz * dz;
+    };
+    if (n > 1) {
+        const f32 keep = std::min(d2(segs[0].b, segs[1].a), d2(segs[0].b, segs[1].b));
+        const f32 flip = std::min(d2(segs[0].a, segs[1].a), d2(segs[0].a, segs[1].b));
+        if (flip < keep) std::swap(segs[0].a, segs[0].b);
+        for (usize i = 1; i < n; ++i) {
+            if (d2(segs[i].b, segs[i - 1].b) < d2(segs[i].a, segs[i - 1].b)) std::swap(segs[i].a, segs[i].b);
+        }
+    }
+
+    ECS::WallPathComponent path;
+    path.height = height;
+    path.thickness = thickness;
+    path.points.push_back(segs[0].a);
+    for (usize i = 0; i + 1 < n; ++i) {
+        // Where the two centre lines cross. Parallel lines (a straight run
+        // split in two) meet halfway between the ends that face each other.
+        const Math::Vector3 p = segs[i].a, r = segs[i].b - segs[i].a;
+        const Math::Vector3 q = segs[i + 1].a, s = segs[i + 1].b - segs[i + 1].a;
+        const f32 denom = r.x * s.z - r.z * s.x;
+        Math::Vector3 joint;
+        if (std::fabs(denom) < 1e-6f * (HorizontalLength(r) * HorizontalLength(s) + 1e-6f)) {
+            joint = (segs[i].b + segs[i + 1].a) * 0.5f;
+        } else {
+            const f32 t = ((q.x - p.x) * s.z - (q.z - p.z) * s.x) / denom;
+            joint = p + r * t;
+        }
+        joint.y = segs[i].a.y;
+        path.points.push_back(joint);
+    }
+    path.points.push_back(segs[n - 1].b);
+    path.bows.assign(path.points.size() - 1, 0.0f);
+
+    // The proof: the recovered line has to build the walls that are there.
+    ECS::BrushSolidComponent rebuilt;
+    path.builtBrushes = 0;
+    if (!RebuildWallPath(path, rebuilt) || rebuilt.brushes.size() != n) return false;
+    for (usize i = 0; i < n; ++i) {
+        const auto& x = rebuilt.brushes[i];
+        const auto& y = solid.brushes[i];
+        const Math::Vector3 dc = x.center - y.center;
+        const Math::Vector3 dh = x.halfExtents - y.halfExtents;
+        if (std::fabs(dc.x) > 0.01f || std::fabs(dc.y) > 0.01f || std::fabs(dc.z) > 0.01f ||
+            std::fabs(dh.x) > 0.01f || std::fabs(dh.y) > 0.01f || std::fabs(dh.z) > 0.01f) return false;
+        // Rotation: the long axes must agree up to direction.
+        const Math::Vector3 ax = x.rotation.Rotate(Math::Vector3(1.0f, 0.0f, 0.0f));
+        const Math::Vector3 ay = y.rotation.Rotate(Math::Vector3(1.0f, 0.0f, 0.0f));
+        if (std::fabs(ax.x * ay.x + ax.z * ay.z) < 0.9999f) return false;
+    }
+
+    path.builtBrushes = static_cast<u32>(n);
+    out = std::move(path);
+    return true;
 }
 
 } // namespace Editor

@@ -3580,6 +3580,43 @@ void EditorLayer::DrawBrushSolidComponent(ECS::Entity entity) {
                               "It has to be the triangles: a convex shape cannot express a "
                               "hole, so a hull would make your doorway solid again.");
 
+        // A solid drawn as a wall keeps the line it was drawn along, and its
+        // leading brushes are built from that line. Height and thickness are
+        // properties of the line, so they are changed here and the wall brushes
+        // rebuilt, the same as the creative-mode boxes do. One drag, one undo.
+        if (auto* wp = m_World->GetComponent<ECS::WallPathComponent>(entity)) {
+            ImGui::Separator();
+            ImGui::TextUnformatted("Wall");
+            f32 height = wp->height, thickness = wp->thickness;
+            auto wallDrag = [&](const char* label, f32* v, f32 lo, f32 hi, const char* tip) {
+                const bool edited = ImGui::DragFloat(label, v, 0.01f, lo, hi, "%.2f m",
+                                                     ImGuiSliderFlags_AlwaysClamp);
+                if (ImGui::IsItemActivated()) {
+                    m_InspectorWallEntity = entity;
+                    m_InspectorWallStart = CaptureCreativeShape(entity);
+                }
+                ImGui::SetItemTooltip("%s", tip);
+                return edited;
+            };
+            bool resized = wallDrag("Height##Wall", &height, kCreativeWallHeightMin, kCreativeWallHeightMax,
+                                    "Grows up from the foot of the wall. Every segment changes "
+                                    "together, so corners stay joined.");
+            const bool heightDone = ImGui::IsItemDeactivated();
+            resized |= wallDrag("Thickness##Wall", &thickness, kCreativeWallThicknessMin,
+                                kCreativeWallThicknessMax,
+                                "Grows out either side of the line the wall was drawn along. A "
+                                "doorway cut keeps its own size, so make it reach through.");
+            const bool thicknessDone = ImGui::IsItemDeactivated();
+            if (resized && ResizeWallPath(*wp, *solid, height, thickness)) solid->dirty = true;
+            if ((heightDone || thicknessDone) && m_InspectorWallEntity == entity) {
+                CommitCreativeShapeEdit(entity, m_InspectorWallStart);
+                m_InspectorWallEntity = ECS::INVALID_ENTITY;
+            }
+            ImGui::TextDisabled("The first %u brushes below are this wall. Edits to them are "
+                                "replaced when the wall is reshaped; cuts after them are kept.",
+                                wp->builtBrushes);
+        }
+
         ImGui::Separator();
         ImGui::Text("Brushes: %d", static_cast<int>(solid->brushes.size()));
         ImGui::SameLine();

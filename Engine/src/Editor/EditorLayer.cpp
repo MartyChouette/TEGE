@@ -1,4 +1,5 @@
 #include "Enjin/Editor/EditorLayer.h"
+#include "Enjin/ECS/Components/Water3D.h"
 #include "Enjin/Renderer/CaptureWrite.h"
 #include "Enjin/Networking/NetworkSystem.h"   // the editor pumps the socket for collab
 #include "Enjin/Editor/EditorShortcuts.h"
@@ -2836,6 +2837,7 @@ void EditorLayer::Update(f32 deltaTime) {
     // Game-view sims: update path, AFTER gameplay ticked (fresh camera and
     // player positions). Time-scaled so bullet time slows them (the player
     // runtime scales its whole dt upstream; the editor scales per-clock).
+    FlushCreativeWaterEdits();
     UpdateGameViewSims(deltaTime * (m_PlayMode.IsPlaying() ? Scripting::GetTimeScale() : 1.0f));
 
     // Game over draws ONE screen, the same one a shipped game draws.
@@ -3137,6 +3139,27 @@ void EditorLayer::PrepareRenderTargets() {
 // cadence again (the old m_GameViewSimAccum workaround is gone). Runs when
 // the game is playing OR the game view is live (edit-mode preview keeps
 // weather visible); a hidden panel during play no longer freezes the world.
+// Water whose shape was changed by a creative drag or its undo. Rebuilding a
+// surface removes and re-adds its mesh, which must not happen while the panel
+// code (where the drag runs) is recording this frame, so it waits for here.
+void EditorLayer::FlushCreativeWaterEdits() {
+    if (!m_World || !m_RenderSystem) return;
+    for (ECS::Entity e : m_PendingWater3DRebuild) {
+        if (!m_World->IsValid(e)) continue;
+        auto* w = m_World->GetComponent<ECS::Water3DComponent>(e);
+        if (!w) continue;
+        w->meshCreated = false;
+        if (m_World->HasComponent<ECS::MeshComponent>(e)) m_World->RemoveComponent<ECS::MeshComponent>(e);
+        if (m_World->HasComponent<ECS::MaterialComponent>(e)) m_World->RemoveComponent<ECS::MaterialComponent>(e);
+    }
+    m_PendingWater3DRebuild.clear();
+    // Here and not only in UpdateGameViewSims, which returns early whenever the
+    // Game View is hidden: the Scene view alone never rebuilt a reshaped pond,
+    // or gave a new one a surface at all.
+    m_RenderSystem->EnsureWaterMeshes();
+    m_RenderSystem->EnsureWater3DMeshes();
+}
+
 void EditorLayer::UpdateGameViewSims(f32 simDt) {
     if (!m_World || !m_RenderSystem) return;
     if (!m_RenderSystem->IsGameViewReady()) return;
@@ -5562,7 +5585,9 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                 // pull the shoreline; right-click a handle to remove it (min 3);
                 // double-click an edge to insert a point. Live: the water mesh rebuilds
                 // from the polygon (dirty flag).
-                if (m_PrimarySelected != ECS::INVALID_ENTITY) {
+                // Off in creative mode, whose own shape handles do this with undo;
+                // running both moved every point twice per frame.
+                if (m_PrimarySelected != ECS::INVALID_ENTITY && !m_Creative.IsActive()) {
                     auto* bpoly = m_World->GetComponent<ECS::BoundaryPolygonComponent>(m_PrimarySelected);
                     auto* bxf   = m_World->GetComponent<ECS::TransformComponent>(m_PrimarySelected);
                     if (bpoly && bxf && bpoly->points.size() >= 3) {

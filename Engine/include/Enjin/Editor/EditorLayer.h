@@ -523,6 +523,19 @@ private:
     // first creative gesture that is not press-drag-release, so it carries state
     // between frames rather than living inside one drag.
     void HandleCreativePath(f32 viewW, f32 viewH, const Math::Vector3& ground, bool onGround);
+    // Shape handles (CreativeMode.h): reshape something already built by
+    // pulling its corners and edges. Runs before every build tool, so the thing
+    // you just placed can be tweaked without switching tools. Returns true when
+    // it took the mouse this frame, and the tool must not also start a build.
+    bool HandleCreativeShapeHandles(f32 localX, f32 localY, f32 viewW, f32 viewH);
+    void FlushCreativeWaterEdits();
+    bool EntityHasShapeHandles(ECS::Entity e) const;
+    void CollectCreativeShapeHandles(ECS::Entity e, std::vector<ShapeHandle>& out) const;
+    CreativeShapeState CaptureCreativeShape(ECS::Entity e) const;
+    void ApplyCreativeShape(ECS::Entity e, const CreativeShapeState& state);
+    // One undo step from `before` to the entity's shape as it is now; nothing
+    // is recorded when they are the same.
+    void CommitCreativeShapeEdit(ECS::Entity e, const CreativeShapeState& before);
     void CommitCreativePath();
     // End an in-flight drag or sculpt without committing it. Needed because a
     // mouse release is not guaranteed to arrive: see the definition.
@@ -580,6 +593,28 @@ private:
     // frame the mouse moved.
     i32 m_CreativeGrip = -1;
     std::vector<ECS::BrushSolidComponent::Brush> m_CreativeGripStart;
+    // The shape handle being dragged, on which entity, and the entity's shape
+    // when the press landed. Every drag frame is computed from that snapshot.
+    bool m_ShapeDragging = false;
+    ECS::Entity m_ShapeEntity = ECS::INVALID_ENTITY;
+    ShapeHandle m_ShapeHandle;
+    CreativeShapeState m_ShapeStart;
+    // Surface water whose size changed during a drag. Its mesh is rebuilt in
+    // Update, not in the panel code where the drag runs, because rebuilding it
+    // removes and re-adds components while this frame is being recorded.
+    std::vector<ECS::Entity> m_PendingWater3DRebuild;
+    // The selected wall's Height or Thickness box being dragged in the options
+    // column (-1 = none), on which wall, and its shape when the drag began, so
+    // the whole drag is one undo step.
+    i32 m_WallFieldHeld = -1;
+    ECS::Entity m_WallFieldEntity = ECS::INVALID_ENTITY;
+    CreativeShapeState m_WallFieldStart;
+    // The same for the Height/Thickness drags in the Brush Solid inspector. Kept
+    // apart from the creative boxes so one cannot close the other's edit.
+    ECS::Entity m_InspectorWallEntity = ECS::INVALID_ENTITY;
+    CreativeShapeState m_InspectorWallStart;
+    // The last selection a wall line was recovered for (or found to have none).
+    ECS::Entity m_WallRecoveryChecked = ECS::INVALID_ENTITY;
     // The path being clicked out, one bow per span, and which bow handle is
     // being dragged. Non-empty points mean a path is in progress.
     std::vector<Math::Vector3> m_CreativePathPoints;

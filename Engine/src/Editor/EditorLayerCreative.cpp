@@ -20,6 +20,7 @@
 #include <cfloat>
 #include "Enjin/ECS/Components/WaterVolume.h"
 #include "Enjin/ECS/Components/BoundaryPolygon.h"
+#include "Enjin/ECS/Components/WallPath.h"
 #include "Enjin/ECS/Components/Light.h"
 #include "Enjin/Renderer/MeshFactory.h"
 #include "Enjin/ECS/Components/TreeVolume.h"
@@ -47,6 +48,7 @@
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
+#include <functional>
 
 namespace Enjin {
 namespace Editor {
@@ -501,20 +503,16 @@ void EditorLayer::DrawCreativeSurface() {
         text(kSmallText, ImVec2(optX + kPad, oy), kMuted, verb, innerW);
         oy += measure(kSmallText, verb, innerW).y + kRowGap + 4.0f * ui;
 
-        BuildField fields[kBuildMaxFields];
-        const u32 count = BuildToolFields(tool, m_Creative.CurrentSettings(), fields, kBuildMaxFields);
-
-        for (u32 f = 0; f < count; ++f) {
-            BuildField& fd = fields[f];
-            if (!fd.value) continue;
-
+        // One number box with its label and track. Returns whether it is being
+        // dragged this frame.
+        auto drawField = [&](BuildField& fd, int id) -> bool {
             text(kSmallText, ImVec2(optX + kPad, oy), kDim, fd.label);
             oy += kLabelH;
 
             const ImVec2 bMin(optX + kPad, oy);
             const ImVec2 bMax(optX + kPad + innerW, oy + kBoxH);
             ImGui::SetCursorScreenPos(bMin);
-            ImGui::PushID(static_cast<int>(f) + 100);
+            ImGui::PushID(id);
             ImGui::InvisibleButton("##field", ImVec2(innerW, kBoxH));
             const bool held = ImGui::IsItemActive();
             const bool hov  = ImGui::IsItemHovered();
@@ -558,6 +556,13 @@ void EditorLayer::DrawCreativeSurface() {
             dl->AddRectFilled(ImVec2(optX + kPad, oy),
                               ImVec2(optX + kPad + innerW * frac, oy + kTrackH), tint, 2.0f);
             oy += kTrackH + kRowGap;
+            return held;
+        };
+
+        BuildField fields[kBuildMaxFields];
+        const u32 count = BuildToolFields(tool, m_Creative.CurrentSettings(), fields, kBuildMaxFields);
+        for (u32 f = 0; f < count; ++f) {
+            if (fields[f].value) drawField(fields[f], static_cast<int>(f) + 100);
         }
 
         // --- add / subtract ---------------------------------------------------
@@ -586,6 +591,56 @@ void EditorLayer::DrawCreativeSurface() {
                      sel ? edge : kMuted, modes[m]);
             }
             oy += kBoxH + kRowGap;
+        }
+
+        // --- the selected wall ------------------------------------------------
+        // A wall's height and thickness came from the tool settings when it was
+        // drawn, and its handles only move its line, so after that they could
+        // not be changed at all. These boxes change the wall that is selected,
+        // live, whatever tool is in hand; the tool's own boxes above stay the
+        // settings for the next wall. One drag is one undo step.
+        {
+            auto* wp = m_World ? m_World->GetComponent<ECS::WallPathComponent>(m_PrimarySelected) : nullptr;
+            auto* solid = m_World ? m_World->GetComponent<ECS::BrushSolidComponent>(m_PrimarySelected) : nullptr;
+            if (m_WallFieldHeld >= 0 && m_WallFieldEntity != m_PrimarySelected) {
+                // The selection moved mid-drag (undo, a click elsewhere): close
+                // the edit on the wall it started on.
+                CommitCreativeShapeEdit(m_WallFieldEntity, m_WallFieldStart);
+                m_WallFieldHeld = -1;
+            }
+            if (wp && solid) {
+                dl->AddLine(ImVec2(optX + kPad, oy), ImVec2(optX + kPad + innerW, oy), kLine, 1.0f);
+                oy += 10.0f * ui;
+                text(kBodyText, ImVec2(optX + kPad, oy), kInk, "Selected wall");
+                oy += kBodyText + kRowGap;
+
+                f32 height = wp->height, thickness = wp->thickness;
+                BuildField wallFields[2] = {
+                    {"Height", &height, kCreativeWallHeightMin, kCreativeWallHeightMax, "m"},
+                    {"Thickness", &thickness, kCreativeWallThicknessMin, kCreativeWallThicknessMax, "m"},
+                };
+                i32 held = -1;
+                for (int f = 0; f < 2; ++f) {
+                    if (drawField(wallFields[f], 500 + f)) held = f;
+                }
+                if (held >= 0 && m_WallFieldHeld < 0) {
+                    m_WallFieldHeld = held;
+                    m_WallFieldEntity = m_PrimarySelected;
+                    m_WallFieldStart = CaptureCreativeShape(m_PrimarySelected);
+                }
+                if ((height != wp->height || thickness != wp->thickness) &&
+                    ResizeWallPath(*wp, *solid, height, thickness)) {
+                    solid->dirty = true;
+                    ECS::BrushSolidSystem::Rebuild(m_World, m_PrimarySelected);
+                }
+                if (held < 0 && m_WallFieldHeld >= 0) {
+                    CommitCreativeShapeEdit(m_WallFieldEntity, m_WallFieldStart);
+                    m_WallFieldHeld = -1;
+                }
+            } else if (m_WallFieldHeld >= 0) {
+                CommitCreativeShapeEdit(m_WallFieldEntity, m_WallFieldStart);
+                m_WallFieldHeld = -1;
+            }
         }
 
         // --- grid + snap ------------------------------------------------------
@@ -1065,6 +1120,14 @@ void EditorLayer::HandleBuildDrag() {
         dl->AddText(font, size, ImVec2(cx - ts.x * 0.5f, cy - ts.y * 0.5f), kMuted, why);
     }
 
+    // Handles on the selected thing come before any tool, so what you just
+    // placed can be pulled into shape without switching to Edit. Not while a
+    // build drag or a path is already under way: those own the mouse.
+    if (!m_BuildDragging && !m_BrushActive && m_CreativePathPoints.empty() &&
+        HandleCreativeShapeHandles(localX, localY, vpW, vpH)) {
+        return;
+    }
+
     // Two tools are not press-drag-release and are handled on their own terms.
     // Terrain paints continuously while the button is held, and Reduce is a
     // single click on a model with no footprint at all. Forcing either into the
@@ -1274,6 +1337,19 @@ void EditorLayer::CommitCreativeDrag(const Math::Vector3& start, const Math::Vec
     m_World->AddComponent<ECS::TransformComponent>(entity);
     m_World->AddComponent<ECS::MaterialComponent>(entity);
     m_World->AddComponent<ECS::BrushSolidComponent>(entity, solid);
+
+    // A wall keeps the line it was drawn along, so its ends can be dragged
+    // afterwards (shape handles). Same brush either way: a two-point path
+    // builds exactly the brush the Wall tool just made.
+    if (tool == BuildTool::Wall) {
+        ECS::WallPathComponent path;
+        path.points = { start, Math::Vector3(end.x, start.y, end.z) };
+        path.bows = { 0.0f };
+        path.height = m_Creative.CurrentSettings().height;
+        path.thickness = m_Creative.CurrentSettings().thickness;
+        path.builtBrushes = static_cast<u32>(solid.brushes.size());
+        m_World->AddComponent<ECS::WallPathComponent>(entity, path);
+    }
 
     // Built immediately rather than on the next system tick, so the thing you
     // just dragged is on screen when you release the mouse.
@@ -2414,6 +2490,416 @@ void EditorLayer::HandleCreativeReduce(f32 localX, f32 localY, f32 viewW, f32 vi
 }
 
 // ---------------------------------------------------------------------------
+// Shape handles: reshape what is already built
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// One reshape, one undo step, never merged with the next. PropertyEditCommand
+// merges any two commands with the same description, which would fold two
+// separate drags -- on two different walls -- into one undo.
+class ShapeEditCommand : public ICommand {
+public:
+    using Apply = std::function<void(const CreativeShapeState&)>;
+    ShapeEditCommand(CreativeShapeState before, CreativeShapeState after, Apply apply)
+        : m_Before(std::move(before)), m_After(std::move(after)), m_Apply(std::move(apply)) {}
+    void Execute() override { m_Apply(m_After); }
+    void Undo() override { m_Apply(m_Before); }
+    const char* GetDescription() const override { return "Reshape"; }
+private:
+    CreativeShapeState m_Before, m_After;
+    Apply m_Apply;
+};
+
+} // namespace
+
+bool EditorLayer::EntityHasShapeHandles(ECS::Entity e) const {
+    if (!m_World || e == ECS::INVALID_ENTITY || !m_World->IsValid(e)) return false;
+    if (const auto* solid = m_World->GetComponent<ECS::BrushSolidComponent>(e)) {
+        // A drawn wall, or a solid of one brush: a floor, a box, a column.
+        // Several brushes with no line behind them (stairs) have no single
+        // footprint to pull, and keep the Edit tool's per-brush grips.
+        if (m_World->HasComponent<ECS::WallPathComponent>(e) || solid->brushes.size() == 1) return true;
+    }
+    if (const auto* o = m_World->GetComponent<ECS::BoundaryPolygonComponent>(e);
+        o && o->points.size() >= 3) return true;
+    return m_World->HasComponent<ECS::Water3DComponent>(e);
+}
+
+void EditorLayer::CollectCreativeShapeHandles(ECS::Entity e, std::vector<ShapeHandle>& out) const {
+    if (!EntityHasShapeHandles(e)) return;
+    const auto* xf = m_World->GetComponent<ECS::TransformComponent>(e);
+    const Math::Vector3 origin = xf ? xf->position : Math::Vector3(0.0f, 0.0f, 0.0f);
+    if (const auto* wp = m_World->GetComponent<ECS::WallPathComponent>(e)) {
+        WallPathHandles(*wp, origin, out);
+    } else if (const auto* solid = m_World->GetComponent<ECS::BrushSolidComponent>(e);
+               solid && solid->brushes.size() == 1) {
+        for (u8 g = 0; g < static_cast<u8>(BrushGrip::Count); ++g) {
+            out.push_back({ShapeHandleKind::BoxGrip, static_cast<i32>(g),
+                           origin + BrushGripPosition(solid->brushes[0], static_cast<BrushGrip>(g))});
+        }
+    }
+    if (const auto* o = m_World->GetComponent<ECS::BoundaryPolygonComponent>(e)) OutlineHandles(*o, origin, out);
+    if (const auto* w = m_World->GetComponent<ECS::Water3DComponent>(e)) {
+        RectHandles(w->settings.position, w->settings.width, w->settings.depth, out);
+    }
+}
+
+CreativeShapeState EditorLayer::CaptureCreativeShape(ECS::Entity e) const {
+    CreativeShapeState s;
+    if (!m_World || !m_World->IsValid(e)) return s;
+    if (const auto* solid = m_World->GetComponent<ECS::BrushSolidComponent>(e)) {
+        s.hasBrushes = true;
+        s.brushes = solid->brushes;
+    }
+    if (const auto* wp = m_World->GetComponent<ECS::WallPathComponent>(e)) {
+        s.hasWall = true;
+        s.wall = *wp;
+    }
+    if (const auto* o = m_World->GetComponent<ECS::BoundaryPolygonComponent>(e)) {
+        s.hasOutline = true;
+        s.outline = o->points;
+    }
+    if (const auto* w = m_World->GetComponent<ECS::Water3DComponent>(e)) {
+        s.hasSurface = true;
+        s.surfaceCentre = w->settings.position;
+        s.surfaceWidth = w->settings.width;
+        s.surfaceDepth = w->settings.depth;
+    }
+    return s;
+}
+
+void EditorLayer::ApplyCreativeShape(ECS::Entity e, const CreativeShapeState& s) {
+    if (!m_World || !m_World->IsValid(e)) return;
+    if (s.hasWall) {
+        if (auto* wp = m_World->GetComponent<ECS::WallPathComponent>(e)) *wp = s.wall;
+    }
+    if (s.hasBrushes) {
+        if (auto* solid = m_World->GetComponent<ECS::BrushSolidComponent>(e)) {
+            solid->brushes = s.brushes;
+            solid->dirty = true;
+            ECS::BrushSolidSystem::Rebuild(m_World, e);
+        }
+    }
+    if (s.hasOutline) {
+        if (auto* o = m_World->GetComponent<ECS::BoundaryPolygonComponent>(e)) {
+            o->points = s.outline;
+            o->dirty = true;
+        }
+    }
+    if (s.hasSurface) {
+        if (auto* w = m_World->GetComponent<ECS::Water3DComponent>(e)) {
+            const bool resized = w->settings.width != s.surfaceWidth || w->settings.depth != s.surfaceDepth ||
+                                 w->settings.position != s.surfaceCentre;
+            w->settings.position = s.surfaceCentre;
+            w->settings.width = s.surfaceWidth;
+            w->settings.depth = s.surfaceDepth;
+            if (resized) m_PendingWater3DRebuild.push_back(e);
+        }
+    }
+}
+
+void EditorLayer::CommitCreativeShapeEdit(ECS::Entity e, const CreativeShapeState& before) {
+    CreativeShapeState after = CaptureCreativeShape(e);
+    const bool changed = after.brushes != before.brushes ||
+                         after.wall.points != before.wall.points ||
+                         after.wall.bows != before.wall.bows ||
+                         after.wall.height != before.wall.height ||
+                         after.wall.thickness != before.wall.thickness ||
+                         after.outline != before.outline ||
+                         after.surfaceCentre != before.surfaceCentre ||
+                         after.surfaceWidth != before.surfaceWidth ||
+                         after.surfaceDepth != before.surfaceDepth;
+    if (!changed) return;
+    m_UndoRedo.Execute(std::make_unique<ShapeEditCommand>(
+        before, std::move(after),
+        [this, e](const CreativeShapeState& st) { ApplyCreativeShape(e, st); }));
+    MarkDirty();
+}
+
+bool EditorLayer::HandleCreativeShapeHandles(f32 localX, f32 localY, f32 viewW, f32 viewH) {
+    if (!m_World || !m_Camera) return false;
+
+    // --- the gesture in progress --------------------------------------------
+    if (m_ShapeDragging) {
+        if (!m_World->IsValid(m_ShapeEntity)) { m_ShapeDragging = false; return false; }
+
+        // The cursor meets the plane the handle sits on, not the y = 0 build
+        // plane: a pond's shore is at its surface height, and on the build plane
+        // the handle would slide away from the cursor as the camera tilted.
+        const Ray ray = ScenePicker::ScreenToRay(m_Camera, localX, localY, viewW, viewH);
+        const f32 planeY = m_ShapeHandle.position.y;
+        bool hit = false;
+        Math::Vector3 point;
+        if (std::fabs(ray.direction.y) > 1e-6f) {
+            const f32 t = (planeY - ray.origin.y) / ray.direction.y;
+            if (t > 0.0f) {
+                point = m_Creative.SnapToGrid(ray.origin + ray.direction * t);
+                point.y = planeY;
+                hit = true;
+            }
+        }
+
+        if (hit) {
+            const auto* xf = m_World->GetComponent<ECS::TransformComponent>(m_ShapeEntity);
+            const Math::Vector3 origin = xf ? xf->position : Math::Vector3(0.0f, 0.0f, 0.0f);
+            switch (m_ShapeHandle.kind) {
+                case ShapeHandleKind::WallPoint:
+                case ShapeHandleKind::WallBow: {
+                    auto* wp = m_World->GetComponent<ECS::WallPathComponent>(m_ShapeEntity);
+                    auto* solid = m_World->GetComponent<ECS::BrushSolidComponent>(m_ShapeEntity);
+                    if (!wp || !solid) break;
+                    ECS::WallPathComponent next = *wp;
+                    if (DragWallPathHandle(next, m_ShapeStart.wall, m_ShapeHandle, origin, point)) {
+                        // Rebuilt from the brushes as they were at the press, so
+                        // a doorway cut after the wall keeps its place in the list.
+                        ECS::BrushSolidComponent rebuilt;
+                        rebuilt.brushes = m_ShapeStart.brushes;
+                        next.builtBrushes = m_ShapeStart.wall.builtBrushes;
+                        if (RebuildWallPath(next, rebuilt)) {
+                            *wp = next;
+                            solid->brushes = std::move(rebuilt.brushes);
+                            solid->dirty = true;
+                            // Now, so the wall follows the cursor instead of
+                            // trailing a frame behind it.
+                            ECS::BrushSolidSystem::Rebuild(m_World, m_ShapeEntity);
+                        }
+                    }
+                    break;
+                }
+                case ShapeHandleKind::OutlinePoint:
+                case ShapeHandleKind::OutlineEdge: {
+                    auto* o = m_World->GetComponent<ECS::BoundaryPolygonComponent>(m_ShapeEntity);
+                    if (!o) break;
+                    ECS::BoundaryPolygonComponent start;
+                    start.points = m_ShapeStart.outline;
+                    // An edge moves by (cursor - where it was grabbed). The
+                    // cursor is snapped and the midpoint generally is not, so
+                    // the grab point is snapped too, or a straight pull sideways
+                    // also nudged the edge along itself by the rounding.
+                    ShapeHandle grabbed = m_ShapeHandle;
+                    grabbed.position = m_Creative.SnapToGrid(grabbed.position);
+                    DragOutlineHandle(*o, start, grabbed, origin, point);
+                    break;
+                }
+                case ShapeHandleKind::BoxGrip: {
+                    auto* solid = m_World->GetComponent<ECS::BrushSolidComponent>(m_ShapeEntity);
+                    if (!solid || m_ShapeStart.brushes.size() != 1 || solid->brushes.size() != 1) break;
+                    // Grips are drawn at the brush's centre height; the drag
+                    // plane is that height, so convert back to entity-local.
+                    ECS::BrushSolidComponent::Brush b = m_ShapeStart.brushes[0];
+                    if (ResizeBrushByGrip(b, static_cast<BrushGrip>(m_ShapeHandle.index), point - origin) &&
+                        b != solid->brushes[0]) {
+                        solid->brushes[0] = b;
+                        solid->dirty = true;
+                        ECS::BrushSolidSystem::Rebuild(m_World, m_ShapeEntity);
+                    }
+                    break;
+                }
+                case ShapeHandleKind::RectGrip: {
+                    auto* w = m_World->GetComponent<ECS::Water3DComponent>(m_ShapeEntity);
+                    if (!w) break;
+                    Math::Vector3 c = m_ShapeStart.surfaceCentre;
+                    f32 wd = m_ShapeStart.surfaceWidth, dp = m_ShapeStart.surfaceDepth;
+                    if (DragRectGrip(c, wd, dp, static_cast<BrushGrip>(m_ShapeHandle.index), point) &&
+                        (c != w->settings.position || wd != w->settings.width || dp != w->settings.depth)) {
+                        w->settings.position = c;
+                        w->settings.width = wd;
+                        w->settings.depth = dp;
+                        m_PendingWater3DRebuild.push_back(m_ShapeEntity);
+                    }
+                    break;
+                }
+                default: break;
+            }
+        }
+
+        ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+        if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+            // The release, or a release that was eaten. Either way the shape is
+            // what it is now, and that is the undo step.
+            CommitCreativeShapeEdit(m_ShapeEntity, m_ShapeStart);
+            m_ShapeDragging = false;
+            m_ShapeEntity = ECS::INVALID_ENTITY;
+        }
+        return true;
+    }
+
+    // --- which entity shows handles ------------------------------------------
+    // The selection: the thing you just placed is selected, so it can be tweaked
+    // straight away, with whatever tool is in hand.
+    const ECS::Entity target = m_PrimarySelected;
+
+    // A wall built before walls kept their line is only brushes. The first time
+    // it is selected, recover the line from them (RecoverWallPath checks its
+    // own answer), so an existing scene's walls get corner handles too. Tried
+    // once per selection rather than every frame. Not marked dirty: nothing
+    // visible changed, and the first reshape saves it.
+    if (target != m_WallRecoveryChecked) {
+        m_WallRecoveryChecked = target;
+        if (m_World->IsValid(target) && !m_World->HasComponent<ECS::WallPathComponent>(target)) {
+            if (const auto* solid = m_World->GetComponent<ECS::BrushSolidComponent>(target)) {
+                ECS::WallPathComponent recovered;
+                if (RecoverWallPath(*solid, recovered)) {
+                    m_World->AddComponent<ECS::WallPathComponent>(target, recovered);
+                }
+            }
+        }
+    }
+    if (!EntityHasShapeHandles(target)) return false;
+
+    std::vector<ShapeHandle> handles;
+    CollectCreativeShapeHandles(target, handles);
+    if (handles.empty()) return false;
+
+    // --- draw, and find the one under the cursor -----------------------------
+    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    const ImVec2 imgMin(m_EditorViewportImageMinX, m_EditorViewportImageMinY);
+    const f32 ui = CreativeUIScale();
+    const f32 grab = 7.0f * ui;
+    const ImVec2 mouse = ImGui::GetIO().MousePos;
+    const bool water = !m_World->HasComponent<ECS::BrushSolidComponent>(target);
+    const ImU32 edge = water ? kCut : kAccent;
+
+    // With Wall or Path in hand, a wall's two ends are where the next wall
+    // starts, not something to grab. The wall just built stays selected and the
+    // grid snaps a new press exactly onto its end, so without this every room
+    // drawn wall by wall dragged the last wall instead of starting the next.
+    // Corners and bows still drag; the Edit tool grabs ends as well.
+    const BuildTool tool = m_Creative.GetTool();
+    const bool endsBuild = tool == BuildTool::Wall || tool == BuildTool::Path;
+    i32 lastWallPoint = -1;
+    for (const auto& h : handles) {
+        if (h.kind == ShapeHandleKind::WallPoint) lastWallPoint = std::max(lastWallPoint, h.index);
+    }
+    auto yieldsToBuild = [&](const ShapeHandle& h) {
+        return endsBuild && h.kind == ShapeHandleKind::WallPoint &&
+               (h.index == 0 || h.index == lastWallPoint);
+    };
+
+    i32 hovered = -1;
+    f32 best = grab * grab * 2.0f;
+    std::vector<ImVec2> screen(handles.size());
+    std::vector<bool> visible(handles.size(), false);
+    for (usize i = 0; i < handles.size(); ++i) {
+        if (!ProjectToViewport(m_Camera, handles[i].position, imgMin, viewW, viewH, screen[i])) continue;
+        visible[i] = true;
+        if (yieldsToBuild(handles[i])) continue;
+        const f32 dx = mouse.x - screen[i].x, dy = mouse.y - screen[i].y;
+        const f32 d2 = dx * dx + dy * dy;
+        if (std::fabs(dx) <= grab && std::fabs(dy) <= grab && d2 < best) {
+            best = d2;
+            hovered = static_cast<i32>(i);
+        }
+    }
+
+    // The outline itself, so the shape being edited is readable against the
+    // water or wall it belongs to.
+    auto outlineLoop = [&](ShapeHandleKind kind, bool closed) {
+        std::vector<ImVec2> pts;
+        for (usize i = 0; i < handles.size(); ++i) {
+            if (handles[i].kind == kind && visible[i]) pts.push_back(screen[i]);
+        }
+        if (pts.size() >= 2) dl->AddPolyline(pts.data(), static_cast<int>(pts.size()), edge,
+                                             closed ? ImDrawFlags_Closed : 0, 1.5f * ui);
+    };
+    outlineLoop(ShapeHandleKind::OutlinePoint, true);
+
+    for (usize i = 0; i < handles.size(); ++i) {
+        // Not drawn either: a handle that cannot be grabbed should not look grabbable.
+        if (!visible[i] || yieldsToBuild(handles[i])) continue;
+        const bool on = static_cast<i32>(i) == hovered;
+        const f32 r = grab * (on ? 1.0f : 0.75f);
+        const ImVec2 sp = screen[i];
+        if (ShapeHandleIsRound(handles[i])) {
+            dl->AddCircleFilled(sp, r, kGround, 12);
+            dl->AddCircle(sp, r, on ? kInk : edge, 12, 1.8f);
+        } else {
+            dl->AddRectFilled(ImVec2(sp.x - r, sp.y - r), ImVec2(sp.x + r, sp.y + r), kGround);
+            dl->AddRect(ImVec2(sp.x - r, sp.y - r), ImVec2(sp.x + r, sp.y + r), on ? kInk : edge, 0, 0, 1.8f);
+        }
+    }
+
+    if (hovered < 0 || !m_EditorViewportHovered) return false;
+    const ShapeHandle& h = handles[static_cast<usize>(hovered)];
+    ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+
+    // What this handle does, next to the cursor, because a square on a wall
+    // does not say "drag to curve" by itself.
+    const char* hint = nullptr;
+    switch (h.kind) {
+        case ShapeHandleKind::WallPoint:    hint = "Drag to move. Right-click to remove."; break;
+        case ShapeHandleKind::WallBow:      hint = "Drag to curve. Double-click to add a corner."; break;
+        case ShapeHandleKind::OutlinePoint: hint = "Drag to move. Right-click to remove."; break;
+        case ShapeHandleKind::OutlineEdge:  hint = "Drag to move this edge. Double-click to add a point."; break;
+        case ShapeHandleKind::RectGrip:
+        case ShapeHandleKind::BoxGrip:      hint = "Drag to resize."; break;
+        default: break;
+    }
+    if (hint) {
+        dl->AddText(ImGui::GetFont(), 12.0f * ui, ImVec2(mouse.x + 14.0f * ui, mouse.y + 10.0f * ui), kMuted, hint);
+    }
+
+    // --- add and remove points: one undo step each ---------------------------
+    auto commitEdit = [&](const std::function<bool()>& edit) {
+        CreativeShapeState before = CaptureCreativeShape(target);
+        if (!edit()) return;
+        if (auto* wp = m_World->GetComponent<ECS::WallPathComponent>(target)) {
+            if (auto* solid = m_World->GetComponent<ECS::BrushSolidComponent>(target)) {
+                RebuildWallPath(*wp, *solid);
+                ECS::BrushSolidSystem::Rebuild(m_World, target);
+            }
+        }
+        CommitCreativeShapeEdit(target, before);
+    };
+
+    if (ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+        const usize idx = static_cast<usize>(h.index);
+        if (h.kind == ShapeHandleKind::WallPoint) {
+            commitEdit([&] {
+                auto* wp = m_World->GetComponent<ECS::WallPathComponent>(target);
+                return wp && RemoveWallPoint(*wp, idx);
+            });
+            return true;
+        }
+        if (h.kind == ShapeHandleKind::OutlinePoint) {
+            commitEdit([&] {
+                auto* o = m_World->GetComponent<ECS::BoundaryPolygonComponent>(target);
+                return o && RemoveOutlinePoint(*o, idx);
+            });
+            return true;
+        }
+    }
+    if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+        const usize idx = static_cast<usize>(h.index);
+        if (h.kind == ShapeHandleKind::WallBow) {
+            commitEdit([&] {
+                auto* wp = m_World->GetComponent<ECS::WallPathComponent>(target);
+                return wp && InsertWallPoint(*wp, idx);
+            });
+            return true;
+        }
+        if (h.kind == ShapeHandleKind::OutlineEdge) {
+            commitEdit([&] {
+                auto* o = m_World->GetComponent<ECS::BoundaryPolygonComponent>(target);
+                return o && InsertOutlinePoint(*o, idx);
+            });
+            return true;
+        }
+    }
+
+    // --- press starts a drag --------------------------------------------------
+    if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        m_ShapeDragging = true;
+        m_ShapeEntity = target;
+        m_ShapeHandle = h;
+        m_ShapeStart = CaptureCreativeShape(target);
+        return true;
+    }
+    return false;
+}
+
+// ---------------------------------------------------------------------------
 // Edit: click to select, drag a grip to resize
 // ---------------------------------------------------------------------------
 
@@ -2457,6 +2943,48 @@ void EditorLayer::HandleCreativeEdit(f32 localX, f32 localY, f32 viewW, f32 view
         ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
         const ECS::Entity hit =
             ScenePicker::PickEntity(m_World, m_Camera, localX, localY, viewW, viewH);
+        if (hit != ECS::INVALID_ENTITY && EntityHasShapeHandles(hit) && hit != m_PrimarySelected) {
+            // A wall drawn with a line, or water: its own handles take over
+            // (HandleCreativeShapeHandles), and the box grips below stand down.
+            SelectEntity(hit);
+            return;
+        }
+        if (hit == ECS::INVALID_ENTITY) {
+            // Water is a flat surface the picker can miss at a glancing angle.
+            // The point under the cursor inside a footprint is the same intent,
+            // and it is what a person clicking on a pond means. Measured on the
+            // water's own surface height, not the y = 0 build plane: a raised
+            // pond seen at an angle meets that plane well to one side of it.
+            const Ray pickRay = ScenePicker::ScreenToRay(m_Camera, localX, localY, viewW, viewH);
+            auto pointAtHeight = [&](f32 y, f32& x, f32& z) {
+                if (std::fabs(pickRay.direction.y) < 1e-6f) return false;
+                const f32 t = (y - pickRay.origin.y) / pickRay.direction.y;
+                if (t <= 0.0f) return false;
+                x = pickRay.origin.x + pickRay.direction.x * t;
+                z = pickRay.origin.z + pickRay.direction.z * t;
+                return true;
+            };
+            for (ECS::Entity e : m_World->GetEntitiesWithComponent<ECS::BoundaryPolygonComponent>()) {
+                const auto* o = m_World->GetComponent<ECS::BoundaryPolygonComponent>(e);
+                const auto* xf = m_World->GetComponent<ECS::TransformComponent>(e);
+                f32 px = 0.0f, pz = 0.0f;
+                if (o && xf && o->points.size() >= 3 && pointAtHeight(xf->position.y, px, pz) &&
+                    o->ContainsXZ(xf->position, px, pz)) {
+                    SelectEntity(e);
+                    return;
+                }
+            }
+            for (ECS::Entity e : m_World->GetEntitiesWithComponent<ECS::Water3DComponent>()) {
+                const auto* w = m_World->GetComponent<ECS::Water3DComponent>(e);
+                f32 px = 0.0f, pz = 0.0f;
+                if (w && pointAtHeight(w->settings.position.y, px, pz) &&
+                    std::fabs(px - w->settings.position.x) <= w->settings.width * 0.5f &&
+                    std::fabs(pz - w->settings.position.z) <= w->settings.depth * 0.5f) {
+                    SelectEntity(e);
+                    return;
+                }
+            }
+        }
         if (hit != ECS::INVALID_ENTITY && m_World->HasComponent<ECS::BrushSolidComponent>(hit)) {
             if (hit != m_PrimarySelected) {
                 SelectEntity(hit);
@@ -2469,10 +2997,14 @@ void EditorLayer::HandleCreativeEdit(f32 localX, f32 localY, f32 viewW, f32 view
         }
     }
 
+    // Something with shape handles is selected: they are drawn and dragged by
+    // HandleCreativeShapeHandles, which ran before this.
+    if (EntityHasShapeHandles(m_PrimarySelected)) return;
+
     if (!solid || solid->brushes.empty()) {
         if (m_EditorViewportHovered) {
             const f32 size = 12.0f * ui;
-            const char* msg = "Click a wall, floor or brush to resize it.";
+            const char* msg = "Click a wall, floor, brush or water to reshape it.";
             ImFont* font = ImGui::GetFont();
             const ImVec2 ts = font->CalcTextSizeA(size, FLT_MAX, 0.0f, msg);
             const f32 cx = (m_EditorViewportImageMinX + m_EditorViewportImageMaxX) * 0.5f;
@@ -2724,6 +3256,15 @@ void EditorLayer::CommitCreativePath() {
     const bool built = CreativeMode::BuildPathBrushes(
         m_CreativePathPoints, m_CreativePathBows, segs, s, m_Creative.IsSubtracting(), solid);
 
+    ECS::WallPathComponent line;
+    line.points = m_CreativePathPoints;
+    line.bows = m_CreativePathBows;
+    line.bows.resize(line.points.empty() ? 0 : line.points.size() - 1, 0.0f);
+    line.segmentsPerBow = segs;
+    line.height = s.height;
+    line.thickness = s.thickness;
+    line.builtBrushes = static_cast<u32>(solid.brushes.size());
+
     // Cleared either way: a path that could not build is finished with, and
     // leaving it on screen after Enter would look like the key did nothing.
     m_CreativePathPoints.clear();
@@ -2764,6 +3305,7 @@ void EditorLayer::CommitCreativePath() {
     m_World->AddComponent<ECS::TransformComponent>(entity);
     m_World->AddComponent<ECS::MaterialComponent>(entity);
     m_World->AddComponent<ECS::BrushSolidComponent>(entity, solid);
+    m_World->AddComponent<ECS::WallPathComponent>(entity, line);
     ECS::BrushSolidSystem::Rebuild(m_World, entity);
 
     SelectEntity(entity);

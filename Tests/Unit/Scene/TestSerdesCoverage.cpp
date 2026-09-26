@@ -16,6 +16,7 @@
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/BoundaryPolygon.h"
+#include "Enjin/ECS/Components/WallPath.h"
 #include "Enjin/ECS/Components/VisualScript.h"
 #include "Enjin/ECS/Components/LOD.h"
 #include "Enjin/ECS/Components/DynamicDifficulty.h"
@@ -123,6 +124,34 @@ ENJIN_TEST(SerdesCoverage, SavePointSurvivesASave) {
     ENJIN_EXPECT_TRUE(r->oneTimeUse);
     ENJIN_EXPECT_TRUE(Near(r->radius, 4.5f));
     ENJIN_EXPECT_TRUE(r->saveMessage == "Rest here");
+}
+
+ENJIN_TEST(SerdesCoverage, WallPathSurvivesASave) {
+    // The line a wall was drawn along. Losing it leaves the walls standing and
+    // no longer reshapeable, which nobody would notice until they tried.
+    World src;
+    Entity e = Base(src);
+    WallPathComponent c;
+    c.points = {Vector3(0.0f, 0.0f, 0.0f), Vector3(4.0f, 0.0f, 0.0f), Vector3(4.0f, 0.0f, 3.5f)};
+    c.bows = {0.0f, 1.25f};
+    c.segmentsPerBow = 6;
+    c.height = 2.5f;
+    c.thickness = 0.3f;
+    c.builtBrushes = 7;
+    src.AddComponent<WallPathComponent>(e, c);
+
+    World dst;
+    Entity loaded = RoundTrip(src, e, dst);
+
+    const auto* r = dst.GetComponent<WallPathComponent>(loaded);
+    ENJIN_ASSERT_TRUE(r != nullptr);
+    ENJIN_ASSERT_TRUE(r->points.size() == 3 && r->bows.size() == 2);
+    ENJIN_EXPECT_FLOAT_NEAR(r->points[2].z, 3.5f, 1e-4f);
+    ENJIN_EXPECT_FLOAT_NEAR(r->bows[1], 1.25f, 1e-4f);
+    ENJIN_EXPECT_EQ(r->segmentsPerBow, 6u);
+    ENJIN_EXPECT_FLOAT_NEAR(r->height, 2.5f, 1e-4f);
+    ENJIN_EXPECT_FLOAT_NEAR(r->thickness, 0.3f, 1e-4f);
+    ENJIN_EXPECT_EQ(r->builtBrushes, 7u);
 }
 
 ENJIN_TEST(SerdesCoverage, BoundaryPolygonPointsSurviveASave) {

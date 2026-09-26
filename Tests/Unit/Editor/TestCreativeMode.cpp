@@ -1318,4 +1318,357 @@ ENJIN_TEST(CreativeCave, EveryCuttingToolHasLabelsButNotEveryLabelledToolCuts) {
     ENJIN_EXPECT_EQ(labelledButNotCutting, (usize)2);
 }
 
+// ---------------------------------------------------------------------------
+// Shape handles: reshaping something after it is built
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// An L of two walls meeting at (4, 0, 0), as the Path tool would leave it.
+ECS::WallPathComponent MakeCornerPath() {
+    ECS::WallPathComponent p;
+    p.points = {Vector3(0.0f, 0.0f, 0.0f), Vector3(4.0f, 0.0f, 0.0f), Vector3(4.0f, 0.0f, 3.0f)};
+    p.bows = {0.0f, 0.0f};
+    p.height = 3.0f;
+    p.thickness = 0.25f;
+    return p;
+}
+
+const ShapeHandle* FindHandle(const std::vector<ShapeHandle>& hs, ShapeHandleKind kind, i32 index) {
+    for (const auto& h : hs) if (h.kind == kind && h.index == index) return &h;
+    return nullptr;
+}
+
+// Where a wall brush's two ends are, in XZ.
+void WallEnds(const ECS::BrushSolidComponent::Brush& b, Vector3& a, Vector3& c) {
+    const Vector3 axis = b.rotation.Rotate(Vector3(1.0f, 0.0f, 0.0f));
+    a = b.center - axis * b.halfExtents.x;
+    c = b.center + axis * b.halfExtents.x;
+}
+
+bool NearXZ(const Vector3& a, const Vector3& b, f32 tol) {
+    return std::fabs(a.x - b.x) < tol && std::fabs(a.z - b.z) < tol;
+}
+
+} // namespace
+
+ENJIN_TEST(CreativeShape, WallHandlesAreOnePerCornerAndOnePerSpan) {
+    // Arrange
+    const ECS::WallPathComponent p = MakeCornerPath();
+    std::vector<ShapeHandle> hs;
+
+    // Act
+    WallPathHandles(p, Vector3(10.0f, 0.0f, 0.0f), hs);
+
+    // Assert: three corners, two bow handles, all offset by the entity origin.
+    ENJIN_ASSERT_EQ(hs.size(), static_cast<usize>(5));
+    const ShapeHandle* corner = FindHandle(hs, ShapeHandleKind::WallPoint, 1);
+    ENJIN_ASSERT_NOT_NULL(corner);
+    ENJIN_EXPECT_TRUE(NearXZ(corner->position, Vector3(14.0f, 0.0f, 0.0f), 1e-4f));
+    ENJIN_EXPECT_TRUE(ShapeHandleIsRound(*corner));
+    ENJIN_EXPECT_FALSE(ShapeHandleIsRound(*FindHandle(hs, ShapeHandleKind::WallBow, 0)));
+}
+
+ENJIN_TEST(CreativeShape, DraggingACornerMovesBothWallsThatMeetThere) {
+    // Arrange: the corner is shared by both spans. Rebuilt from the line, the
+    // two brushes must still meet at wherever the corner went.
+    ECS::WallPathComponent p = MakeCornerPath();
+    ECS::BrushSolidComponent solid;
+    ENJIN_ASSERT_TRUE(RebuildWallPath(p, solid));
+    const ECS::WallPathComponent start = p;
+    std::vector<ShapeHandle> hs;
+    WallPathHandles(p, Vector3(), hs);
+
+    // Act
+    const bool moved = DragWallPathHandle(p, start, *FindHandle(hs, ShapeHandleKind::WallPoint, 1),
+                                          Vector3(), Vector3(6.0f, 0.0f, -1.0f));
+    ENJIN_ASSERT_TRUE(moved);
+    ENJIN_ASSERT_TRUE(RebuildWallPath(p, solid));
+
+    // Assert: the first wall now ends at the new corner and the second starts
+    // there. The mitre extends each past the joint by at most half the
+    // thickness times tan(turn/2), so compare within that.
+    ENJIN_ASSERT_EQ(solid.brushes.size(), static_cast<usize>(2));
+    Vector3 a0, a1, b0, b1;
+    WallEnds(solid.brushes[0], a0, a1);
+    WallEnds(solid.brushes[1], b0, b1);
+    ENJIN_EXPECT_TRUE(NearXZ(a0, Vector3(0.0f, 0.0f, 0.0f), 1e-3f));
+    ENJIN_EXPECT_TRUE(NearXZ(a1, Vector3(6.0f, 0.0f, -1.0f), 0.5f));
+    ENJIN_EXPECT_TRUE(NearXZ(b0, Vector3(6.0f, 0.0f, -1.0f), 0.5f));
+    ENJIN_EXPECT_TRUE(NearXZ(b1, Vector3(4.0f, 0.0f, 3.0f), 1e-3f));
+}
+
+ENJIN_TEST(CreativeShape, ACornerDraggedOntoItsNeighbourIsRefused) {
+    // Arrange
+    ECS::WallPathComponent p = MakeCornerPath();
+    const ECS::WallPathComponent start = p;
+    std::vector<ShapeHandle> hs;
+    WallPathHandles(p, Vector3(), hs);
+
+    // Act: drop the corner onto the start of the path.
+    const bool moved = DragWallPathHandle(p, start, *FindHandle(hs, ShapeHandleKind::WallPoint, 1),
+                                          Vector3(), Vector3(0.01f, 0.0f, 0.0f));
+
+    // Assert: a zero-length wall would vanish mid-drag; the path stays as it was.
+    ENJIN_EXPECT_FALSE(moved);
+    ENJIN_EXPECT_TRUE(NearXZ(p.points[1], Vector3(4.0f, 0.0f, 0.0f), 1e-6f));
+}
+
+ENJIN_TEST(CreativeShape, DraggingABowHandleCurvesThatSpanOnly) {
+    // Arrange
+    ECS::WallPathComponent p = MakeCornerPath();
+    const ECS::WallPathComponent start = p;
+    std::vector<ShapeHandle> hs;
+    WallPathHandles(p, Vector3(), hs);
+
+    // Act: pull the first span's middle 1.5 m off its line.
+    DragWallPathHandle(p, start, *FindHandle(hs, ShapeHandleKind::WallBow, 0),
+                       Vector3(), Vector3(2.0f, 0.0f, 1.5f));
+
+    // Assert: the span normal of (0,0,0)->(4,0,0) is +Z, so the bow is +1.5.
+    ENJIN_EXPECT_FLOAT_NEAR(p.bows[0], 1.5f, 1e-4f);
+    ENJIN_EXPECT_FLOAT_NEAR(p.bows[1], 0.0f, 1e-6f);
+    ECS::BrushSolidComponent solid;
+    ENJIN_ASSERT_TRUE(RebuildWallPath(p, solid));
+    ENJIN_EXPECT_TRUE(solid.brushes.size() > 2);   // the curve is sampled into segments
+}
+
+ENJIN_TEST(CreativeShape, ABowNudgedNearTheLineSnapsStraight) {
+    ECS::WallPathComponent p = MakeCornerPath();
+    const ECS::WallPathComponent start = p;
+    std::vector<ShapeHandle> hs;
+    WallPathHandles(p, Vector3(), hs);
+    DragWallPathHandle(p, start, *FindHandle(hs, ShapeHandleKind::WallBow, 0),
+                       Vector3(), Vector3(2.0f, 0.0f, kCreativePathMinBow * 0.5f));
+    ENJIN_EXPECT_TRUE(p.bows[0] == 0.0f);
+}
+
+ENJIN_TEST(CreativeShape, RebuildingAWallKeepsTheDoorwayCutThroughIt) {
+    // Arrange: a built wall with a Subtract brush appended after its own.
+    ECS::WallPathComponent p = MakeCornerPath();
+    ECS::BrushSolidComponent solid;
+    ENJIN_ASSERT_TRUE(RebuildWallPath(p, solid));
+    ENJIN_ASSERT_EQ(p.builtBrushes, 2u);
+    ECS::BrushSolidComponent::Brush door;
+    door.op = Geometry::BrushOp::Subtract;
+    door.center = Vector3(2.0f, 1.0f, 0.0f);
+    solid.brushes.push_back(door);
+
+    // Act: bow the first span, which changes how many brushes the line makes.
+    p.bows[0] = 1.0f;
+    ENJIN_ASSERT_TRUE(RebuildWallPath(p, solid));
+
+    // Assert: the cut is still there, still last, and the count moved with it.
+    ENJIN_EXPECT_EQ(static_cast<usize>(p.builtBrushes) + 1, solid.brushes.size());
+    ENJIN_EXPECT_TRUE(solid.brushes.back().op == Geometry::BrushOp::Subtract);
+    ENJIN_EXPECT_TRUE(NearXZ(solid.brushes.back().center, Vector3(2.0f, 0.0f, 0.0f), 1e-6f));
+}
+
+ENJIN_TEST(CreativeShape, AWallsHeightAndThicknessCanBeChangedAfterItIsBuilt) {
+    // Arrange: an L of two walls with a doorway cut through the first.
+    ECS::WallPathComponent p = MakeCornerPath();
+    ECS::BrushSolidComponent solid;
+    ENJIN_ASSERT_TRUE(RebuildWallPath(p, solid));
+    ECS::BrushSolidComponent::Brush door;
+    door.op = Geometry::BrushOp::Subtract;
+    door.center = Vector3(2.0f, 1.0f, 0.0f);
+    solid.brushes.push_back(door);
+
+    // Act
+    ENJIN_ASSERT_TRUE(ResizeWallPath(p, solid, 5.0f, 0.5f));
+
+    // Assert: every wall brush is the new size and still stands on the floor,
+    // the corner points did not move, and the doorway is still last.
+    ENJIN_EXPECT_FLOAT_NEAR(p.height, 5.0f, 1e-6f);
+    ENJIN_EXPECT_FLOAT_NEAR(p.thickness, 0.5f, 1e-6f);
+    ENJIN_ASSERT_EQ(solid.brushes.size(), static_cast<usize>(3));
+    for (usize i = 0; i < 2; ++i) {
+        ENJIN_EXPECT_FLOAT_NEAR(solid.brushes[i].halfExtents.y * 2.0f, 5.0f, 1e-4f);
+        ENJIN_EXPECT_FLOAT_NEAR(solid.brushes[i].halfExtents.z * 2.0f, 0.5f, 1e-4f);
+        ENJIN_EXPECT_FLOAT_NEAR(solid.brushes[i].center.y - solid.brushes[i].halfExtents.y, 0.0f, 1e-4f);
+    }
+    ENJIN_EXPECT_TRUE(NearXZ(p.points[1], Vector3(4.0f, 0.0f, 0.0f), 1e-6f));
+    ENJIN_EXPECT_TRUE(solid.brushes[2].op == Geometry::BrushOp::Subtract);
+
+    // Out of range is clamped to the Wall tool's own range, not refused.
+    ENJIN_ASSERT_TRUE(ResizeWallPath(p, solid, 100.0f, 0.0f));
+    ENJIN_EXPECT_FLOAT_NEAR(p.height, kCreativeWallHeightMax, 1e-6f);
+    ENJIN_EXPECT_FLOAT_NEAR(p.thickness, kCreativeWallThicknessMin, 1e-6f);
+}
+
+ENJIN_TEST(CreativeShape, WallPointsCanBeAddedAndRemoved) {
+    // Arrange
+    ECS::WallPathComponent p = MakeCornerPath();
+    p.bows[0] = 1.0f;
+
+    // Act / Assert: a corner added in a bowed span lands on the curve's middle.
+    ENJIN_ASSERT_TRUE(InsertWallPoint(p, 0));
+    ENJIN_ASSERT_EQ(p.points.size(), static_cast<usize>(4));
+    ENJIN_ASSERT_EQ(p.bows.size(), static_cast<usize>(3));
+    ENJIN_EXPECT_TRUE(NearXZ(p.points[1], Vector3(2.0f, 0.0f, 1.0f), 1e-4f));
+
+    ENJIN_EXPECT_TRUE(RemoveWallPoint(p, 1));
+    ENJIN_EXPECT_EQ(p.points.size(), static_cast<usize>(3));
+    ENJIN_EXPECT_EQ(p.bows.size(), static_cast<usize>(2));
+    ENJIN_EXPECT_TRUE(RemoveWallPoint(p, 0));
+    ENJIN_EXPECT_FALSE(RemoveWallPoint(p, 0));   // a wall keeps two points
+}
+
+ENJIN_TEST(CreativeShape, DraggingAShorelineEdgeMovesTheWholeEdge) {
+    // Arrange: a 10 x 10 pond around an entity at (5, 1, 5).
+    ECS::BoundaryPolygonComponent o;
+    o.points = {Vector2(-5.0f, -5.0f), Vector2(5.0f, -5.0f), Vector2(5.0f, 5.0f), Vector2(-5.0f, 5.0f)};
+    const ECS::BoundaryPolygonComponent start = o;
+    const Vector3 origin(5.0f, 1.0f, 5.0f);
+    std::vector<ShapeHandle> hs;
+    OutlineHandles(o, origin, hs);
+    ENJIN_ASSERT_EQ(hs.size(), static_cast<usize>(8));
+    const ShapeHandle* east = FindHandle(hs, ShapeHandleKind::OutlineEdge, 1);   // (5,-5)->(5,5)
+    ENJIN_ASSERT_NOT_NULL(east);
+    ENJIN_EXPECT_TRUE(NearXZ(east->position, Vector3(10.0f, 1.0f, 5.0f), 1e-4f));
+
+    // Act: pull it 3 m further east.
+    ENJIN_ASSERT_TRUE(DragOutlineHandle(o, start, *east, origin, Vector3(13.0f, 1.0f, 5.0f)));
+
+    // Assert: both of its points moved, the other two did not.
+    ENJIN_EXPECT_TRUE(o.points[1].x == 8.0f && o.points[1].y == -5.0f);
+    ENJIN_EXPECT_TRUE(o.points[2].x == 8.0f && o.points[2].y == 5.0f);
+    ENJIN_EXPECT_TRUE(o.points[0].x == -5.0f && o.points[3].x == -5.0f);
+    ENJIN_EXPECT_TRUE(o.dirty);
+}
+
+ENJIN_TEST(CreativeShape, AShorelineDraggedFlatIsRefused) {
+    // Arrange: a triangle; drag its apex onto the base line.
+    ECS::BoundaryPolygonComponent o;
+    o.points = {Vector2(0.0f, 0.0f), Vector2(4.0f, 0.0f), Vector2(2.0f, 3.0f)};
+    const ECS::BoundaryPolygonComponent start = o;
+    std::vector<ShapeHandle> hs;
+    OutlineHandles(o, Vector3(), hs);
+
+    // Act
+    const bool moved = DragOutlineHandle(o, start, *FindHandle(hs, ShapeHandleKind::OutlinePoint, 2),
+                                         Vector3(), Vector3(2.0f, 0.0f, 0.0f));
+
+    // Assert
+    ENJIN_EXPECT_FALSE(moved);
+    ENJIN_EXPECT_TRUE(o.points[2].y == 3.0f);
+}
+
+ENJIN_TEST(CreativeShape, ShorelinePointsCanBeAddedAndRemovedDownToATriangle) {
+    ECS::BoundaryPolygonComponent o;
+    o.points = {Vector2(0.0f, 0.0f), Vector2(4.0f, 0.0f), Vector2(4.0f, 4.0f), Vector2(0.0f, 4.0f)};
+    ENJIN_ASSERT_TRUE(InsertOutlinePoint(o, 0));
+    ENJIN_EXPECT_TRUE(o.points.size() == 5 && o.points[1].x == 2.0f && o.points[1].y == 0.0f);
+    ENJIN_EXPECT_TRUE(RemoveOutlinePoint(o, 1));
+    ENJIN_EXPECT_TRUE(RemoveOutlinePoint(o, 0));
+    ENJIN_EXPECT_FALSE(RemoveOutlinePoint(o, 0));
+    ENJIN_EXPECT_EQ(o.points.size(), static_cast<usize>(3));
+}
+
+ENJIN_TEST(CreativeShape, ASurfaceWaterEdgeMovesAndTheFarEdgeStays) {
+    // Arrange: a 10 x 6 surface centred on (0, 2, 0).
+    Vector3 centre(0.0f, 2.0f, 0.0f);
+    f32 width = 10.0f, depth = 6.0f;
+
+    // Act: drag the +X edge to x = 9.
+    ENJIN_ASSERT_TRUE(DragRectGrip(centre, width, depth, BrushGrip::MaxX, Vector3(9.0f, 0.0f, 0.0f)));
+
+    // Assert: the -X edge is still at -5, the height is untouched.
+    ENJIN_EXPECT_FLOAT_NEAR(width, 14.0f, 1e-4f);
+    ENJIN_EXPECT_FLOAT_NEAR(centre.x - width * 0.5f, -5.0f, 1e-4f);
+    ENJIN_EXPECT_FLOAT_NEAR(depth, 6.0f, 1e-6f);
+    ENJIN_EXPECT_FLOAT_NEAR(centre.y, 2.0f, 1e-6f);
+}
+
+ENJIN_TEST(CreativeShape, ASingleBoxStaysABox) {
+    // Arrange: one wall-shaped brush, which is also what a plank or a door slab
+    // made with the Box tool looks like.
+    BuildToolSettings s;
+    ECS::BrushSolidComponent solid;
+    ENJIN_ASSERT_TRUE(CreativeMode::BuildBrushes(BuildTool::Wall, s, false,
+                                                 Vector3(1.0f, 0.0f, 2.0f), Vector3(5.0f, 0.0f, 5.0f), solid));
+
+    // Act
+    ECS::WallPathComponent path;
+    const bool ok = RecoverWallPath(solid, path);
+
+    // Assert: refused, so it keeps its height and thickness grips.
+    ENJIN_EXPECT_FALSE(ok);
+}
+
+ENJIN_TEST(CreativeShape, AnOldTwoWallRunGetsItsLineBack) {
+    // Arrange: two walls meeting at a corner, with no line kept.
+    BuildToolSettings s;
+    const std::vector<Vector3> pts = {Vector3(1.0f, 0.0f, 2.0f), Vector3(5.0f, 0.0f, 2.0f),
+                                      Vector3(5.0f, 0.0f, 6.0f)};
+    ECS::BrushSolidComponent solid;
+    ENJIN_ASSERT_TRUE(CreativeMode::BuildPathBrushes(pts, {0.0f, 0.0f}, 8, s, false, solid));
+
+    // Act
+    ECS::WallPathComponent path;
+    ENJIN_ASSERT_TRUE(RecoverWallPath(solid, path));
+
+    // Assert
+    ENJIN_ASSERT_EQ(path.points.size(), static_cast<usize>(3));
+    for (usize i = 0; i < 3; ++i) ENJIN_EXPECT_TRUE(NearXZ(path.points[i], pts[i], 1e-3f));
+    ENJIN_EXPECT_FLOAT_NEAR(path.height, s.height, 1e-4f);
+    ENJIN_EXPECT_FLOAT_NEAR(path.thickness, s.thickness, 1e-4f);
+    ENJIN_EXPECT_EQ(path.builtBrushes, 2u);
+}
+
+ENJIN_TEST(CreativeShape, AnOldPathGetsItsCornersBack) {
+    // Arrange: a three-corner path, mitred at its joints, line thrown away.
+    BuildToolSettings s;
+    const std::vector<Vector3> pts = {Vector3(0.0f, 0.0f, 0.0f), Vector3(4.0f, 0.0f, 0.0f),
+                                      Vector3(6.0f, 0.0f, 3.0f), Vector3(6.0f, 0.0f, 7.0f)};
+    ECS::BrushSolidComponent solid;
+    ENJIN_ASSERT_TRUE(CreativeMode::BuildPathBrushes(pts, {0.0f, 0.0f, 0.0f}, 8, s, false, solid));
+
+    // Act
+    ECS::WallPathComponent path;
+    ENJIN_ASSERT_TRUE(RecoverWallPath(solid, path));
+
+    // Assert: the corners, not the mitred brush ends.
+    ENJIN_ASSERT_EQ(path.points.size(), static_cast<usize>(4));
+    for (usize i = 0; i < 4; ++i) ENJIN_EXPECT_TRUE(NearXZ(path.points[i], pts[i], 1e-3f));
+}
+
+ENJIN_TEST(CreativeShape, AFloorIsNotMistakenForAWall) {
+    BuildToolSettings s;
+    ECS::BrushSolidComponent floor;
+    ENJIN_ASSERT_TRUE(CreativeMode::BuildBrushes(BuildTool::Floor, s, false,
+                                                 Vector3(0.0f, 0.0f, 0.0f), Vector3(4.0f, 0.0f, 0.5f), floor));
+    ECS::WallPathComponent path;
+    ENJIN_EXPECT_FALSE(RecoverWallPath(floor, path));
+
+}
+
+ENJIN_TEST(CreativeShape, AnOldWallWithADoorwayKeepsTheDoorway) {
+    // Arrange: two walls, then a doorway cut through the first afterwards.
+    BuildToolSettings s;
+    ECS::BrushSolidComponent wall;
+    ENJIN_ASSERT_TRUE(CreativeMode::BuildPathBrushes(
+        {Vector3(0.0f, 0.0f, 0.0f), Vector3(4.0f, 0.0f, 0.0f), Vector3(4.0f, 0.0f, 4.0f)},
+        {0.0f, 0.0f}, 8, s, false, wall));
+    ECS::BrushSolidComponent::Brush door;
+    door.op = Geometry::BrushOp::Subtract;
+    door.center = Vector3(2.0f, 1.0f, 0.0f);
+    wall.brushes.push_back(door);
+
+    // Act
+    ECS::WallPathComponent path;
+    ENJIN_ASSERT_TRUE(RecoverWallPath(wall, path));
+    path.points[2] = Vector3(4.0f, 0.0f, 6.0f);
+    ENJIN_ASSERT_TRUE(RebuildWallPath(path, wall));
+
+    // Assert: the line counts only the walls, and the doorway survives a rebuild.
+    ENJIN_EXPECT_EQ(path.builtBrushes, 2u);
+    ENJIN_ASSERT_EQ(wall.brushes.size(), static_cast<usize>(3));
+    ENJIN_EXPECT_TRUE(wall.brushes[2].op == Geometry::BrushOp::Subtract);
+
+    // An Add after the cut is not a wall with a door in it.
+    wall.brushes.push_back(wall.brushes[0]);
+    ENJIN_EXPECT_FALSE(RecoverWallPath(wall, path));
+}
+
 ENJIN_TEST_MAIN()

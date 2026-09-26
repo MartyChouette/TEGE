@@ -54,6 +54,7 @@
 #include "Enjin/ECS/Components/BoneAttachment.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/BoundaryPolygon.h"
+#include "Enjin/ECS/Components/WallPath.h"
 #include "Enjin/ECS/Components/GPUParticleEmitter.h"
 #include "Enjin/ECS/Components/Cloth.h"
 #include "Enjin/ECS/Components/Swarm.h"
@@ -7011,6 +7012,48 @@ ECS::BoundaryPolygonComponent DeserializeBoundaryPolygonComponent(const json& j)
     return c;
 }
 
+// WallPathComponent: the line a creative-mode wall was drawn along. Without it
+// a reopened scene still has its walls but can no longer reshape them.
+json SerializeWallPathComponent(const ECS::WallPathComponent& c) {
+    json j;
+    json pts = json::array();
+    for (const auto& p : c.points) pts.push_back({RF(p.x), RF(p.y), RF(p.z)});
+    j["points"] = pts;
+    json bows = json::array();
+    for (f32 b : c.bows) bows.push_back(RF(b));
+    j["bows"] = bows;
+    j["segmentsPerBow"] = c.segmentsPerBow;
+    j["height"] = RF(c.height);
+    j["thickness"] = RF(c.thickness);
+    j["builtBrushes"] = c.builtBrushes;
+    return j;
+}
+
+ECS::WallPathComponent DeserializeWallPathComponent(const json& j) {
+    ECS::WallPathComponent c;
+    constexpr usize kMaxPoints = 4096;   // untrusted scene data
+    if (j.contains("points") && j["points"].is_array()) {
+        for (const auto& p : j["points"]) {
+            if (c.points.size() >= kMaxPoints) break;
+            if (p.is_array() && p.size() >= 3 && p[0].is_number() && p[1].is_number() && p[2].is_number())
+                c.points.push_back(Math::Vector3(p[0].get<f32>(), p[1].get<f32>(), p[2].get<f32>()));
+        }
+    }
+    if (j.contains("bows") && j["bows"].is_array()) {
+        for (const auto& b : j["bows"]) {
+            if (c.bows.size() >= kMaxPoints) break;
+            c.bows.push_back(b.is_number() ? b.get<f32>() : 0.0f);
+        }
+    }
+    if (j.contains("segmentsPerBow") && j["segmentsPerBow"].is_number_unsigned())
+        c.segmentsPerBow = std::min(j["segmentsPerBow"].get<u32>(), 64u);
+    if (j.contains("height") && j["height"].is_number()) c.height = j["height"].get<f32>();
+    if (j.contains("thickness") && j["thickness"].is_number()) c.thickness = j["thickness"].get<f32>();
+    if (j.contains("builtBrushes") && j["builtBrushes"].is_number_unsigned())
+        c.builtBrushes = std::min(j["builtBrushes"].get<u32>(), static_cast<u32>(kMaxPoints));
+    return c;
+}
+
 json SerializeStreamingVolumeComponent(const Scene::StreamingVolumeComponent& sv) {
     json j;
     j["chunkId"] = sv.chunkId;
@@ -10139,6 +10182,7 @@ static const std::vector<ComponentSerdes>& ComponentRegistry() {
         ENJIN_SERDES("saveSystem", ECS::SaveSystemComponent, SerializeSaveSystemComponent, DeserializeSaveSystemComponent),
         ENJIN_SERDES("savePoint", ECS::SavePointComponent, SerializeSavePointComponent, DeserializeSavePointComponent),
         ENJIN_SERDES("boundaryPolygon", ECS::BoundaryPolygonComponent, SerializeBoundaryPolygonComponent, DeserializeBoundaryPolygonComponent),
+        ENJIN_SERDES("wallPath", ECS::WallPathComponent, SerializeWallPathComponent, DeserializeWallPathComponent),
         ENJIN_SERDES("streamingVolume", Scene::StreamingVolumeComponent, SerializeStreamingVolumeComponent, DeserializeStreamingVolumeComponent),
         ENJIN_SERDES("surfaceAligned", ECS::SurfaceAlignedController, SerializeSurfaceAligned, DeserializeSurfaceAligned),
         ENJIN_SERDES("swarm", ECS::SwarmComponent, SerializeSwarmComponent, DeserializeSwarmComponent),
