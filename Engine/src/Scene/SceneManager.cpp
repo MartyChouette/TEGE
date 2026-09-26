@@ -22,35 +22,19 @@ SceneManager::SceneManager() {
 
 // --- Project / Manifest ---
 
-void SceneManager::NewProject(const std::string& projectName) {
-    m_ProjectName = projectName;
+void SceneManager::ResetProjectState() {
+    m_ProjectName = "Untitled Project";
     m_Scenes.clear();
     m_ManifestPath.clear();
     m_ProjectRoot.clear();
     m_CurrentSceneName.clear();
+    m_StartupFlow.clear();
+    m_InputSettings = InputSystem::InputProjectSettings{};
+    m_AccessibilityDefaultsJson.clear();
+    m_LocalizationJson.clear();
     m_DefaultRenderSettings = Renderer::SceneRenderSettings{};
+    m_RenderQuality = Renderer::RenderQualitySettings{};
     m_GameFrameSettings = GameFrameSettings{};
-    // ADR-0005: NEW projects get frame-rate-independent physics from day one.
-    // Existing projects keep whatever their file says (missing key = off).
-    m_GameFrameSettings.fixedTimestep = true;
-
-    // Same reasoning for accessibility. BuildPipeline packs accessibility.json
-    // from this block, and the block was only written when someone had already
-    // opened Project Settings and changed something -- so a game shipped by
-    // anyone who never visited that panel shipped without it. The engine has
-    // ten accessibility subsystems and the default was to hand a player none of
-    // them.
-    //
-    // Seeding the DEFAULTS costs nothing and makes the promise true by
-    // construction: every new project carries the block, every build packs it,
-    // and every player gets the menu. Existing projects are untouched -- a
-    // missing key still means missing, and NewProject is only new ones.
-    m_AccessibilityDefaultsJson = Accessibility::RuntimeAccessibilitySettings{}.ToJson();
-
-    // startupFlow is deliberately NOT seeded. An empty flow means "go straight
-    // to the start scene", which is the right default; writing one in would
-    // impose a title screen on every new project, and removing that imposition
-    // is exactly what the startup-flow work set out to fix.
     m_ProjectMode = ProjectMode::Mode3D;
     m_PhysicsBackendType = Physics::PhysicsBackendType::Auto;
     m_CollisionGroupNames.clear();
@@ -64,6 +48,26 @@ void SceneManager::NewProject(const std::string& projectName) {
     m_WindowWidth = 1280;
     m_WindowHeight = 720;
     m_Fullscreen = false;
+}
+
+void SceneManager::NewProject(const std::string& projectName) {
+    ResetProjectState();
+    m_ProjectName = projectName;
+
+    // ADR-0005: NEW projects get frame-rate-independent physics from day one.
+    // Existing projects keep whatever their file says (missing key = off).
+    m_GameFrameSettings.fixedTimestep = true;
+
+    // Same reasoning for accessibility. BuildPipeline packs accessibility.json
+    // from this block, and the block was only written when someone had already
+    // opened Project Settings and changed something -- so a game shipped by
+    // anyone who never visited that panel shipped without it. Seeding the
+    // DEFAULTS makes the promise true by construction for every new project.
+    // Existing projects are untouched -- a missing key still means missing.
+    m_AccessibilityDefaultsJson = Accessibility::RuntimeAccessibilitySettings{}.ToJson();
+
+    // startupFlow is deliberately NOT seeded: an empty flow means "go straight
+    // to the start scene", which is the right default.
 }
 
 bool SceneManager::LoadProject(const std::string& manifestPath) {
@@ -88,7 +92,8 @@ bool SceneManager::LoadProject(const std::string& manifestPath) {
         file >> root;
         file.close();
 
-        // Only update state after successful parse
+        // Only update state after successful parse, and from a clean slate.
+        ResetProjectState();
         m_ManifestPath = manifestPath;
 
         // Where a canvas's font path resolves from, set here so the editor, the
@@ -286,6 +291,14 @@ bool SceneManager::LoadProject(const std::string& manifestPath) {
 
 bool SceneManager::SaveProject(const std::string& manifestPath) {
     m_ManifestPath = manifestPath;  // Remember the path so GetProjectPath() works
+    // And the root, which only LoadProject used to set: a project that was
+    // created and saved but never loaded ran with no root, so every
+    // project-relative path (data assets, fonts, ResolvePath) resolved nowhere.
+    {
+        std::error_code ec;
+        const std::filesystem::path abs = std::filesystem::absolute(manifestPath, ec);
+        m_ProjectRoot = (ec ? std::filesystem::path(manifestPath) : abs).parent_path().string();
+    }
 
     // Never persist an inconsistent scene list
     NormalizeSceneList();

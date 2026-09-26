@@ -37,4 +37,12 @@ ENJIN_API bool OpenUrlPreferChromium(const std::string& url);
 // without waiting. workingDir may be empty to inherit the current directory.
 ENJIN_API bool LaunchDetached(const std::string& exePath, const std::string& workingDir);
 
+// Move a file or folder to the desktop's trash / Recycle Bin, so a delete can be
+// undone. Returns true only if it is gone from its location afterwards.
+// Windows: the Recycle Bin; where the Bin cannot take it (too large, a network
+// drive) Windows shows its own "permanently delete?" warning rather than doing
+// it silently. Linux: `gio trash`. Never falls back to a permanent delete: if
+// there is no trash, it returns false and deletes nothing.
+ENJIN_API bool MoveToTrash(const std::string& path);
+
 } // namespace Enjin::Platform

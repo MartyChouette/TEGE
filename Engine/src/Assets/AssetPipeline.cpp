@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
+#include <cstring>
 #include <fstream>
 #include <set>
 #include <sstream>
@@ -44,6 +45,37 @@ bool CopyOne(const fs::path& src, const fs::path& dest, std::vector<std::string>
     }
     if (copied) copied->push_back(dest.generic_string());
     return true;
+}
+
+bool SameContents(const fs::path& a, const fs::path& b) {
+    std::error_code ec;
+    if (fs::file_size(a, ec) != fs::file_size(b, ec) || ec) return false;
+    std::ifstream fa(a, std::ios::binary), fb(b, std::ios::binary);
+    if (!fa || !fb) return false;
+    char ba[65536], bb[65536];
+    while (fa && fb) {
+        fa.read(ba, sizeof(ba));
+        fb.read(bb, sizeof(bb));
+        if (fa.gcount() != fb.gcount() ||
+            std::memcmp(ba, bb, static_cast<size_t>(fa.gcount())) != 0) return false;
+    }
+    return true;
+}
+
+// Where `src` may go given that `dest` is wanted: `dest` itself when it is free
+// or already holds the same bytes (the same file imported twice), otherwise the
+// next free "name_2.ext", "name_3.ext" beside it. Copying used to KEEP whatever
+// was at `dest`, so a second, different diffuse.png from another folder
+// silently became the first one.
+fs::path FreeOrSame(const fs::path& src, const fs::path& dest) {
+    std::error_code ec;
+    if (!fs::exists(dest, ec) || SameContents(src, dest)) return dest;
+    for (int n = 2; n < 10000; ++n) {
+        fs::path candidate = dest.parent_path() /
+            (dest.stem().string() + "_" + std::to_string(n) + dest.extension().string());
+        if (!fs::exists(candidate, ec) || SameContents(src, candidate)) return candidate;
+    }
+    return dest;
 }
 
 std::string ReadTextFile(const fs::path& p) {
@@ -171,7 +203,7 @@ std::string CopyToProjectAssets(const std::string& srcPath,
     std::string inside = RelativeToRoot(src, root);
     if (!inside.empty()) return inside;
 
-    fs::path dest = root / subdir / src.filename();
+    fs::path dest = FreeOrSame(src, root / subdir / src.filename());
     if (!CopyOne(src, dest, nullptr)) return srcPath;
 
     std::string rel = RelativeToRoot(dest, root);
@@ -196,7 +228,14 @@ std::string CopyModelToProjectAssets(const std::string& srcPath,
     if (!inside.empty()) return inside;
 
     const fs::path srcDir = src.parent_path();
-    const fs::path destDir = root / subdir / src.stem();
+    // A model gets a folder of its own; a DIFFERENT model with the same file name
+    // gets the next free folder instead of silently reusing the first one's.
+    fs::path destDir = root / subdir / src.stem();
+    for (int n = 2; n < 10000; ++n) {
+        const fs::path existing = destDir / src.filename();
+        if (!fs::exists(existing, ec) || SameContents(src, existing)) break;
+        destDir = root / subdir / (src.stem().string() + "_" + std::to_string(n));
+    }
 
     if (!CopyOne(src, destDir / src.filename(), copiedFiles)) return srcPath;
 

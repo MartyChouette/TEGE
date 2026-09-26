@@ -730,24 +730,25 @@ void EditorLayer::DrawLayersPanel() {
 
 // Move an asset (file or folder) into destDir. Returns true if it moved. Guards
 // against no-ops, name clashes, and moving a folder into itself or a descendant.
-static bool MoveAssetIntoFolder(const std::string& src, const std::string& destDir) {
+// Returns where it went, or "" if it did not move.
+static std::string MoveAssetIntoFolder(const std::string& src, const std::string& destDir) {
     namespace fs = std::filesystem;
     std::error_code ec;
-    if (src.empty() || destDir.empty()) return false;
+    if (src.empty() || destDir.empty()) return {};
     fs::path s(src), d(destDir);
-    if (!fs::exists(s, ec) || !fs::is_directory(d, ec)) return false;
-    if (fs::equivalent(s.parent_path(), d, ec)) return false;   // already in this folder
-    if (fs::equivalent(s, d, ec)) return false;                 // onto itself
+    if (!fs::exists(s, ec) || !fs::is_directory(d, ec)) return {};
+    if (fs::equivalent(s.parent_path(), d, ec)) return {};   // already in this folder
+    if (fs::equivalent(s, d, ec)) return {};                 // onto itself
     if (fs::is_directory(s, ec)) {                              // into own descendant?
         for (fs::path p = d; ; p = p.parent_path()) {
-            if (fs::equivalent(p, s, ec)) return false;
+            if (fs::equivalent(p, s, ec)) return {};
             if (p == p.parent_path()) break;
         }
     }
     fs::path dest = d / s.filename();
-    if (fs::exists(dest, ec)) return false;                     // name clash
+    if (fs::exists(dest, ec)) return {};                     // name clash
     fs::rename(s, dest, ec);
-    return !ec;
+    return ec ? std::string() : dest.string();
 }
 
 void EditorLayer::DrawAssetBrowserPanel() {
@@ -845,7 +846,7 @@ void EditorLayer::DrawAssetBrowserPanel() {
             : std::filesystem::path(m_CurrentScenePath).parent_path().string();
         std::string path = FileDialog::OpenFile("Open Scene", filters, sceneDir);
         if (!path.empty()) {
-            OpenScene(path);
+            RequestOpenScene(path);
         }
     }
 
@@ -1077,7 +1078,10 @@ void EditorLayer::DrawAssetBrowserPanel() {
                 }
                 if (ImGui::BeginDragDropTarget()) {
                     if (const ImGuiPayload* pl = ImGui::AcceptDragDropPayload("ASSET_PATH")) {
-                        if (MoveAssetIntoFolder(std::string(static_cast<const char*>(pl->Data)), entry.fullPath)) {
+                        const std::string movedFrom(static_cast<const char*>(pl->Data));
+                        const std::string movedTo = MoveAssetIntoFolder(movedFrom, entry.fullPath);
+                        if (!movedTo.empty()) {
+                            OnAssetMoved(movedFrom, movedTo);
                             m_AssetBrowserSelected.clear();
                             m_AssetBrowserCacheDirty = true;
                         }
@@ -1217,7 +1221,7 @@ void EditorLayer::DrawAssetBrowserPanel() {
                     if (IsModel(entry.extension)) {
                         ImportModel(entry.fullPath);
                     } else if (IsScene(entry.extension)) {
-                        OpenScene(entry.fullPath);
+                        RequestOpenScene(entry.fullPath);
                     } else if (IsScript(entry.extension) || IsShader(entry.extension)) {
                         OpenInExternalIDE(entry.fullPath);
                     } else if (IsImage(entry.extension)) {
@@ -1287,7 +1291,7 @@ void EditorLayer::DrawAssetBrowserPanel() {
                     }
                     if (IsScene(entry.extension)) {
                         if (ImGui::MenuItem("Open Scene")) {
-                            OpenScene(entry.fullPath);
+                            RequestOpenScene(entry.fullPath);
                         }
                     }
                     if (IsScript(entry.extension) || IsShader(entry.extension)) {
@@ -1364,7 +1368,10 @@ void EditorLayer::DrawAssetBrowserPanel() {
                 }
                 if (ImGui::BeginDragDropTarget()) {
                     if (const ImGuiPayload* pl = ImGui::AcceptDragDropPayload("ASSET_PATH")) {
-                        if (MoveAssetIntoFolder(std::string(static_cast<const char*>(pl->Data)), entry.fullPath)) {
+                        const std::string movedFrom(static_cast<const char*>(pl->Data));
+                        const std::string movedTo = MoveAssetIntoFolder(movedFrom, entry.fullPath);
+                        if (!movedTo.empty()) {
+                            OnAssetMoved(movedFrom, movedTo);
                             m_AssetBrowserSelected.clear();
                             m_AssetBrowserCacheDirty = true;
                         }
@@ -1382,7 +1389,7 @@ void EditorLayer::DrawAssetBrowserPanel() {
                         if (IsModel(entry.extension)) {
                             ImportModel(entry.fullPath);
                         } else if (IsScene(entry.extension)) {
-                            OpenScene(entry.fullPath);
+                            RequestOpenScene(entry.fullPath);
                         } else if (IsScript(entry.extension) || IsShader(entry.extension)) {
                             OpenInExternalIDE(entry.fullPath);
                         } else if (IsImage(entry.extension)) {
@@ -1481,7 +1488,7 @@ void EditorLayer::DrawAssetBrowserPanel() {
                     }
                     if (IsScene(entry.extension)) {
                         if (ImGui::MenuItem("Open Scene")) {
-                            OpenScene(entry.fullPath);
+                            RequestOpenScene(entry.fullPath);
                         }
                     }
                     if (IsScript(entry.extension) || IsShader(entry.extension)) {
@@ -1542,12 +1549,18 @@ void EditorLayer::DrawSceneListPanel() {
     ImGui::Separator();
 
     // Project name editing
+    // Refilled when the project changes: it kept the FIRST project's name, and
+    // pressing Enter wrote that name onto whichever project was open.
     static char projectNameBuf[256] = {};
-    if (projectNameBuf[0] == '\0') {
+    static std::string projectNameFor;
+    if (projectNameFor != m_SceneManager.GetProjectPath()) {
+        projectNameFor = m_SceneManager.GetProjectPath();
         std::strncpy(projectNameBuf, m_SceneManager.GetProjectName().c_str(), sizeof(projectNameBuf) - 1);
+        projectNameBuf[sizeof(projectNameBuf) - 1] = '\0';
     }
     if (ImGui::InputText("Project Name", projectNameBuf, sizeof(projectNameBuf), ImGuiInputTextFlags_EnterReturnsTrue)) {
         m_SceneManager.SetProjectName(projectNameBuf);
+        if (!m_SceneManager.GetProjectPath().empty()) m_SceneManager.SaveProject();
     }
     ImGui::Separator();
 
@@ -1599,61 +1612,29 @@ void EditorLayer::DrawSceneListPanel() {
     ImGui::Text("Scenes (%zu)", m_SceneManager.GetSceneCount());
     ImGui::SameLine();
     if (ImGui::SmallButton("+ Add Current Scene")) {
-        // Add current scene to the project
-        std::string sceneName = "Unnamed Scene";
-        if (!m_CurrentScenePath.empty()) {
-            sceneName = std::filesystem::path(m_CurrentScenePath).stem().string();
-        }
-        std::string scenePath = m_CurrentScenePath;
-        if (scenePath.empty()) {
-            // Prompt to save first
-            std::vector<FileFilter> filters = {
-                { "Enjin Scene", "*.enjin" },
-                { "All Files", "*.*" }
-            };
-            scenePath = FileDialog::SaveFile("Save Scene to Add", filters, "", "scene.enjin");
-            if (!scenePath.empty()) {
-                SaveScene(scenePath);
-                sceneName = std::filesystem::path(scenePath).stem().string();
-            }
-        }
-        if (!scenePath.empty()) {
-            // Use path relative to project root if possible
-            std::string relativePath = scenePath;
-            std::string projectRoot = m_SceneManager.GetProjectPath().empty() ? "" :
-                std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path().string();
-            if (!projectRoot.empty()) {
-                std::filesystem::path absScene = std::filesystem::absolute(scenePath);
-                std::filesystem::path absRoot = std::filesystem::absolute(projectRoot);
-                std::string rel = Platform::MakeRelativeToRoot(absRoot.string(), absScene.string());
-                if (!rel.empty()) {
-                    relativePath = rel;
-                }
-            }
-            m_SceneManager.AddScene(sceneName, relativePath);
+        // A never-saved scene is saved INTO the project first (SaveScene lists
+        // it). A scene outside the project folder is refused: it used to be
+        // stored as an absolute path, which builds here and nowhere else.
+        if (m_CurrentScenePath.empty()) {
+            std::vector<FileFilter> filters = {{ "Enjin Scene", "*.enjin" }};
+            const std::string startDir = m_SceneManager.GetProjectPath().empty() ? std::string()
+                : (std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path() / "scenes").string();
+            const std::string scenePath = FileDialog::SaveFile("Save Scene to Add", filters, startDir, "Scene.enjin");
+            if (!scenePath.empty()) SaveScene(scenePath);
+        } else if (!AddSceneToProjectIfInside(m_CurrentScenePath)) {
+            ShowNotification("This scene is outside the project's folder. Use Save Scene As to put "
+                             "it in the project first.", NotificationType::Warning);
         }
     }
     ImGui::SameLine();
     if (ImGui::SmallButton("+ Add Scene File...")) {
-        std::vector<FileFilter> filters = {
-            { "Enjin Scene", "*.enjin" },
-            { "All Files", "*.*" }
-        };
-        std::string path = FileDialog::OpenFile("Add Scene to Project", filters);
-        if (!path.empty()) {
-            std::string name = std::filesystem::path(path).stem().string();
-            std::string relativePath = path;
-            std::string projectRoot = m_SceneManager.GetProjectPath().empty() ? "" :
-                std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path().string();
-            if (!projectRoot.empty()) {
-                std::filesystem::path absScene = std::filesystem::absolute(path);
-                std::filesystem::path absRoot = std::filesystem::absolute(projectRoot);
-                std::string rel = Platform::MakeRelativeToRoot(absRoot.string(), absScene.string());
-                if (!rel.empty()) {
-                    relativePath = rel;
-                }
-            }
-            m_SceneManager.AddScene(name, relativePath);
+        std::vector<FileFilter> filters = {{ "Enjin Scene", "*.enjin" }};
+        const std::string startDir = m_SceneManager.GetProjectPath().empty() ? std::string()
+            : std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path().string();
+        const std::string path = FileDialog::OpenFile("Add Scene to Project", filters, startDir);
+        if (!path.empty() && !AddSceneToProjectIfInside(path)) {
+            ShowNotification("That scene is outside the project's folder, so it can't be listed. "
+                             "Open it and Save Scene As into the project.", NotificationType::Warning);
         }
     }
 
@@ -1689,16 +1670,11 @@ void EditorLayer::DrawSceneListPanel() {
         bool selected = false;
         if (ImGui::Selectable(scene.name.c_str(), &selected, ImGuiSelectableFlags_AllowDoubleClick)) {
             if (ImGui::IsMouseDoubleClicked(0)) {
-                // Double click to load scene. LoadScene has four failure
-                // returns and the serializer clears the world before it can
-                // fail, so an unchecked call leaves an empty viewport under a
-                // green toast.
-                if (m_SceneManager.LoadScene(scene.name)) {
-                    ShowNotification("Scene loaded: " + scene.name, NotificationType::Success);
-                } else {
-                    ShowNotification("Could not load scene: " + scene.name + " (see Console)",
-                                     NotificationType::Error);
-                }
+                // Through the editor's own open (unsaved-changes prompt, undo,
+                // current path). SceneManager::LoadScene has no world in the
+                // editor and failed every time.
+                RequestOpenScene((std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path()
+                                  / scene.path).string());
             }
         }
         if (isCurrent) {
@@ -1712,21 +1688,9 @@ void EditorLayer::DrawSceneListPanel() {
 
         // Context menu
         if (ImGui::BeginPopupContextItem("SceneContextMenu")) {
-            if (ImGui::MenuItem("Load")) {
-                if (m_SceneManager.LoadScene(scene.name)) {
-                    ShowNotification("Scene loaded: " + scene.name, NotificationType::Success);
-                } else {
-                    ShowNotification("Could not load scene: " + scene.name + " (see Console)",
-                                     NotificationType::Error);
-                }
-            }
-            if (ImGui::MenuItem("Load Additive")) {
-                if (m_SceneManager.LoadSceneAdditive(scene.name)) {
-                    ShowNotification("Scene loaded (additive): " + scene.name, NotificationType::Success);
-                } else {
-                    ShowNotification("Could not load scene: " + scene.name + " (see Console)",
-                                     NotificationType::Error);
-                }
+            if (ImGui::MenuItem("Open")) {
+                RequestOpenScene((std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path()
+                                  / scene.path).string());
             }
             ImGui::Separator();
             if (ImGui::MenuItem("Set as Start Scene")) {
@@ -1751,16 +1715,28 @@ void EditorLayer::DrawSceneListPanel() {
         ImGui::PopID();
     }
 
-    // Apply deferred operations
+    // Apply deferred operations, then the one build-order rule, then SAVE: these
+    // edits used to live only in memory until "Save Project", and a build reads
+    // the manifest from disk.
+    bool listChanged = false;
     if (setStartIdx >= 0) {
-        m_SceneManager.SetStartScene(static_cast<usize>(setStartIdx));
+        // Start scene = first included scene, so: include it and move it to the top.
+        auto& list = m_SceneManager.GetScenes();
+        if (static_cast<usize>(setStartIdx) < list.size()) {
+            list[setStartIdx].buildIndex = 0;
+            if (setStartIdx > 0) m_SceneManager.MoveScene(static_cast<usize>(setStartIdx), 0);
+            listChanged = true;
+        }
     }
     if (moveFromIdx >= 0 && moveToIdx >= 0) {
         m_SceneManager.MoveScene(static_cast<usize>(moveFromIdx), static_cast<usize>(moveToIdx));
+        listChanged = true;
     }
     if (removeIndex >= 0) {
         m_SceneManager.RemoveScene(static_cast<usize>(removeIndex));
+        listChanged = true;
     }
+    if (listChanged) ApplyBuildOrderAndSave();
 
     ImGui::Separator();
 
@@ -1769,53 +1745,19 @@ void EditorLayer::DrawSceneListPanel() {
         m_SceneManager.AutoAssignBuildIndices();
     }
     ImGui::SameLine();
-    if (ImGui::Button("Save Project")) {
-        if (m_SceneManager.GetProjectPath().empty()) {
-            std::vector<FileFilter> filters = {
-                { "Enjin Project", "*.enjinproject" },
-                { "All Files", "*.*" }
-            };
-            std::string path = FileDialog::SaveFile("Save Project", filters, "", "project.enjinproject");
-            if (!path.empty()) {
-                if (!m_SceneManager.SaveProject(path)) {
-                    ShowNotification("Failed to save project", NotificationType::Error);
-                }
-            }
-        } else {
-            if (!m_SceneManager.SaveProject()) {
-                ShowNotification("Failed to save project", NotificationType::Error);
-            }
-        }
+    // No project, no Save Project: this used to write a manifest wherever the
+    // save dialog pointed, making a project with no folders around it.
+    const bool haveProject = !m_SceneManager.GetProjectPath().empty();
+    if (!haveProject) ImGui::BeginDisabled();
+    if (ImGui::Button("Save Project") && !m_SceneManager.SaveProject()) {
+        ShowNotification("Failed to save project", NotificationType::Error);
     }
+    if (!haveProject) ImGui::EndDisabled();
 
-    ImGui::Separator();
-
-    // Scene transition controls
-    ImGui::Text("Scene Transitions");
-    static int transType = 0;
-    ImGui::Combo("Transition", &transType, "Instant\0Fade Black\0Fade White\0Cross Fade\0");
-    static float transDuration = 0.5f;
-    ImGui::SliderFloat("Duration", &transDuration, 0.1f, 3.0f, "%.1f s");
-
-    if (m_SceneManager.IsTransitioning()) {
-        ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.3f, 1.0f), "Transitioning... (%.0f%%)",
-            m_SceneManager.GetTransitionAlpha() * 100.0f);
-    }
-
-    // Quick load buttons for each scene
-    if (scenes.size() > 0) {
-        ImGui::Text("Quick Load:");
-        for (usize i = 0; i < scenes.size(); ++i) {
-            if (i > 0) ImGui::SameLine();
-            ImGui::PushID(static_cast<int>(i) + 1000);
-            if (ImGui::SmallButton(scenes[i].name.c_str())) {
-                Scene::TransitionType tt = static_cast<Scene::TransitionType>(transType);
-                m_SceneManager.LoadSceneWithTransition(scenes[i].name, tt, transDuration);
-            }
-            ImGui::PopID();
-        }
-    }
-
+    // (Scene transitions and Quick Load lived here. They drive the RUNTIME
+    // scene manager, which has no world in the editor, so every button reported
+    // "Could not load scene". Transitions are authored in scripts and play in
+    // the game.)
     ImGui::End();
 }
 
@@ -2281,7 +2223,7 @@ void EditorLayer::ExecuteConsoleCommand(const std::string& command) {
         if (path.empty()) {
             m_ConsoleLog.push_back("Usage: load <filepath>");
         } else {
-            OpenScene(path);
+            RequestOpenScene(path);
             m_ConsoleLog.push_back("Loaded scene from " + path);
         }
     // =====================================================================
@@ -5932,17 +5874,14 @@ void EditorLayer::RegisterPaletteCommands() {
         "Save Scene", "Scene", "Ctrl+S",
         "Save the current scene",
         [this]() {
-            if (!m_CurrentScenePath.empty()) SaveScene(m_CurrentScenePath);
+            // A never-saved scene asks where, like the menu (this did nothing).
+            SaveSceneOrAsk();
         }
     });
     m_CommandPalette.RegisterCommand({
         "Save Scene As...", "Scene", "Ctrl+Shift+S",
         "Save the current scene to a new file",
-        [this]() {
-            std::vector<FileFilter> filters = {{ "Enjin Scene", "*.enjin" }};
-            std::string path = FileDialog::SaveFile("Save Scene As", filters, "", "scene.enjin");
-            if (!path.empty()) SaveScene(path);
-        }
+        [this]() { SaveSceneAsDialog(); }
     });
     m_CommandPalette.RegisterCommand({
         "Open Scene...", "Scene", "Ctrl+O",
@@ -5950,7 +5889,7 @@ void EditorLayer::RegisterPaletteCommands() {
         [this]() {
             std::vector<FileFilter> filters = {{ "Enjin Scene", "*.enjin" }};
             std::string path = FileDialog::OpenFile("Open Scene", filters);
-            if (!path.empty()) OpenScene(path);
+            if (!path.empty()) RequestOpenScene(path);
         }
     });
     m_CommandPalette.RegisterCommand({

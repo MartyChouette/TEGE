@@ -210,12 +210,18 @@ static std::string DuplicateProject(const std::string& projectFilePath) {
         destDir = parentDir / destName;
     }
 
-    // Copy the entire folder
+    // Copy the project, not its history or its output: a copied .git made the
+    // duplicate share the original's repository, and Build/ is regenerated.
     std::error_code ec;
-    fs::copy(srcDir, destDir, fs::copy_options::recursive, ec);
-    if (ec) {
-        ENJIN_LOG_ERROR(Build, "Failed to duplicate project: %s", ec.message().c_str());
-        return "";
+    fs::create_directories(destDir, ec);
+    for (const auto& entry : fs::directory_iterator(srcDir, ec)) {
+        const std::string leaf = entry.path().filename().string();
+        if (leaf == ".git" || leaf == "Build") continue;
+        fs::copy(entry.path(), destDir / leaf, fs::copy_options::recursive, ec);
+        if (ec) {
+            ENJIN_LOG_ERROR(Build, "Failed to duplicate project: %s", ec.message().c_str());
+            return "";
+        }
     }
 
     // Rename the .enjinproject file inside the copy to match the new folder name
@@ -228,6 +234,21 @@ static std::string DuplicateProject(const std::string& projectFilePath) {
             // Return the old file path as fallback
             return oldProjFile.string();
         }
+    }
+
+    // And the name INSIDE it, which stayed the original's. Any scene listed by
+    // an absolute path into the original is pointed at the copy's own file, or
+    // the duplicate would go on editing the original's scenes.
+    Scene::SceneManager copy;
+    if (copy.LoadProject(newProjFile.string())) {
+        copy.SetProjectName(destName);
+        for (auto& e : copy.GetScenes()) {
+            const fs::path p(e.path);
+            if (!p.is_absolute()) continue;
+            const fs::path rel = fs::weakly_canonical(p, ec).lexically_relative(fs::weakly_canonical(srcDir, ec));
+            if (!rel.empty() && rel.native()[0] != '.') e.path = rel.generic_string();
+        }
+        copy.SaveProject(newProjFile.string());
     }
 
     return newProjFile.string();
@@ -266,18 +287,29 @@ void EditorLayer::DrawProjectHubInner() {
         // the hub while every file stayed on disk -- under a modal that promises
         // "This will permanently delete the project folder. This cannot be
         // undone." Neither outcome said anything.
+        //
+        // And to the TRASH, not remove_all. The folder deleted is the manifest's
+        // parent, whatever that is: a manifest that ended up in a shared folder
+        // (the old auto-create put them next to loose scenes and models) took
+        // everything beside it, permanently. ProjectFolderDeleteProblem refuses
+        // folders that are not plainly one project's; the trash makes the rest
+        // undoable.
         bool removed = false;
         std::string why;
         try {
             std::filesystem::path delDir = std::filesystem::path(pathToDelete).parent_path();
+            std::error_code ec;
             if (delDir.empty()) {
                 why = "the project path has no folder";
-            } else if (!std::filesystem::exists(delDir)) {
+            } else if (!std::filesystem::exists(delDir, ec)) {
                 removed = true;   // already gone; dropping it from Recents is right
+            } else if (const std::string problem = ProjectFolderDeleteProblem(pathToDelete);
+                       !problem.empty()) {
+                why = problem;
+            } else if (Platform::MoveToTrash(delDir.string())) {
+                removed = true;
             } else {
-                std::error_code ec;
-                std::filesystem::remove_all(delDir, ec);
-                if (ec) why = ec.message(); else removed = true;
+                why = "it could not be moved to the Recycle Bin";
             }
         } catch (const std::exception& e) {
             why = e.what();
@@ -286,7 +318,7 @@ void EditorLayer::DrawProjectHubInner() {
         if (removed) {
             m_EditorSettings.RemoveRecentProject(pathToDelete);
             m_EditorSettings.Save();
-            ShowNotification("Deleted project folder", NotificationType::Success);
+            ShowNotification("Moved the project folder to the Recycle Bin", NotificationType::Success);
         } else {
             // Left in Recents on purpose: the files are still there, and a
             // project you can no longer see is harder to recover than one you can.
@@ -440,9 +472,18 @@ void EditorLayer::DrawProjectHubInner() {
             m_HubShowDeleteConfirm = false;
         }
         if (ImGui::BeginPopupModal("Delete Project?", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+            const std::string delFolder =
+                std::filesystem::path(m_HubDeleteProjectPath).parent_path().string();
+            const std::string delProblem = ProjectFolderDeleteProblem(m_HubDeleteProjectPath);
             ImGui::Text("Delete project '%s'?", m_HubDeleteProjectName.c_str());
-            ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "This will permanently delete the project folder.");
-            ImGui::Text("This cannot be undone.");
+            ImGui::Text("This folder and everything in it:");
+            ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.5f, 1.0f), "%s", delFolder.c_str());
+            if (delProblem.empty()) {
+                ImGui::Text("will be moved to the Recycle Bin.");
+            } else {
+                ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Can't delete it here: %s", delProblem.c_str());
+                ImGui::TextDisabled("Remove from List takes it off this list without touching files.");
+            }
             ImGui::Spacing();
             ImGui::Separator();
             ImGui::Spacing();
@@ -456,7 +497,10 @@ void EditorLayer::DrawProjectHubInner() {
             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.15f, 0.15f, 1.0f));
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.85f, 0.2f, 0.2f, 1.0f));
             ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.95f, 0.25f, 0.25f, 1.0f));
-            if (ImGui::Button("Delete", ImVec2(120, 0))) {
+            if (!delProblem.empty()) ImGui::BeginDisabled();
+            const bool deleteClicked = ImGui::Button("Delete", ImVec2(120, 0));
+            if (!delProblem.empty()) ImGui::EndDisabled();
+            if (deleteClicked) {
                 // Store path for deferred deletion — actual work happens
                 // at the START of next DrawProjectHub call, after the UI
                 // loop is done with the recentProjects vector.
@@ -723,7 +767,7 @@ void EditorLayer::DrawHubLandingPage(ImDrawList* dl, const ImVec2& area, f32 /*c
         std::string path = FileDialog::OpenFile("Open Scene", filters);
         if (!path.empty()) {
             m_ShowProjectHub = false;
-            OpenScene(path);
+            RequestOpenScene(path);
         }
     }
 
@@ -733,20 +777,7 @@ void EditorLayer::DrawHubLandingPage(ImDrawList* dl, const ImVec2& area, f32 /*c
                       IM_COL32(30, 34, 48, 255), IM_COL32(45, 52, 72, 255))) {
         std::vector<FileFilter> filters = {{ "Enjin Project", "*.enjinproject" }, { "All Files", "*.*" }};
         std::string path = FileDialog::OpenFile("Open Project", filters);
-        if (!path.empty()) {
-            if (m_SceneManager.LoadProject(path)) {
-                MigrateEditorSettingsToProject();
-                m_EditorSettings.AddRecentProject(path);
-                m_EditorSettings.lastProjectDir = std::filesystem::path(path).parent_path().parent_path().string();
-                m_EditorSettings.Save();
-                auto& scenes = m_SceneManager.GetScenes();
-                if (!scenes.empty()) {
-                    auto projDir = std::filesystem::path(path).parent_path();
-                    OpenScene((projDir / scenes[0].path).string());
-                }
-                m_ShowProjectHub = false;
-            }
-        }
+        RequestOpenProject(path);
     }
 
     // + New Project (primary accent)
@@ -1050,18 +1081,7 @@ void EditorLayer::DrawHubLandingPage(ImDrawList* dl, const ImVec2& area, f32 /*c
 
                 // Click to open
                 if (hovered && ImGui::IsMouseClicked(0)) {
-                    if (m_SceneManager.LoadProject(proj->fullPath)) {
-                        MigrateEditorSettingsToProject();
-                        m_EditorSettings.AddRecentProject(proj->fullPath);
-                        m_EditorSettings.lastProjectDir = std::filesystem::path(proj->fullPath).parent_path().parent_path().string();
-                        m_EditorSettings.Save();
-                        auto& scenes = m_SceneManager.GetScenes();
-                        if (!scenes.empty()) {
-                            auto projDir = std::filesystem::path(proj->fullPath).parent_path();
-                            OpenScene((projDir / scenes[0].path).string());
-                        }
-                        m_ShowProjectHub = false;
-                    }
+                    RequestOpenProject(proj->fullPath);
                 }
 
                 // Right-click context menu (works on both ready and missing cards)
@@ -1880,6 +1900,14 @@ void EditorLayer::DrawHubWizardTemplate(ImDrawList* dl, const ImVec2& area, f32 
     }
     bool canCreate = (std::strlen(m_NewProjectName) > 0 && std::strlen(m_NewProjectPath) > 0 &&
                      std::strlen(m_NewSceneName) > 0 && !templateLocked);
+    // Said here, before the click, not after it.
+    const std::string folderProblem =
+        NewProjectFolderProblem(m_NewProjectPath, m_NewProjectName, m_NewSceneName);
+    if (!folderProblem.empty()) {
+        canCreate = false;
+        dl->AddText(nullptr, 16.0f, ImVec2(sidebarW + 40.0f, bottomY - 40.0f),
+                    IM_COL32(240, 190, 90, 255), folderProblem.c_str());
+    }
 
     // "< Back" link
     f32 backFontSize = 20.0f;
@@ -1966,7 +1994,7 @@ void EditorLayer::DrawHubWizardTemplate(ImDrawList* dl, const ImVec2& area, f32 
 
     // "Start Blank" link — always available if form fields are filled (ignores template selection)
     bool canStartBlank = (std::strlen(m_NewProjectName) > 0 && std::strlen(m_NewProjectPath) > 0 &&
-                          std::strlen(m_NewSceneName) > 0);
+                          std::strlen(m_NewSceneName) > 0) && folderProblem.empty();
     f32 blankFontSize = 18.0f;
     const char* blankText = "Start Blank";
     ImVec2 blankSz = font->CalcTextSizeA(blankFontSize, FLT_MAX, 0.0f, blankText);
@@ -2296,6 +2324,12 @@ static std::string CopyExampleProject(const std::string& srcFolder,
     namespace fs = std::filesystem;
     std::error_code ec;
 
+    if (const std::string problem = EditorLayer::NewProjectFolderProblem(destDir, projectName);
+        !problem.empty()) {
+        ENJIN_LOG_ERROR(Editor, "Not creating project: %s", problem.c_str());
+        return {};
+    }
+
     const fs::path src(srcFolder);
     if (!fs::is_directory(src, ec)) {
         ENJIN_LOG_ERROR(Editor, "Example folder is gone: %s", srcFolder.c_str());
@@ -2510,9 +2544,70 @@ static bool CopyBuiltinTemplate(const std::string& templateId,
     return true;
 }
 
+std::string EditorLayer::ProjectFolderDeleteProblem(const std::string& manifestPath) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    const fs::path dir = fs::weakly_canonical(fs::path(manifestPath).parent_path(), ec);
+    if (dir.empty() || dir == dir.root_path()) return "that is a whole drive.";
+
+    // The user's own top-level folders: never "a project", whatever is in them.
+    const char* homeEnv =
+#ifdef _WIN32
+        std::getenv("USERPROFILE");
+#else
+        std::getenv("HOME");
+#endif
+    if (homeEnv) {
+        const fs::path home = fs::weakly_canonical(homeEnv, ec);
+        for (const char* sub : { "", "Documents", "Desktop", "Downloads", "Pictures", "Music", "Videos" }) {
+            if (dir == fs::weakly_canonical(home / sub, ec)) return "that is one of your personal folders.";
+        }
+    }
+
+    u32 own = 0;
+    for (const auto& e : fs::directory_iterator(dir, ec)) {
+        if (e.is_regular_file(ec) && e.path().extension() == ".enjinproject") ++own;
+    }
+    if (own != 1) return "that folder holds more than one project.";
+
+    for (auto it = fs::recursive_directory_iterator(dir, fs::directory_options::skip_permission_denied, ec);
+         it != fs::recursive_directory_iterator(); it.increment(ec)) {
+        if (ec) break;
+        if (it.depth() > 0 && it->path().extension() == ".enjinproject")
+            return "another project is inside it (" +
+                   fs::relative(it->path(), dir, ec).string() + ").";
+    }
+    return {};
+}
+
+std::string EditorLayer::NewProjectFolderProblem(const std::string& location, const std::string& name,
+                                                 const std::string& sceneName) {
+    namespace fs = std::filesystem;
+    if (name.empty()) return "Give the project a name.";
+    if (!Platform::IsSafeFileName(name)) return "The project name can't contain slashes or \"..\".";
+    if (!sceneName.empty() && !Platform::IsSafeFileName(sceneName))
+        return "The scene name can't contain slashes or \"..\".";
+    if (location.empty()) return "Choose where to put the project.";
+    std::error_code ec;
+    const fs::path root = fs::path(location) / name;
+    if (fs::exists(root, ec)) {
+        if (!fs::is_directory(root, ec)) return "A file called \"" + name + "\" is already there.";
+        if (!fs::is_empty(root, ec))
+            return "A folder called \"" + name + "\" already exists there. Pick another name.";
+    }
+    return {};
+}
+
 bool EditorLayer::CreateProjectOnDisk(const std::string& projectDir, const std::string& projectName,
                                       const std::string& sceneName, const std::string& templateId) {
     namespace fs = std::filesystem;
+
+    if (const std::string problem = NewProjectFolderProblem(projectDir, projectName, sceneName);
+        !problem.empty()) {
+        ShowNotification(problem, NotificationType::Error);
+        ENJIN_LOG_ERROR(Editor, "Not creating project: %s", problem.c_str());
+        return false;
+    }
 
     // Build full project path
     fs::path projRoot = fs::path(projectDir) / projectName;
@@ -2623,7 +2718,24 @@ bool EditorLayer::CreateProjectOnDisk(const std::string& projectDir, const std::
     //
     // There is no generator to fall back to any more, so a missing folder says so
     // rather than quietly producing an empty project.
-    if (CopyBuiltinTemplate(templateId, projRoot, relativeScenePath)) {
+    if (templateId.rfind("custom:", 0) == 0) {
+        // A saved template is a single scene file; "custom:N" is its index.
+        // This used to be looked up as builtin_templates/custom:N/, which never
+        // exists, so every project made from a custom template came out empty
+        // with a manifest naming a scene that was never written.
+        const int ci = std::atoi(templateId.c_str() + 7);
+        std::error_code tec;
+        if (ci >= 0 && ci < static_cast<int>(m_CustomTemplatePaths.size())) {
+            fs::create_directories((projRoot / relativeScenePath).parent_path(), tec);
+            fs::copy_file(m_CustomTemplatePaths[ci], projRoot / relativeScenePath,
+                          fs::copy_options::overwrite_existing, tec);
+        }
+        if (tec || ci < 0 || ci >= static_cast<int>(m_CustomTemplatePaths.size())) {
+            ENJIN_LOG_ERROR(Editor, "Custom template %d could not be copied; the project was created empty.", ci);
+            ShowNotification("That template could not be copied; the project starts empty.",
+                             NotificationType::Warning);
+        }
+    } else if (CopyBuiltinTemplate(templateId, projRoot, relativeScenePath)) {
         ApplyTemplateLayout(templateId);
     } else if (templateId != "blank") {
         ENJIN_LOG_ERROR(Editor,
@@ -2938,7 +3050,14 @@ int EditorLayer::CreateProjectFromTemplate(const std::string& templateId,
 
     std::error_code ec;
     const fs::path proj = fs::path(outDir);
-    fs::create_directories(proj / "scenes", ec);
+    // Before ANYTHING is created: the scenes/ folder below would make every
+    // target look non-empty to the check.
+    if (const std::string problem =
+            NewProjectFolderProblem(proj.parent_path().string(), proj.filename().string());
+        !problem.empty()) {
+        std::printf("[new-from-template] %s\n", problem.c_str());
+        return 1;
+    }
 
     // Two kinds of template, the same way the hub sees them: a whole project
     // under Examples/, or a scene folder under builtin_templates/.
@@ -2953,6 +3072,9 @@ int EditorLayer::CreateProjectFromTemplate(const std::string& templateId,
         return 0;
     }
 
+    // Only this kind needs the folder made first; an example copy makes its own
+    // and checks that the target is empty.
+    fs::create_directories(proj / "scenes", ec);
     if (!CopyBuiltinTemplate(templateId, proj, "scenes/Main.enjin")) {
         std::printf("[new-from-template] template copy failed\n");
         return 1;
@@ -3118,12 +3240,18 @@ int EditorLayer::ValidateBuiltinTemplates() {
     return bad == 0 ? 0 : 1;
 }
 
+std::string EditorLayer::CustomTemplatesDir() {
+    return (std::filesystem::path(EditorSettings::GetDefaultPath()).parent_path() / "templates").string();
+}
+
 void EditorLayer::SaveCustomTemplate(const std::string& name) {
     if (!m_World) return;
 
-    // Create templates directory next to the executable
-    std::filesystem::path templateDir = "templates";
-    std::filesystem::create_directories(templateDir);
+    // Beside the editor settings. This was "templates" relative to the process's
+    // working directory, which is wherever the editor was launched from.
+    const std::filesystem::path templateDir = CustomTemplatesDir();
+    std::error_code dirEc;
+    std::filesystem::create_directories(templateDir, dirEc);
 
     // Sanitize name for filename
     std::string safeName = name;
@@ -3135,6 +3263,7 @@ void EditorLayer::SaveCustomTemplate(const std::string& name) {
     }
 
     std::string filepath = (templateDir / (safeName + ".enjin")).string();
+    const bool replacing = std::filesystem::exists(filepath, dirEc);
 
     Scene::SceneSerializer serializer(m_World);
     Scene::SerializationOptions opts;
@@ -3151,6 +3280,8 @@ void EditorLayer::SaveCustomTemplate(const std::string& name) {
             m_CustomTemplateNames.push_back(name);
             m_CustomTemplatePaths.push_back(filepath);
         }
+        ShowNotification(std::string(replacing ? "Replaced" : "Saved") + " template '" + name + "'",
+                         NotificationType::Success);
         ENJIN_LOG_INFO(Editor, "Saved custom template: %s -> %s", name.c_str(), filepath.c_str());
     }
 }
@@ -3159,16 +3290,22 @@ void EditorLayer::LoadCustomTemplates() {
     m_CustomTemplateNames.clear();
     m_CustomTemplatePaths.clear();
 
-    std::filesystem::path templateDir = "templates";
-    if (!std::filesystem::exists(templateDir)) return;
-
-    for (const auto& entry : std::filesystem::directory_iterator(templateDir)) {
-        if (entry.is_regular_file() && entry.path().extension() == ".enjin") {
+    // The current folder, then the old working-directory one, so templates
+    // saved before the move still appear. The first of a name wins.
+    for (const std::filesystem::path templateDir : { std::filesystem::path(CustomTemplatesDir()),
+                                                     std::filesystem::path("templates") }) {
+        std::error_code ec;
+        if (!std::filesystem::is_directory(templateDir, ec)) continue;
+        for (const auto& entry : std::filesystem::directory_iterator(templateDir, ec)) {
+            if (!entry.is_regular_file() || entry.path().extension() != ".enjin") continue;
             std::string name = entry.path().stem().string();
             // Replace underscores with spaces for display
             for (char& c : name) {
                 if (c == '_') c = ' ';
             }
+            bool seen = false;
+            for (const auto& n : m_CustomTemplateNames) if (n == name) { seen = true; break; }
+            if (seen) continue;
             m_CustomTemplateNames.push_back(name);
             m_CustomTemplatePaths.push_back(entry.path().string());
         }

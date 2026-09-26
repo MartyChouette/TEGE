@@ -554,10 +554,11 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
             if (m_ShowProjectHub || m_PendingQuit) {
                 return true; // Allow close
             }
-            // If a quit prompt or unsaved changes dialog is already active and user closes again, allow close
-            if (m_ShowUnsavedChangesDialog || m_ShowQuitFeedbackDialog) {
-                return true; // Allow immediate close
-            }
+            // A second close while the unsaved-changes prompt is up used to quit
+            // on the spot, unsaved. The prompt stays until it is answered. During
+            // the quit survey nothing is at stake, so a second close is a quit.
+            if (m_ShowUnsavedChangesDialog) return false;
+            if (m_ShowQuitFeedbackDialog) return true;
             if (m_SceneDirty) {
                 m_UnsavedChangesAction = UnsavedAction::Quit;
                 m_ShowUnsavedChangesDialog = true;
@@ -614,21 +615,13 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
         s_LaunchProjectPath.clear();
 
         if (fs::exists(launchPath)) {
-            if (launchPath.find(".enjinproject") != std::string::npos) {
-                if (m_SceneManager.LoadProject(launchPath)) {
-                    m_EditorSettings.AddRecentProject(launchPath);
-                    m_EditorSettings.lastProjectDir = fs::path(launchPath).parent_path().string();
-                    m_EditorSettings.Save();
-                    auto& scenes = m_SceneManager.GetScenes();
-                    if (!scenes.empty()) {
-                        auto projDir = fs::path(launchPath).parent_path();
-                        OpenScene((projDir / scenes[0].path).string());
-                    }
-                    m_ShowProjectHub = false;
-                    m_ShowSplash = false;
-                    ENJIN_LOG_INFO(Editor, "Opened project from launch: %s", launchPath.c_str());
-                }
-            } else if (launchPath.find(".enjin") != std::string::npos) {
+            if (fs::path(launchPath).extension() == ".enjinproject") {
+                // The same open as every other path (it used to skip the
+                // project's settings migration and store the wrong last folder).
+                OpenProjectFromPath(launchPath);
+                m_ShowSplash = false;
+                ENJIN_LOG_INFO(Editor, "Opened project from launch: %s", launchPath.c_str());
+            } else if (fs::path(launchPath).extension() == ".enjin") {
                 OpenScene(launchPath);
                 m_ShowProjectHub = false;
                 m_ShowSplash = false;
@@ -1237,6 +1230,10 @@ void EditorLayer::Update(f32 deltaTime) {
                     if (resolved.empty()) return "error: path escapes the project root";
                     if (!std::filesystem::exists(resolved))
                         return "error: scene file not found: " + rel;
+                    // The editor's own Open asks about unsaved work; a tool
+                    // cannot be asked, so it refuses unless told to discard.
+                    if (m_SceneDirty && !args.value("discard", false))
+                        return "error: the open scene has unsaved changes (save_scene first, or pass discard=true)";
                     OpenSceneImmediate(resolved);
                     nlohmann::json j{{"opened", rel},
                                      {"entityCount", m_World ? m_World->GetAllEntities().size() : 0}};
@@ -1246,7 +1243,7 @@ void EditorLayer::Update(f32 deltaTime) {
                     if (!m_PlayMode.IsStopped())
                         return "error: refusing to save during play mode (play-state would be baked into the file)";
                     if (m_CurrentScenePath.empty()) return "error: no scene open";
-                    SaveScene(m_CurrentScenePath);
+                    if (!SaveScene(m_CurrentScenePath)) return "error: save failed (see the editor log)";
                     return "saved " + m_CurrentScenePath;
                 }
                 // save_scene_as and new_scene exist so that a streaming sub-scene
@@ -1265,11 +1262,16 @@ void EditorLayer::Update(f32 deltaTime) {
                     std::string projDir = std::filesystem::path(projPath).parent_path().string();
                     std::string resolved = Platform::ResolveWithinRoot(projDir, rel);
                     if (resolved.empty()) return "error: path escapes the project root";
+                    // Both wrote over an existing file without a word.
+                    if (std::filesystem::exists(resolved) && !args.value("overwrite", false))
+                        return "error: " + rel + " already exists (pass overwrite=true to replace it)";
+                    if (op == "new_scene" && m_SceneDirty && !args.value("discard", false))
+                        return std::string("error: the open scene has unsaved changes (save_scene first, or pass discard=true)");
                     std::error_code ec;
                     std::filesystem::create_directories(
                         std::filesystem::path(resolved).parent_path(), ec);
                     if (op == "save_scene_as") {
-                        SaveScene(resolved);
+                        if (!SaveScene(resolved)) return "error: save failed (see the editor log)";
                         m_CurrentScenePath = resolved;
                         ClearDirty();
                         UpdateWindowTitle();
@@ -1881,32 +1883,15 @@ void EditorLayer::Update(f32 deltaTime) {
     if (!m_PendingRecoveryLoadPath.empty()) {
         std::string recoveryPath = std::move(m_PendingRecoveryLoadPath);
         m_PendingRecoveryLoadPath.clear();
-        if (m_World) {
+        const std::string suffix = ".autosave";
+        if (recoveryPath.size() > suffix.size() &&
+            recoveryPath.compare(recoveryPath.size() - suffix.size(), suffix.size(), suffix) == 0) {
             if (m_Renderer) m_Renderer->WaitForAllFrames();
-            ClearSelection();
-            Scene::SceneSerializer serializer(m_World);
-            auto result = serializer.Load(recoveryPath, true);
-            if (result.success) {
-                if (m_RenderSystem) {
-                    m_RenderSystem->SetSkybox(serializer.GetSkyboxConfig());
-                }
-                const auto& loaded = serializer.GetRenderSettings();
-                m_CurrentSceneUsesProjectDefaults = loaded.useProjectDefaults;
-                if (loaded.useProjectDefaults) {
-                    m_SceneManager.GetDefaultRenderSettings().ApplyToRuntime(
-                        m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
-                    ApplySceneLUT(m_SceneManager.GetDefaultRenderSettings());
-                } else {
-                    loaded.ApplyToRuntime(
-                        m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
-                    ApplySceneLUT(loaded);
-                }
-                MarkDirty(); // Recovered scene has unsaved changes
+            const std::string scenePath = recoveryPath.substr(0, recoveryPath.size() - suffix.size());
+            OpenSceneImmediate(scenePath, recoveryPath);
+            if (m_CurrentScenePath == scenePath && m_SceneDirty) {
                 ENJIN_LOG_INFO(Editor, "Recovered from auto-save: %s", recoveryPath.c_str());
                 ShowNotification("Recovered auto-saved scene", NotificationType::Success);
-            } else {
-                ENJIN_LOG_ERROR(Editor, "Failed to load auto-save: %s", result.error.c_str());
-                ShowNotification("Failed to recover auto-save", NotificationType::Error);
             }
         }
     }
@@ -2383,22 +2368,11 @@ void EditorLayer::Update(f32 deltaTime) {
                                                               : EditorMode::Creative);
         }
 
-        // Save scene (Ctrl+S)
-        if (Input::IsKeyDown(KeyCode::LeftControl) && Input::IsKeyPressed(KeyCode::S)) {
-            if (!m_CurrentScenePath.empty()) {
-                SaveScene(m_CurrentScenePath);
-            } else {
-                // No path yet — open Save As dialog
-                std::vector<FileFilter> filters = {
-                    { "Enjin Scene", "*.enjin" },
-                    { "All Files", "*.*" }
-                };
-                auto projRoot = std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path().string();
-                std::string path = FileDialog::SaveFile("Save Scene", filters, projRoot, "scene.enjin");
-                if (!path.empty()) {
-                    SaveScene(path);
-                }
-            }
+        // Save scene (Ctrl+S). Not with Shift: Ctrl+Shift+S is Save As, and this
+        // saved over the current file before Save As even opened.
+        if (Input::IsKeyDown(KeyCode::LeftControl) && Input::IsKeyPressed(KeyCode::S) &&
+            !Input::IsKeyDown(KeyCode::LeftShift) && !Input::IsKeyDown(KeyCode::RightShift)) {
+            SaveSceneOrAsk();
         }
 
         // Focus on selected entity/entities (F key)
@@ -5050,6 +5024,9 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
     if (m_ShowUnsavedChangesDialog) {
         DrawUnsavedChangesDialog();
     }
+
+    // "This scene isn't in a project" (opening a loose scene, or Build with none)
+    DrawNoProjectPrompt();
 
     // Auto-save recovery dialog
     if (m_ShowAutoSaveRecoveryDialog) {

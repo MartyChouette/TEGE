@@ -1,5 +1,6 @@
 #include "EnjinTest.h"
 #include <filesystem>
+#include <fstream>
 #include <string>
 #include "Enjin/Scene/SceneManager.h"
 
@@ -392,6 +393,64 @@ ENJIN_TEST(ShipsAccessible, NewProjectDoesNotImposeATitleScreen) {
     Scene::SceneManager sm;
     sm.NewProject("Fresh");
     ENJIN_EXPECT_TRUE(sm.GetStartupFlow().empty());
+}
+
+// ===========================================================================
+// Switching projects starts from a clean slate
+// ===========================================================================
+
+ENJIN_TEST(ProjectSwitch, ANewProjectKeepsNothingFromTheOneBefore) {
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path() / "enjin_project_switch";
+    std::error_code ec;
+    fs::remove_all(dir, ec);
+    fs::create_directories(dir / "A", ec);
+    fs::create_directories(dir / "B", ec);
+    const std::string a = (dir / "A" / "A.enjinproject").string();
+    const std::string b = (dir / "B" / "B.enjinproject").string();
+
+    {
+        Scene::SceneManager sm;
+        sm.NewProject("A");
+        sm.SetWindowTitle("Project A Title");
+        sm.GetStartupFlow().push_back(Scene::StartupFlowStep{});
+        ENJIN_ASSERT_TRUE(sm.SaveProject(a));
+    }
+    {
+        // B's file has none of those keys written by hand.
+        std::ofstream f(b);
+        f << "{ \"projectName\": \"B\", \"scenes\": [] }";
+    }
+
+    Scene::SceneManager sm;
+    ENJIN_ASSERT_TRUE(sm.LoadProject(a));
+    ENJIN_EXPECT_TRUE(sm.GetWindowTitle() == "Project A Title");
+    ENJIN_EXPECT_EQ(sm.GetStartupFlow().size(), static_cast<size_t>(1));
+
+    // Loading B used to keep A's title and startup flow, because B's file
+    // simply does not mention them.
+    ENJIN_ASSERT_TRUE(sm.LoadProject(b));
+    ENJIN_EXPECT_TRUE(sm.GetWindowTitle() == "Enjin Game");
+    ENJIN_EXPECT_EQ(sm.GetStartupFlow().size(), static_cast<size_t>(0));
+
+    // And NewProject after A inherited A's startup flow the same way.
+    ENJIN_ASSERT_TRUE(sm.LoadProject(a));
+    sm.NewProject("C");
+    ENJIN_EXPECT_EQ(sm.GetStartupFlow().size(), static_cast<size_t>(0));
+    ENJIN_EXPECT_TRUE(sm.GetWindowTitle() == "Enjin Game");
+}
+
+ENJIN_TEST(ProjectSwitch, SavingANewProjectGivesItARoot) {
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path() / "enjin_project_root";
+    std::error_code ec;
+    fs::remove_all(dir, ec);
+    fs::create_directories(dir, ec);
+    Scene::SceneManager sm;
+    sm.NewProject("Rooted");
+    ENJIN_ASSERT_TRUE(sm.SaveProject((dir / "Rooted.enjinproject").string()));
+    // Only LoadProject set the root, so a created-and-saved project had none.
+    ENJIN_EXPECT_TRUE(fs::equivalent(fs::path(sm.GetProjectRoot()), dir, ec));
 }
 
 ENJIN_TEST_MAIN()

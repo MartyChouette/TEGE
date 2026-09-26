@@ -416,6 +416,7 @@ int main(int argc, char* argv[]) {
             Enjin::Editor::EditorLayer::s_AutoPlayOnLaunch = true;
             Enjin::Editor::EditorLayer::s_AutoPlayRequested = true;
         } else if (flag == "--play-cycle" && i + 1 < argc && argv[i + 1]) {
+            Enjin::Editor::EditorSettings::s_ReadOnly = true;   // automated: leave the person's settings alone
             Enjin::Editor::EditorLayer::s_PlayCycleFrames = std::atoi(argv[++i]);
             // Optional second number = stop after N cycles and exit with a code
             // (T4 stress: memory-bounded pass/fail). Omitted = cycle forever.
@@ -440,6 +441,7 @@ int main(int argc, char* argv[]) {
         } else if (flag == "--compute-skinning") {
             Enjin::Editor::EditorLayer::s_ComputeSkinningOnLaunch = true;
         } else if (flag == "--golden" && i + 1 < argc && argv[i + 1]) {
+            Enjin::Editor::EditorSettings::s_ReadOnly = true;   // automated: leave the person's settings alone
             Enjin::Editor::EditorLayer::s_GoldenCapturePath = argv[++i];
             // A measured run does not need to be seen, and on this editor it was
             // being seen: the player sets s_FixedFrameDelta for --golden and the
@@ -452,10 +454,12 @@ int main(int argc, char* argv[]) {
             // player and the harness manifest.
             Enjin::Application::s_FixedFrameDelta = 1.0f / 60.0f;
         } else if (flag == "--bake-lightmap") {
+            Enjin::Editor::EditorSettings::s_ReadOnly = true;   // automated: leave the person's settings alone
             // Bake the launch scene's lightmap and exit. Same reason as
             // --bake-plate: a menu action cannot be exercised by a test.
             Enjin::Editor::EditorLayer::s_BakeLightmapOnLaunch = true;
         } else if (flag == "--bake-plate" && i + 1 < argc && argv[i + 1]) {
+            Enjin::Editor::EditorSettings::s_ReadOnly = true;   // automated: leave the person's settings alone
             // Bake a pre-rendered background from the launch scene and exit.
             // Same harness shape as --golden: the bake is a menu action, and
             // a menu action cannot be exercised by a test or by CI.
@@ -655,6 +659,17 @@ int main(int argc, char* argv[]) {
             namespace fs = std::filesystem;
             std::string model = argv[i + 1];
             std::string outDir = argv[i + 2];
+            // The same check every other project-creating path makes: this wrote
+            // straight over an existing project's manifest and Main scene.
+            {
+                const fs::path out = fs::absolute(outDir);
+                const std::string problem = Enjin::Editor::EditorLayer::NewProjectFolderProblem(
+                    out.parent_path().string(), out.filename().string());
+                if (!problem.empty()) {
+                    std::cout << "[import] " << problem << "\n";
+                    return 1;
+                }
+            }
             std::error_code ec; fs::create_directories(fs::path(outDir) / "scenes", ec);
             Enjin::ECS::World world;
             Enjin::Assets::ImportResult r = Enjin::Assets::SceneImporter::Import(model, &world);
@@ -674,10 +689,20 @@ int main(int argc, char* argv[]) {
             Enjin::Scene::SerializationOptions so; so.useMeshReferences = !inlineGeom;
             std::string sceneJson = ser.SaveToString(so);
             { std::ofstream f(fs::path(outDir) / "scenes" / "Main.enjin"); f << sceneJson; }
-            std::string name = fs::path(outDir).filename().string();
-            { std::ofstream f(fs::path(outDir) / (name + ".enjinproject"));
-              f << "{\n \"name\": \"" << name << "\",\n \"version\": \"1.0\",\n"
-                   " \"scenes\": [\n  { \"path\": \"scenes/Main.enjin\", \"buildIndex\": 0, \"isStartScene\": true }\n ]\n}\n"; }
+            // Through SceneManager, like every other manifest. The hand-written
+            // one used "name" where the loader reads "projectName" and gave the
+            // scene no name, so the project opened as "Untitled Project".
+            std::string name = fs::absolute(outDir).filename().string();
+            {
+                Enjin::Scene::SceneManager project;
+                project.NewProject(name);
+                project.AddScene("Main", "scenes/Main.enjin");
+                project.SetStartScene(0);
+                if (!project.SaveProject((fs::path(outDir) / (name + ".enjinproject")).string())) {
+                    std::cout << "[import] could not write the project file\n";
+                    return 1;
+                }
+            }
             std::cout << "[import] wrote " << outDir << "/scenes/Main.enjin (mesh refs -> "
                       << model << ")\n";
             return 0;

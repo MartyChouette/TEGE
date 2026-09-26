@@ -386,7 +386,7 @@ void EditorLayer::DrawViewportPanel() {
                             if (root != ECS::INVALID_ENTITY) SelectEntity(root);
                         }
                     } else if (ext == ".enjin" || ext == ".json") {
-                        OpenScene(dropPath);
+                        RequestOpenScene(dropPath);
                     } else if (ext == ".as" || ext == ".angelscript") {
                         // Attach the script to the entity under the drop (or the selected one).
                         Math::Vector2 mousePos = Input::GetMousePosition();

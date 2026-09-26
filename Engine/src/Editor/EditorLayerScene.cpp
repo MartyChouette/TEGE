@@ -1,3 +1,4 @@
+#include "Enjin/Platform/Paths.h"
 #include "Enjin/Editor/EditorLayer.h"
 #include "Enjin/Editor/DropImport.h"
 #include "Enjin/Assets/AssetPipeline.h"
@@ -188,69 +189,201 @@ void EditorLayer::AutoDetectProjectForScene(const std::string& scenePath) {
         dir = parent;
     }
 
-    // No project found — auto-create one from the scene
-    EnsureProjectForScene(scenePath);
+    // No project found: ask. Nothing is created or moved without an answer.
+    ShowNoProjectPrompt(scenePath);
 }
 
-void EditorLayer::EnsureProjectForScene(const std::string& scenePath) {
-    // Already have a loaded project — nothing to do
-    if (!m_SceneManager.GetProjectPath().empty()) return;
-    if (scenePath.empty()) return;
-
-    namespace fs = std::filesystem;
-    fs::path sceneFile(scenePath);
-    fs::path sceneDir = sceneFile.parent_path();
-
-    // Derive project name from the scene filename (e.g. "Level1.enjin" -> "Level1")
-    std::string projName = sceneFile.stem().string();
-    if (projName.empty()) projName = "MyGame";
-
-    // Determine the project root: if scene is inside a "scenes" folder, go up one
-    // level.  Otherwise use the scene's directory directly.
-    fs::path projRoot = sceneDir;
-    if (sceneDir.filename() == "scenes") {
-        projRoot = sceneDir.parent_path();
-    }
-
-    // Create directory structure
-    std::error_code ec;
-    fs::create_directories(projRoot / "scenes", ec);
-    fs::create_directories(projRoot / "assets", ec);
-    fs::create_directories(projRoot / "scripts", ec);
-
-    // Ensure scene file lives in projRoot/scenes/ (not the root).
-    // If it's in the root, move it into scenes/ so the manifest path matches.
-    fs::path scenesDir = projRoot / "scenes";
-    fs::path expectedScenePath = scenesDir / sceneFile.filename();
-    if (sceneFile.parent_path() != scenesDir && fs::exists(sceneFile)) {
-        std::error_code moveEc;
-        fs::rename(sceneFile, expectedScenePath, moveEc);
-        if (!moveEc) {
-            // Update the current scene path to the new location
-            m_CurrentScenePath = expectedScenePath.string();
-        }
-    }
-    std::string relPath = "scenes/" + sceneFile.filename().string();
-
-    // Initialize project
-    m_SceneManager.NewProject(projName);
-    m_SceneManager.AddScene(sceneFile.stem().string(), relPath);
-    m_SceneManager.SetStartScene(0);
-    m_SceneManager.SetProjectMode(Scene::ProjectMode::Mixed);
-
-    // Save manifest
-    fs::path manifestPath = projRoot / (projName + ".enjinproject");
-    if (m_SceneManager.SaveProject(manifestPath.string())) {
-        m_EditorSettings.AddRecentProject(manifestPath.string());
-        m_EditorSettings.lastProjectDir = projRoot.parent_path().string();
-        m_EditorSettings.Save();
-        ShowNotification("Created project '" + projName + "'", NotificationType::Success);
-        ENJIN_LOG_INFO(Editor, "Auto-created project '%s' at %s",
-                       projName.c_str(), projRoot.string().c_str());
-    }
-}
 
 // ---------------------------------------------------------------------------
+
+std::string EditorLayer::DefaultProjectsDir() const {
+    if (!m_EditorSettings.lastProjectDir.empty() &&
+        std::filesystem::exists(m_EditorSettings.lastProjectDir)) {
+        return m_EditorSettings.lastProjectDir;
+    }
+#ifdef _WIN32
+    const char* home = std::getenv("USERPROFILE");
+    return home ? (std::string(home) + "\\Documents\\EnjinProjects") : ".";
+#else
+    const char* home = std::getenv("HOME");
+    return home ? (std::string(home) + "/Documents/EnjinProjects") : ".";
+#endif
+}
+
+bool EditorLayer::CreateProjectForCurrentScene() {
+    namespace fs = std::filesystem;
+    if (!m_SceneManager.GetProjectPath().empty()) return true;
+
+    // Its own folder, never an existing one: "Untitled Project", then "... 2".
+    const fs::path base = DefaultProjectsDir();
+    std::string name;
+    fs::path root;
+    for (u32 n = 1; n < 1000; ++n) {
+        name = (n == 1) ? "Untitled Project" : "Untitled Project " + std::to_string(n);
+        root = base / name;
+        if (!fs::exists(root)) break;
+        root.clear();
+    }
+    if (root.empty()) return false;
+
+    std::error_code ec;
+    fs::create_directories(root / "scenes", ec);
+    fs::create_directories(root / "assets", ec);
+    fs::create_directories(root / "scripts", ec);
+    if (ec) {
+        ENJIN_LOG_ERROR(Editor, "Could not create project folder %s: %s", root.string().c_str(),
+                        ec.message().c_str());
+        return false;
+    }
+
+    // The scene keeps its name if it has one. The original file, if any, is not
+    // touched: the scene is SAVED into the project, like Save As.
+    const std::string sceneStem = m_CurrentScenePath.empty()
+        ? std::string("Main") : fs::path(m_CurrentScenePath).stem().string();
+    const fs::path scenePath = root / "scenes" / (sceneStem + ".enjin");
+    const fs::path manifest = root / (name + ".enjinproject");
+
+    m_SceneManager.NewProject(name);
+    m_SceneManager.AddScene(sceneStem, "scenes/" + scenePath.filename().string());
+    m_SceneManager.SetStartScene(0);
+    m_SceneManager.SetProjectMode(Scene::ProjectMode::Mixed);
+    if (!m_SceneManager.SaveProject(manifest.string())) return false;
+    // Load it back: this is what sets the project root the rest of the editor
+    // resolves against. A project that was only created, never loaded, runs
+    // half-initialised.
+    if (!m_SceneManager.LoadProject(manifest.string())) return false;
+    MigrateEditorSettingsToProject();
+
+    SaveScene(scenePath.string());
+    m_EditorSettings.AddRecentProject(manifest.string());
+    m_EditorSettings.lastProjectDir = base.string();
+    m_EditorSettings.Save();
+    UpdateWindowTitle();
+    ShowNotification("Created project '" + name + "' for this scene", NotificationType::Success);
+    ENJIN_LOG_INFO(Editor, "Created project %s for the current scene", manifest.string().c_str());
+    return true;
+}
+
+bool EditorLayer::SaveSceneAsDialog() {
+    namespace fs = std::filesystem;
+    std::vector<FileFilter> filters = {{ "Enjin Scene", "*.enjin" }};
+    std::string startDir;
+    if (!m_CurrentScenePath.empty()) {
+        startDir = fs::path(m_CurrentScenePath).parent_path().string();
+    } else if (!m_SceneManager.GetProjectPath().empty()) {
+        startDir = (fs::path(m_SceneManager.GetProjectPath()).parent_path() / "scenes").string();
+    }
+    const std::string name = m_CurrentScenePath.empty()
+        ? std::string("Scene.enjin") : fs::path(m_CurrentScenePath).filename().string();
+    const std::string path = FileDialog::SaveFile("Save Scene As", filters, startDir, name);
+    return !path.empty() && SaveScene(path);
+}
+
+bool EditorLayer::SaveSceneOrAsk() {
+    return m_CurrentScenePath.empty() ? SaveSceneAsDialog() : SaveScene(m_CurrentScenePath);
+}
+
+bool EditorLayer::AddSceneToProjectIfInside(const std::string& scenePath) {
+    namespace fs = std::filesystem;
+    const std::string manifest = m_SceneManager.GetProjectPath();
+    if (manifest.empty() || scenePath.empty()) return false;
+    std::error_code ec;
+    const fs::path root = fs::weakly_canonical(fs::path(manifest).parent_path(), ec);
+    const fs::path file = fs::weakly_canonical(scenePath, ec);
+    const std::string rel = Platform::MakeRelativeToRoot(root.string(), file.string());
+    if (rel.empty()) return false;   // outside the project folder
+    const std::string relFwd = fs::path(rel).generic_string();
+    for (const auto& e : m_SceneManager.GetScenes()) {
+        if (fs::path(e.path).generic_string() == relFwd) return true;
+    }
+    m_SceneManager.AddScene(file.stem().string(), relFwd);
+    m_SceneManager.SaveProject();
+    ENJIN_LOG_INFO(Editor, "Added %s to the project's scenes", relFwd.c_str());
+    return true;
+}
+
+void EditorLayer::OnAssetMoved(const std::string& from, const std::string& to) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    const fs::path oldAbs = fs::weakly_canonical(from, ec);
+    const fs::path newAbs = fs::weakly_canonical(to, ec);
+
+    // Where a path at or under the moved item now is, or "" if not affected.
+    auto remap = [&](const fs::path& p) -> fs::path {
+        const fs::path abs = fs::weakly_canonical(p, ec);
+        if (abs == oldAbs) return newAbs;
+        const fs::path rel = abs.lexically_relative(oldAbs);
+        if (rel.empty() || rel.native()[0] == '.') return {};
+        return newAbs / rel;
+    };
+
+    if (!m_CurrentScenePath.empty()) {
+        const fs::path moved = remap(m_CurrentScenePath);
+        if (!moved.empty()) {
+            m_CurrentScenePath = moved.string();
+            RecordOpenSceneDiskTime();   // the watcher would otherwise see "gone"
+            UpdateWindowTitle();
+        }
+    }
+
+    const std::string manifest = m_SceneManager.GetProjectPath();
+    if (manifest.empty()) return;
+    const fs::path root = fs::path(manifest).parent_path();
+    bool changed = false;
+    for (auto& e : m_SceneManager.GetScenes()) {
+        const fs::path moved = remap(root / e.path);
+        if (moved.empty()) continue;
+        const std::string rel = Platform::MakeRelativeToRoot(
+            fs::weakly_canonical(root, ec).string(), moved.string());
+        if (rel.empty()) continue;
+        e.path = fs::path(rel).generic_string();
+        changed = true;
+    }
+    if (changed && !m_SceneManager.SaveProject()) {
+        ShowNotification("Could not save the project after the move", NotificationType::Error);
+    }
+}
+
+bool EditorLayer::AdoptProject(const std::string& manifestPath) {
+    if (!m_SceneManager.LoadProject(manifestPath)) {
+        ShowNotification("Could not load that project", NotificationType::Error);
+        return false;
+    }
+    MigrateEditorSettingsToProject();
+    m_EditorSettings.AddRecentProject(manifestPath);
+    m_EditorSettings.lastProjectDir =
+        std::filesystem::path(manifestPath).parent_path().parent_path().string();
+    m_EditorSettings.Save();
+    UpdateWindowTitle();
+    return true;
+}
+
+void EditorLayer::ShowNoProjectPrompt(const std::string& scenePath) {
+    m_NoProjectPromptScene = scenePath;
+    m_ShowNoProjectPrompt = true;
+}
+
+void EditorLayer::RequestOpenScene(const std::string& path) {
+    if (path.empty()) return;
+    if (m_SceneDirty) {
+        m_PendingOpenPath = path;
+        m_UnsavedChangesAction = UnsavedAction::OpenScene;
+        m_ShowUnsavedChangesDialog = true;
+        return;
+    }
+    OpenScene(path);
+}
+
+void EditorLayer::RequestOpenProject(const std::string& manifestPath) {
+    if (manifestPath.empty()) return;
+    if (m_SceneDirty) {
+        m_PendingOpenProjectPath = manifestPath;
+        m_UnsavedChangesAction = UnsavedAction::OpenProject;
+        m_ShowUnsavedChangesDialog = true;
+        return;
+    }
+    OpenProjectFromPath(manifestPath);
+}
 
 void EditorLayer::OpenProjectFromPath(const std::string& projectPath) {
     try {
@@ -279,21 +412,30 @@ void EditorLayer::OpenProjectFromPath(const std::string& projectPath) {
         MigrateEditorSettingsToProject();
         m_EditorSettings.AddRecentProject(projectPath);
         fs::path projFile(projectPath);
+        // The folder that HOLDS projects, not this project's own folder: new
+        // projects are created in it, and two of five open paths stored the
+        // project folder itself, so the next new project was made INSIDE it.
         if (projFile.has_parent_path())
-            m_EditorSettings.lastProjectDir = projFile.parent_path().string();
+            m_EditorSettings.lastProjectDir = projFile.parent_path().parent_path().string();
         m_EditorSettings.Save();
 
-        // Open the first scene in the project
+        // Open the project's START scene (the list's first entry only if none is
+        // marked). If there is none, or its file is gone, start from an empty,
+        // unsaved scene -- keeping the previous project's scene loaded meant the
+        // next Save wrote project A's scene while project B was open.
         auto scenes = m_SceneManager.GetScenes(); // Copy to avoid reference invalidation
-        if (!scenes.empty()) {
-            fs::path projDir = projFile.parent_path();
-            fs::path scenePath = projDir / scenes[0].path;
-            if (fs::exists(scenePath)) {
-                OpenScene(scenePath.string());
-            } else {
+        const Scene::SceneEntry* start = nullptr;
+        for (const auto& e : scenes) if (e.isStartScene) { start = &e; break; }
+        if (!start && !scenes.empty()) start = &scenes[0];
+        const fs::path scenePath = start ? projFile.parent_path() / start->path : fs::path();
+        if (start && fs::exists(scenePath)) {
+            OpenScene(scenePath.string());
+        } else {
+            if (start) {
                 ENJIN_LOG_WARN(Editor, "Scene not found: %s", scenePath.string().c_str());
-                ShowNotification("Scene not found: " + scenes[0].path, NotificationType::Warning);
+                ShowNotification("Scene not found: " + start->path, NotificationType::Warning);
             }
+            m_PendingNewScene = NewSceneMode::ClearOnly;
         }
 
         m_ShowProjectHub = false;
@@ -332,17 +474,27 @@ void EditorLayer::ApplySceneLUT(const Renderer::SceneRenderSettings& settings) {
     }
 }
 
-void EditorLayer::SaveScene(const std::string& path) {
+bool EditorLayer::SaveScene(const std::string& path) {
     if (!m_World) {
         ENJIN_LOG_ERROR(Editor, "Cannot save scene: no world loaded");
         m_ConsoleLog.push_back("[Error] Cannot save scene: no world loaded");
-        return;
+        return false;
     }
 
     if (path.empty()) {
         ENJIN_LOG_ERROR(Editor, "Cannot save scene: path is empty");
         m_ConsoleLog.push_back("[Error] Cannot save scene: path is empty");
-        return;
+        return false;
+    }
+
+    // Never during play: the world is the PLAY state then, and saving it wrote
+    // moved characters, spent pickups and spawned objects into the scene file.
+    // Every save path lands here (menu, Ctrl+S, palette, gamepad, the build's
+    // auto-save), so this is the one guard they all need.
+    if (!m_PlayMode.IsStopped()) {
+        ShowNotification("Stop play mode to save the scene", NotificationType::Warning);
+        ENJIN_LOG_WARN(Editor, "Not saving %s during play mode", path.c_str());
+        return false;
     }
 
     Scene::SceneSerializer serializer(m_World);
@@ -369,8 +521,9 @@ void EditorLayer::SaveScene(const std::string& path) {
         ClearDirty();
         RecordOpenSceneDiskTime();  // we just wrote it — this is the new baseline
 
-        // Auto-create a project if none is loaded (project-first workflow)
-        EnsureProjectForScene(path);
+        // Saving a scene never creates a project. It used to (EnsureProjectForScene),
+        // so saving a loose scene quietly built a project around it named after the
+        // file. A project is made with New Project and nothing else.
 
         // Delete any auto-save file after a successful save
         std::string autoSavePath = path + ".autosave";
@@ -423,9 +576,12 @@ void EditorLayer::SaveScene(const std::string& path) {
             ShowNotification("Scene saved: " + filename, NotificationType::Success);
         }
 
-        // Track in recent projects
-        m_EditorSettings.AddRecentProject(path);
-        m_EditorSettings.Save();
+        // A scene saved inside the open project belongs to it. Save As into the
+        // project's folder left the new file out of the project's scene list.
+        // (Scene files used to go into the RECENT PROJECTS list here, eight
+        // slots shared with projects, which pushed real projects out of the hub.)
+        AddSceneToProjectIfInside(path);
+        UpdateWindowTitle();   // Save As on a clean scene kept the OLD name in the title
     } else {
         std::stringstream ss;
         ss << "[Error] Failed to save scene: " << result.error;
@@ -433,6 +589,7 @@ void EditorLayer::SaveScene(const std::string& path) {
         ENJIN_LOG_ERROR(Editor, "Failed to save scene to %s: %s", path.c_str(), result.error.c_str());
         ShowNotification("Failed to save scene: " + result.error, NotificationType::Error);
     }
+    return result.success;
 }
 
 void EditorLayer::OpenScene(const std::string& path) {
@@ -586,30 +743,17 @@ void EditorLayer::DrawWrongProjectDialog() {
         ImGui::TextWrapped("Loading it under the open project would break its scripts and "
                            "assets, because those resolve against the project root.");
 
-        if (m_SceneDirty) {
-            ImGui::Spacing();
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.72f, 0.2f, 1.0f));
-            ImGui::TextWrapped("The current scene has unsaved changes that switching will discard.");
-            ImGui::PopStyleColor();
-        }
-
+        // No unsaved-work warning here: every way in has already been through
+        // RequestOpenScene, so the person has saved or chosen to discard.
         ImGui::Separator();
         if (ImGui::Button("Switch Project & Open", ImVec2(190, 0))) {
             std::string manifest = m_WrongProjectManifest;
             std::string scene = m_WrongProjectScenePath;
             ImGui::CloseCurrentPopup();
-            if (m_SceneManager.LoadProject(manifest)) {
-                MigrateEditorSettingsToProject();
-                m_EditorSettings.AddRecentProject(manifest);
-                m_EditorSettings.lastProjectDir =
-                    std::filesystem::path(manifest).parent_path().parent_path().string();
-                m_EditorSettings.Save();
+            if (AdoptProject(manifest)) {
                 ShowNotification("Switched to project '" + m_SceneManager.GetProjectName() + "'",
                                  NotificationType::Info);
                 m_PendingSceneLoadPath = scene;  // now loads under the correct project
-            } else {
-                ShowNotification("Failed to load project '" + projName + "'",
-                                 NotificationType::Error);
             }
         }
         ImGui::SameLine();
@@ -628,7 +772,7 @@ void EditorLayer::DrawWrongProjectDialog() {
     }
 }
 
-void EditorLayer::OpenSceneImmediate(const std::string& path) {
+void EditorLayer::OpenSceneImmediate(const std::string& path, const std::string& contentFrom) {
     if (!m_World) {
         ENJIN_LOG_ERROR(Editor, "Cannot open scene: no world loaded");
         return;
@@ -649,7 +793,7 @@ void EditorLayer::OpenSceneImmediate(const std::string& path) {
     Scene::SceneSerializer serializer(m_World);
     Scene::DeserializationResult result;
     try {
-        result = serializer.Load(path, true); // Clear existing entities
+        result = serializer.Load(contentFrom.empty() ? path : contentFrom, true); // Clear existing entities
         // This path deserializes directly rather than through
         // SceneManager::LoadScene, which is the only place that used to record
         // which scene is live. Without this the editor's play mode answers
@@ -707,6 +851,7 @@ void EditorLayer::OpenSceneImmediate(const std::string& path) {
         ClearSelection();
         m_UndoRedo.Clear();
         ClearDirty();
+        if (!contentFrom.empty()) MarkDirty();  // recovered work is not on disk yet
         UpdateWindowTitle();
         RecordOpenSceneDiskTime();  // baseline the file mtime for external-edit detection
 
@@ -739,9 +884,10 @@ void EditorLayer::OpenSceneImmediate(const std::string& path) {
             // A layer session saved beside the scene reopens automatically.
             // The .layers directory only exists if the user saved one, so
             // auto-resume is opt-in by construction.
+            // Not when recovering: the autosave already holds the resolved world.
             std::string layerDir = path + ".layers";
             std::error_code lec;
-            if (std::filesystem::is_directory(layerDir, lec) && !lec) {
+            if (contentFrom.empty() && std::filesystem::is_directory(layerDir, lec) && !lec) {
                 int n = m_LayerSystem.LoadLayers(layerDir);
                 if (n > 0) {
                     auto lr = m_LayerSystem.ResolveIntoWorld();
@@ -760,7 +906,7 @@ void EditorLayer::OpenSceneImmediate(const std::string& path) {
         // Check for auto-save file newer than the scene file
         std::string autoSavePath = path + ".autosave";
         std::error_code ec;
-        if (std::filesystem::exists(autoSavePath, ec)) {
+        if (contentFrom.empty() && std::filesystem::exists(autoSavePath, ec)) {
             auto sceneTime = std::filesystem::last_write_time(path, ec);
             auto autoTime = std::filesystem::last_write_time(autoSavePath, ec);
             if (autoTime > sceneTime) {
@@ -777,9 +923,7 @@ void EditorLayer::OpenSceneImmediate(const std::string& path) {
         ENJIN_LOG_INFO(Editor, "Loaded scene from %s (%zu entities)", path.c_str(), entityCount);
         m_Telemetry.TrackSceneLoaded();
 
-        // Track in recent projects
-        m_EditorSettings.AddRecentProject(path);
-        m_EditorSettings.Save();
+        // (Scene files are not added to the recent PROJECTS list: see SaveScene.)
     } else {
         std::stringstream ss;
         ss << "[Error] Failed to load scene: " << result.error;
@@ -844,7 +988,7 @@ void EditorLayer::OnFileDrop(int count, const char** paths) {
         } else if (ext == ".enjin") {
             ENJIN_LOG_INFO(Editor, "Drag-and-drop scene open: %s", paths[i]);
             m_ConsoleLog.push_back(std::string("[Info] Drag-and-drop scene open: ") + paths[i]);
-            OpenScene(filePath.string());
+            RequestOpenScene(filePath.string());
         } else if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".tga" || ext == ".bmp") {
             // Assign texture to selected entity's material (or all mesh children if container)
             std::string texPath = Assets::CopyToProjectAssets(
@@ -910,8 +1054,15 @@ void EditorLayer::OnFileDrop(int count, const char** paths) {
             }
         } else if (ext == ".wav" || ext == ".mp3" || ext == ".ogg" || ext == ".flac" ||
                    ext == ".aiff" || ext == ".aif") {
-            // Drop a sound -> spawn an audio source entity pointing at the file.
-            ECS::Entity e = CreateAudioSourceEntity(m_World, filePath.string());
+            // Drop a sound -> spawn an audio source entity pointing at the file,
+            // copied INTO the project like a texture or a model. It used to keep
+            // the absolute path it was dropped from, which plays here and nowhere
+            // the project is taken.
+            const std::string audioPath = Assets::CopyToProjectAssets(
+                filePath.string(),
+                std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path().string(),
+                "assets/audio");
+            ECS::Entity e = CreateAudioSourceEntity(m_World, audioPath);
             if (e != ECS::INVALID_ENTITY) {
                 SelectEntity(e);
                 ENJIN_LOG_INFO(Editor, "Created audio source from drop: %s", paths[i]);

@@ -214,71 +214,31 @@ void EditorLayer::DrawMenuBar() {
                     ? std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path().string()
                     : std::filesystem::path(m_CurrentScenePath).parent_path().string();
                 std::string path = FileDialog::OpenFile("Open Scene", filters, sceneDir);
-                if (!path.empty()) {
-                    if (m_SceneDirty) {
-                        m_PendingOpenPath = path;
-                        m_UnsavedChangesAction = UnsavedAction::OpenScene;
-                        m_ShowUnsavedChangesDialog = true;
-                    } else {
-                        OpenScene(path);
-                    }
-                }
+                RequestOpenScene(path);
             }
             if (ImGui::MenuItem("Save Scene", ShortcutChord(ShortcutAction::SaveScene))) {
-                if (!m_CurrentScenePath.empty()) {
-                    SaveScene(m_CurrentScenePath);
-                } else {
-                    // No current path, open Save As dialog
-                    std::vector<FileFilter> filters = {
-                        { "Enjin Scene", "*.enjin" },
-                        { "All Files", "*.*" }
-                    };
-                    auto projRoot = std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path().string();
-                    std::string path = FileDialog::SaveFile("Save Scene", filters, projRoot, "scene.enjin");
-                    if (!path.empty()) {
-                        SaveScene(path);
-                    }
-                }
+                SaveSceneOrAsk();
             }
             if (ImGui::MenuItem("Save Scene As...", ShortcutChord(ShortcutAction::SaveSceneAs)) ||
                 TakeShortcut(ShortcutAction::SaveSceneAs)) {
-                std::vector<FileFilter> filters = {
-                    { "Enjin Scene", "*.enjin" },
-                    { "All Files", "*.*" }
-                };
-                std::string defaultName = m_CurrentScenePath.empty() ? "scene.enjin" :
-                    std::filesystem::path(m_CurrentScenePath).filename().string();
-                auto saveDir = m_CurrentScenePath.empty()
-                    ? std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path().string()
-                    : std::filesystem::path(m_CurrentScenePath).parent_path().string();
-                std::string path = FileDialog::SaveFile("Save Scene As", filters, saveDir, defaultName);
-                if (!path.empty()) {
-                    SaveScene(path);
-                }
+                SaveSceneAsDialog();
             }
             if (ImGui::MenuItem("Save as Template...")) {
-                ImGui::OpenPopup("SaveTemplatePopup");
+                m_OpenSaveTemplatePopup = true;   // opened below, at the level it is drawn
             }
             // The popup must be at this scope level to persist across frames
             ImGui::Separator();
 
             // Project operations
             if (ImGui::MenuItem("New Project...")) {
-                m_ShowNewProjectDialog = true;
-                // Pre-fill default location
-                std::string defaultLoc;
-                if (!m_EditorSettings.lastProjectDir.empty() &&
-                    std::filesystem::exists(m_EditorSettings.lastProjectDir)) {
-                    defaultLoc = m_EditorSettings.lastProjectDir;
+                // Unsaved work first, then the dialog (ContinueAfterUnsavedPrompt).
+                if (m_SceneDirty) {
+                    m_UnsavedChangesAction = UnsavedAction::NewProject;
+                    m_ShowUnsavedChangesDialog = true;
                 } else {
-#ifdef _WIN32
-                    const char* userProfile = std::getenv("USERPROFILE");
-                    defaultLoc = userProfile ? (std::string(userProfile) + "\\Documents\\EnjinProjects") : ".";
-#else
-                    const char* home = std::getenv("HOME");
-                    defaultLoc = home ? (std::string(home) + "/Documents/EnjinProjects") : ".";
-#endif
+                    m_ShowNewProjectDialog = true;
                 }
+                const std::string defaultLoc = DefaultProjectsDir();
                 std::strncpy(m_NewProjDlgLocation, defaultLoc.c_str(), sizeof(m_NewProjDlgLocation) - 1);
                 m_NewProjDlgLocation[sizeof(m_NewProjDlgLocation) - 1] = '\0';
                 std::strncpy(m_NewProjDlgName, "MyGame", sizeof(m_NewProjDlgName));
@@ -293,67 +253,14 @@ void EditorLayer::DrawMenuBar() {
                 };
                 auto projDir = std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path().string();
                 std::string path = FileDialog::OpenFile("Open Project", filters, projDir);
-                if (!path.empty()) {
-                    if (m_SceneManager.LoadProject(path)) {
-                        MigrateEditorSettingsToProject();
-                        ENJIN_LOG_INFO(Editor, "Loaded project: %s", m_SceneManager.GetProjectName().c_str());
-                        // Persist last project directory (grandparent: .enjinproject -> project dir -> parent)
-                        m_EditorSettings.lastProjectDir = std::filesystem::path(path).parent_path().parent_path().string();
-                        m_EditorSettings.Save();
-                        // OpenScene defers to Update to avoid World::Clear during Render
-                        auto& scenes = m_SceneManager.GetScenes();
-                        std::string scenePath;
-                        for (const auto& s : scenes) {
-                            if (s.isStartScene) {
-                                scenePath = (std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path() / s.path).string();
-                                break;
-                            }
-                        }
-                        if (scenePath.empty() && !scenes.empty()) {
-                            scenePath = (std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path() / scenes[0].path).string();
-                        }
-                        if (!scenePath.empty()) {
-                            OpenScene(scenePath);
-                        }
-                    }
-                }
+                RequestOpenProject(path);
             }
-            if (ImGui::MenuItem("Save Project")) {
-                if (m_SceneManager.GetProjectPath().empty()) {
-                    std::vector<FileFilter> filters = {
-                        { "Enjin Project", "*.enjinproject" },
-                        { "All Files", "*.*" }
-                    };
-                    std::string path = FileDialog::SaveFile("Save Project", filters, "", "project.enjinproject");
-                    if (!path.empty()) {
-                        if (!m_SceneManager.SaveProject(path)) {
-                            ShowNotification("Failed to save project", NotificationType::Error);
-                        }
-                    }
-                } else {
-                    if (!m_SceneManager.SaveProject()) {
-                        ShowNotification("Failed to save project", NotificationType::Error);
-                    }
-                }
-            }
-            if (ImGui::MenuItem("Save Project As...")) {
-                std::vector<FileFilter> filters = {
-                    { "Enjin Project", "*.enjinproject" },
-                    { "All Files", "*.*" }
-                };
-                std::string defaultName = m_SceneManager.GetProjectPath().empty() ? "project.enjinproject" :
-                    std::filesystem::path(m_SceneManager.GetProjectPath()).filename().string();
-                std::string path = FileDialog::SaveFile("Save Project As", filters, "", defaultName);
-                if (!path.empty()) {
-                    if (m_SceneManager.SaveProject(path)) {
-                        // Switch to the new project — you are now IN this project
-                        m_EditorSettings.AddRecentProject(path);
-                        m_EditorSettings.lastProjectDir = std::filesystem::path(path).parent_path().string();
-                        m_EditorSettings.Save();
-                        ShowNotification("Project saved as: " + std::filesystem::path(path).stem().string(), NotificationType::Success);
-                    } else {
-                        ShowNotification("Failed to save project", NotificationType::Error);
-                    }
+            // Only with a project open: with none it wrote a manifest wherever the
+            // dialog pointed. (Save Project As is gone: it wrote the manifest to
+            // a new folder WITHOUT the scenes, so every scene path in it broke.)
+            if (ImGui::MenuItem("Save Project", nullptr, false, !m_SceneManager.GetProjectPath().empty())) {
+                if (!m_SceneManager.SaveProject()) {
+                    ShowNotification("Failed to save project", NotificationType::Error);
                 }
             }
             ImGui::Separator();
@@ -380,6 +287,12 @@ void EditorLayer::DrawMenuBar() {
                 m_BuildInProgress = false;
                 m_BuildProgress = 0.0f;
                 m_BuildResult = Build::BuildResult{};
+                if (m_SceneManager.GetProjectPath() != m_BuildConfigProjectPath) {
+                    m_BuildConfigProjectPath = m_SceneManager.GetProjectPath();
+                    m_BuildConfig.outputDir.clear();
+                    m_BuildConfig.windowTitle.clear();
+                    m_BuildDlgBufferStale = true;
+                }
                 // Default output dir next to project
                 if (m_BuildConfig.outputDir.empty() && !m_SceneManager.GetProjectPath().empty()) {
                     auto projDir = std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path();
@@ -1747,6 +1660,12 @@ void EditorLayer::DrawMenuBar() {
     }
 
     // Save as Template dialog
+    // Opened HERE rather than inside the File menu: ImGui matches a popup by its
+    // ID stack, and the menu's is not this one, so it never appeared.
+    if (m_OpenSaveTemplatePopup) {
+        ImGui::OpenPopup("SaveTemplatePopup");
+        m_OpenSaveTemplatePopup = false;
+    }
     if (ImGui::BeginPopupModal("SaveTemplatePopup", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::Text("Save current scene as a reusable template.");
         ImGui::Separator();

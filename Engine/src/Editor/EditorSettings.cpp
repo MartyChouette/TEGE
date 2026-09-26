@@ -288,6 +288,7 @@ std::string EditorSettings::GetDefaultPath() {
 }
 
 bool EditorSettings::Save(const std::string& path) const {
+    if (s_ReadOnly) return true;   // automated run: see s_ReadOnly
     std::string savePath = path.empty() ? GetDefaultPath() : path;
 
     // Create directory if needed

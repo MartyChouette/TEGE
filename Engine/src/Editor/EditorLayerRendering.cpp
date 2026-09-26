@@ -678,7 +678,7 @@ void EditorLayer::DrawGameViewPanel() {
                                 }
                             }
                         } else if (ext == ".enjin" || ext == ".json") {
-                            OpenScene(dropPath);
+                            RequestOpenScene(dropPath);
                         } else if (ext == ".wav" || ext == ".mp3" || ext == ".ogg" || ext == ".flac") {
                             ECS::Entity sel = m_PrimarySelected;
                             if (sel != ECS::INVALID_ENTITY && m_World) {

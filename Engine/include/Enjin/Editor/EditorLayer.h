@@ -992,12 +992,68 @@ private:
     ParticleGraphData m_ParticleGraphData;
 
     // Scene management
-    void SaveScene(const std::string& path);
+    bool SaveScene(const std::string& path);   // false if nothing was written
+    // Save As, one dialog for every entry point: starts in the scene's folder,
+    // else the project's scenes/ folder. Returns false if cancelled or failed.
+    bool SaveSceneAsDialog();
+    // Save to the current path, or Save As when the scene has never been saved.
+    bool SaveSceneOrAsk();
     void OpenScene(const std::string& path);
-    void OpenSceneImmediate(const std::string& path);
+    // contentFrom: read the scene from this file instead (the autosave), while
+    // the scene keeps its own path, title and project. Recovery used to do its
+    // own partial load and missed OnSceneClear, 2D water, content flags and undo.
+    void OpenSceneImmediate(const std::string& path, const std::string& contentFrom = {});
 
     // Project-first workflow helpers
-    void EnsureProjectForScene(const std::string& scenePath);
+    // A scene with no project around it: ASK (find one, make one, or carry on).
+    // This used to be EnsureProjectForScene, which silently built a project
+    // around the scene's folder and moved the file into scenes/ -- from opening
+    // a scene, opening the Build dialog, and importing (with the MODEL's path).
+    // Which project m_BuildConfig was filled in for. A different project resets
+    // its output folder and title: project B used to build into project A's
+    // Build folder under project A's window title.
+    std::string m_BuildConfigProjectPath;
+    bool m_BuildDlgBufferStale = false;
+    bool m_ShowNoProjectPrompt = false;
+    std::string m_NoProjectPromptScene;
+    void ShowNoProjectPrompt(const std::string& scenePath);
+    void DrawNoProjectPrompt();
+    // Load a project WITHOUT opening its start scene (the current scene stays).
+    bool AdoptProject(const std::string& manifestPath);
+    // Add a scene file to the open project's list if it is inside the project
+    // folder and not listed yet. Returns false if it is outside the project.
+    bool AddSceneToProjectIfInside(const std::string& scenePath);
+    // A file or folder was moved inside the project (Asset Browser drag). Point
+    // the open scene and the project's scene list at the new place, and save
+    // the project. Moving a scene used to leave both on the old path, so the
+    // next Save recreated the file where it had been.
+    void OnAssetMoved(const std::string& from, const std::string& to);
+    // The ONE rule both scene panels follow, then save the project: the start
+    // scene is the first INCLUDED scene in list order, and included scenes are
+    // numbered by position. Build Settings enforced this and the Scene List set
+    // a start flag its own way, so each overwrote the other.
+    void ApplyBuildOrderAndSave();
+    // Importing needs a project for the assets to be copied into. With none
+    // open, make one in the projects folder and save the CURRENT scene into it
+    // (a loose scene file elsewhere is left where it is). Never derived from the
+    // imported file: that used to name the project after the model and MOVE the
+    // model into scenes/. Returns false if no project could be made.
+    bool CreateProjectForCurrentScene();
+public:
+    // Why a new project called `name` cannot be made in `location`, or "" if it
+    // can. Every project-creating path asks this: none checked before, so
+    // creating "MyGame" where MyGame already lived rewrote its manifest down to
+    // one scene and wrote an empty scene over its start scene.
+    static std::string NewProjectFolderProblem(const std::string& location, const std::string& name,
+                                               const std::string& sceneName = "Main");
+    // Why the folder holding this manifest must NOT be deleted as "the project",
+    // or "" if it can be. Delete takes the whole folder, so it has to be plainly
+    // one project's own: exactly one .enjinproject, no project nested inside it,
+    // and not a drive root or a folder like Documents, Desktop or Downloads.
+    static std::string ProjectFolderDeleteProblem(const std::string& manifestPath);
+private:
+    // Where new projects go: the last project folder, else Documents/EnjinProjects.
+    std::string DefaultProjectsDir() const;
     void OpenProjectFromPath(const std::string& projectPath);
     void AutoDetectProjectForScene(const std::string& scenePath);
     // If scenePath belongs to a project other than the one currently loaded,
@@ -1441,6 +1497,11 @@ private:
     // Custom templates
     std::vector<std::string> m_CustomTemplateNames;
     std::vector<std::string> m_CustomTemplatePaths;
+    // Where saved templates live: beside the editor settings, so it does not
+    // depend on the folder the editor happened to be started from.
+    static std::string CustomTemplatesDir();
+    // Set by File > Save as Template; the popup is opened where it is drawn.
+    bool m_OpenSaveTemplatePopup = false;
 
     // Project context menu / delete confirmation state
     std::string m_HubContextProjectPath;       // Full path of project being acted on
@@ -2701,7 +2762,15 @@ private:
     bool m_ShowAutoSaveRecoveryDialog = false;
     std::string m_AutoSaveRecoveryPath;
     std::string m_PendingOpenPath;
-    enum class UnsavedAction : u8 { None, Quit, NewScene, OpenScene };
+    enum class UnsavedAction : u8 { None, Quit, NewScene, OpenScene, OpenProject, NewProject };
+    std::string m_PendingOpenProjectPath;   // UnsavedAction::OpenProject
+    // Every way of opening a scene or a project goes through these, so unsaved
+    // work is always asked about. Eleven scene entry points and four project
+    // ones used to call OpenScene / LoadProject directly and dropped a dirty
+    // scene without a word; only File > Open Scene asked.
+    void RequestOpenScene(const std::string& path);
+    void RequestOpenProject(const std::string& manifestPath);
+    void ContinueAfterUnsavedPrompt(UnsavedAction action);
     UnsavedAction m_UnsavedChangesAction = UnsavedAction::None;
     void UpdateWindowTitle();
     void AutoSave();

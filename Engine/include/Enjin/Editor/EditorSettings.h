@@ -233,6 +233,12 @@ struct EditorSettings {
 
     // Save/Load
     bool Save(const std::string& path = "") const;
+    // Set by automated editor runs (--golden, --bake-*, --play-cycle): Save then
+    // writes nothing. Those runs open projects and scenes like a person would,
+    // and every one of them was adding itself to the PERSON's recent projects
+    // and last project folder -- eight slots, so a harness sweep pushed real
+    // projects out of the hub.
+    static inline bool s_ReadOnly = false;
     bool Load(const std::string& path = "");
 
     // Default save path

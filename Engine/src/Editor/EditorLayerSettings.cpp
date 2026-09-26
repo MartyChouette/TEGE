@@ -2848,10 +2848,19 @@ void EditorLayer::DrawSettingsSection_BuildScenes() {
             ImGui::SameLine();
         }
 
-        // Scene name and path
+        // Scene name and path; a listed file that is not on disk says so.
+        std::error_code missingEc;
+        const bool missing = !projRoot.empty() &&
+            !fs::exists(fs::path(projRoot) / scenes[i].path, missingEc);
+        const bool autoListed = !missing &&
+            fs::path(scenes[i].path).parent_path().generic_string() == "scenes";
         ImGui::Text("%s", scenes[i].name.c_str());
         ImGui::SameLine();
         ImGui::TextDisabled("(%s)", scenes[i].path.c_str());
+        if (missing) {
+            ImGui::SameLine();
+            ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.4f, 1.0f), "missing");
+        }
 
         // Reorder buttons
         ImGui::SameLine(ImGui::GetContentRegionAvail().x - 60);
@@ -2873,13 +2882,18 @@ void EditorLayer::DrawSettingsSection_BuildScenes() {
             ImGui::Dummy(ImVec2(24, 0));
         }
 
-        // Remove button
-        ImGui::SameLine();
-        if (ImGui::SmallButton("X")) {
-            m_SceneManager.RemoveScene(i);
-            changed = true;
-            ImGui::PopID();
-            break;  // list invalidated
+        // Remove: only where it can stick. Every file in scenes/ is listed
+        // automatically (above), so removing one came straight back next frame;
+        // those are excluded by unticking. Missing files and scenes kept
+        // elsewhere can be removed.
+        if (!autoListed) {
+            ImGui::SameLine();
+            if (ImGui::SmallButton("X")) {
+                m_SceneManager.RemoveScene(i);
+                changed = true;
+                ImGui::PopID();
+                break;  // list invalidated
+            }
         }
 
         ImGui::PopID();
@@ -2891,25 +2905,27 @@ void EditorLayer::DrawSettingsSection_BuildScenes() {
         changed = true;
     }
 
-    // "Set as start scene" — first included scene is the start scene
-    if (changed) {
-        bool startSet = false;
-        for (usize i = 0; i < scenes.size(); ++i) {
-            if (scenes[i].buildIndex >= 0 && !startSet) {
-                scenes[i].isStartScene = true;
-                scenes[i].buildIndex = 0;
-                startSet = true;
-            } else {
-                scenes[i].isStartScene = false;
-                if (scenes[i].buildIndex >= 0) {
-                    scenes[i].buildIndex = static_cast<i32>(i);
-                }
-            }
-        }
-        m_SceneManager.SaveProject();
-    }
+    if (changed) ApplyBuildOrderAndSave();
 
     ImGui::Spacing();
+}
+
+void EditorLayer::ApplyBuildOrderAndSave() {
+    auto& scenes = m_SceneManager.GetScenes();
+    bool startSet = false;
+    for (usize i = 0; i < scenes.size(); ++i) {
+        if (scenes[i].buildIndex >= 0 && !startSet) {
+            scenes[i].isStartScene = true;
+            scenes[i].buildIndex = 0;
+            startSet = true;
+        } else {
+            scenes[i].isStartScene = false;
+            if (scenes[i].buildIndex >= 0) scenes[i].buildIndex = static_cast<i32>(i);
+        }
+    }
+    if (!m_SceneManager.GetProjectPath().empty() && !m_SceneManager.SaveProject()) {
+        ShowNotification("Could not save the project file", NotificationType::Error);
+    }
 }
 
 void EditorLayer::DrawSettingsSection_BuildConfig() {

@@ -40,6 +40,7 @@ bool OpenInDesktop(const std::string& pathOrUrl) {
 bool RevealInFileManager(const std::string&) { return false; }
 bool OpenUrlPreferChromium(const std::string& url) { return OpenInDesktop(url); }
 bool LaunchDetached(const std::string&, const std::string&) { return false; }
+bool MoveToTrash(const std::string&) { return false; }
 
 } // namespace Enjin::Platform
 
@@ -193,6 +194,39 @@ bool LaunchDetached(const std::string& exePath, const std::string& workingDir) {
     const std::string abs = std::filesystem::absolute(exePath, ec).string();
     return SpawnDetached(ec ? exePath.c_str() : abs.c_str(), {}, workingDir);
 #endif
+}
+
+bool MoveToTrash(const std::string& path) {
+    if (path.empty()) return false;
+    std::error_code ec;
+    const std::filesystem::path abs = std::filesystem::absolute(path, ec);
+    if (ec || !std::filesystem::exists(abs, ec)) return false;
+
+#ifdef _WIN32
+    // SHFileOperation wants a double-NUL-terminated list.
+    std::wstring from = abs.wstring();
+    from.push_back(L'\0');
+    from.push_back(L'\0');
+    SHFILEOPSTRUCTW op{};
+    op.wFunc = FO_DELETE;
+    op.pFrom = from.c_str();
+    // ALLOWUNDO = Recycle Bin. WANTNUKEWARNING overrides NOCONFIRMATION for the
+    // one case that matters: if the Bin cannot take it, ask instead of erasing.
+    op.fFlags = FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_WANTNUKEWARNING | FOF_SILENT;
+    if (SHFileOperationW(&op) != 0 || op.fAnyOperationsAborted) return false;
+#elif defined(__linux__)
+    // Blocking: the caller reports the outcome, so it has to know it.
+    const std::string target = abs.string();
+    const char* argv[] = { "gio", "trash", target.c_str(), nullptr };
+    pid_t pid = 0;
+    if (posix_spawnp(&pid, "gio", nullptr, nullptr, const_cast<char* const*>(argv), environ) != 0)
+        return false;
+    int status = 0;
+    if (waitpid(pid, &status, 0) < 0 || !WIFEXITED(status) || WEXITSTATUS(status) != 0) return false;
+#else
+    return false;
+#endif
+    return !std::filesystem::exists(abs, ec);
 }
 
 } // namespace Enjin::Platform

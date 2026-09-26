@@ -186,4 +186,39 @@ ENJIN_TEST(AssetPipeline, CopyToProjectAssetsReturnsRelativePath) {
     ENJIN_EXPECT_TRUE(proj.Has("assets/textures/wall.png"));
 }
 
+// Same NAME, different file: each keeps its own bytes. The copy used to keep
+// whatever was already at the destination, so the second texture (or model)
+// silently became the first.
+ENJIN_TEST(AssetPipeline, SameNameDifferentTexturesDoNotShare) {
+    TempDir src("enjin_test_ap_src_collide");
+    TempDir proj("enjin_test_ap_proj_collide");
+    src.Write("rock/diffuse.png", "ROCK");
+    src.Write("tree/diffuse.png", "TREE");
+    src.Write("tree_again/diffuse.png", "TREE");
+
+    const std::string a = Assets::CopyToProjectAssets((src.path / "rock/diffuse.png").string(), proj.path.string());
+    const std::string b = Assets::CopyToProjectAssets((src.path / "tree/diffuse.png").string(), proj.path.string());
+    const std::string c = Assets::CopyToProjectAssets((src.path / "tree_again/diffuse.png").string(), proj.path.string());
+
+    ENJIN_EXPECT_TRUE(a != b);
+    ENJIN_EXPECT_EQ(proj.Read(a), std::string("ROCK"));
+    ENJIN_EXPECT_EQ(proj.Read(b), std::string("TREE"));
+    // Identical bytes are the same asset, so the copy is reused.
+    ENJIN_EXPECT_EQ(c, b);
+}
+
+ENJIN_TEST(AssetPipeline, SameNameDifferentModelsGetTheirOwnFolders) {
+    TempDir src("enjin_test_ap_src_modelcollide");
+    TempDir proj("enjin_test_ap_proj_modelcollide");
+    src.Write("a/chair.obj", "v 0 0 0");
+    src.Write("b/chair.obj", "v 1 1 1");
+
+    const std::string a = Assets::CopyModelToProjectAssets((src.path / "a/chair.obj").string(), proj.path.string());
+    const std::string b = Assets::CopyModelToProjectAssets((src.path / "b/chair.obj").string(), proj.path.string());
+
+    ENJIN_EXPECT_TRUE(a != b);
+    ENJIN_EXPECT_EQ(proj.Read(a), std::string("v 0 0 0"));
+    ENJIN_EXPECT_EQ(proj.Read(b), std::string("v 1 1 1"));
+}
+
 ENJIN_TEST_MAIN()

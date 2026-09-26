@@ -495,8 +495,8 @@ void EditorLayer::ImportModel(const std::string& path) {
         return;
     }
 
-    // Auto-create a project if none is loaded (project-first workflow)
-    EnsureProjectForScene(path);
+    // Opening the dialog changes nothing on disk. The project the import needs
+    // is made when the import is confirmed (ExecuteImport), so Cancel is free.
 
     // Pre-fill from .enjinasset if re-importing
     if (Assets::AssetMetadata::Exists(path)) {
@@ -1409,8 +1409,7 @@ void EditorLayer::ImportModelImmediate(const std::string& path, const Math::Vect
         m_ConsoleLog.push_back("[Error] Cannot import model: no world loaded");
         return;
     }
-    // Project-first workflow: make sure there's a project so references/assets resolve.
-    EnsureProjectForScene(path);
+    // The project, if one is needed, is made in ExecuteImport.
 
     // Auto-detected options: reuse a saved .enjinasset if this file was imported
     // before, otherwise defaults. sourceApp stays Auto so the importer detects axis
@@ -1443,6 +1442,12 @@ void EditorLayer::BeginGroupImport(const std::vector<std::string>& paths) {
 void EditorLayer::ExecuteImport(const std::string& path, const Assets::ImportOptions& options,
                                 const Math::Vector3& placementOffset, bool showResultDialog) {
     if (!m_World) return;
+
+    // An import is copied INTO a project; with none open, make one for this scene.
+    if (m_SceneManager.GetProjectPath().empty() && !CreateProjectForCurrentScene()) {
+        ShowNotification("Could not create a project for this import", NotificationType::Error);
+        return;
+    }
 
     Assets::ImportResult result = Assets::SceneImporter::Import(path, m_World, options);
 
@@ -1613,10 +1618,28 @@ void EditorLayer::ExecuteImport(const std::string& path, const Assets::ImportOpt
             FocusOnEntity(focusTarget);
         }
 
-        // Save .enjinasset metadata
+        // Save .enjinasset metadata beside the PROJECT's copy of the model, which
+        // is what gets re-imported. It used to go beside the source, leaving a
+        // file in whatever folder the model was dropped from. The copy's
+        // project-relative path is already on the imported meshes.
+        std::string metaFor = path;
+        if (!m_SceneManager.GetProjectPath().empty()) {
+            const std::filesystem::path root =
+                std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path();
+            const std::string srcName = std::filesystem::path(path).filename().string();
+            for (auto e : result.entities) {
+                auto* mc = m_World->GetComponent<ECS::MeshComponent>(e);
+                if (!mc || !mc->source.Valid()) continue;
+                const std::filesystem::path src(mc->source.sourcePath);
+                if (!src.is_absolute() && src.filename().string() == srcName) {
+                    metaFor = (root / src).string();
+                    break;
+                }
+            }
+        }
         Assets::AssetMetadata meta;
         meta.PopulateFromResult(result, path, options);
-        meta.Save(path);
+        meta.Save(metaFor);
 
         // Track for re-import and undo
         m_LastImportedModelPath = path;
@@ -1651,24 +1674,13 @@ void EditorLayer::DrawBuildDialog() {
 
     bool hasProject = !m_SceneManager.GetProjectPath().empty();
 
-    // Auto-create project from saved scene if possible (try once, not every frame)
-    static bool triedAutoCreate = false;
-    if (!hasProject && !m_CurrentScenePath.empty() && !triedAutoCreate) {
-        triedAutoCreate = true;
-        EnsureProjectForScene(m_CurrentScenePath);
-        hasProject = !m_SceneManager.GetProjectPath().empty();
-    }
-    if (hasProject) triedAutoCreate = false; // Reset for next time dialog opens
-
+    // A build needs a project. This used to make one silently the first time
+    // the dialog opened, around the scene's folder, moving the scene file.
     if (!hasProject) {
         ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f),
-            "Save your scene first (Ctrl+S), then Build will be available.");
-        if (ImGui::Button("Save Scene Now")) {
-            std::vector<FileFilter> filters = {{ "Enjin Scene", "*.enjin" }, { "All Files", "*.*" }};
-            std::string path = FileDialog::SaveFile("Save Scene", filters, "", "scene.enjin");
-            if (!path.empty()) {
-                SaveScene(path);
-            }
+            "Building needs a project, and this scene isn't in one.");
+        if (ImGui::Button("Find or Create a Project...")) {
+            ShowNoProjectPrompt(m_CurrentScenePath);
         }
         ImGui::End();
         return;
@@ -1679,6 +1691,10 @@ void EditorLayer::DrawBuildDialog() {
 
     // Output directory
     static char outputDir[512] = {};
+    if (m_BuildDlgBufferStale) {   // the project changed since this was filled
+        outputDir[0] = '\0';
+        m_BuildDlgBufferStale = false;
+    }
     if (outputDir[0] == '\0' && !m_BuildConfig.outputDir.empty()) {
         std::strncpy(outputDir, m_BuildConfig.outputDir.c_str(), sizeof(outputDir) - 1);
     }
@@ -1924,6 +1940,11 @@ void EditorLayer::DrawBuildDialog() {
 
 void EditorLayer::StartBuildAsync(bool runAfterBuild) {
     if (m_BuildInProgress) return;
+    // It saves the scene first, and during play that is the play state.
+    if (!m_PlayMode.IsStopped()) {
+        ShowNotification("Stop play mode to build", NotificationType::Warning);
+        return;
+    }
 
     // Auto-save current scene before building so the .enjin file on disk
     // contains all current entities and mesh data (main thread - touches World)
@@ -2068,64 +2089,27 @@ void EditorLayer::DrawNewProjectDialog() {
     bool canCreate = (std::strlen(m_NewProjDlgName) > 0 &&
                       std::strlen(m_NewProjDlgLocation) > 0 &&
                       std::strlen(m_NewProjDlgScene) > 0);
+    const std::string folderProblem =
+        NewProjectFolderProblem(m_NewProjDlgLocation, m_NewProjDlgName, m_NewProjDlgScene);
+    if (!folderProblem.empty()) {
+        canCreate = false;
+        ImGui::TextColored(ImVec4(0.95f, 0.75f, 0.35f, 1.0f), "%s", folderProblem.c_str());
+    }
     if (!canCreate) ImGui::BeginDisabled();
     if (ImGui::Button("Create Project", ImVec2(140 * s, 30 * s))) {
-        namespace fs = std::filesystem;
-        std::string projName(m_NewProjDlgName);
-        std::string location(m_NewProjDlgLocation);
-        std::string sceneName(m_NewProjDlgScene);
-        fs::path projRoot = fs::path(location) / projName;
-
-        // Create directory structure
-        std::error_code ec;
-        fs::create_directories(projRoot / "scenes", ec);
-        fs::create_directories(projRoot / "assets", ec);
-        fs::create_directories(projRoot / "scripts", ec);
-
-        if (!ec) {
-            // Determine project mode from template
-            Scene::ProjectMode mode = Scene::ProjectMode::Mode3D;
-            if (m_NewProjDlgTemplate == 1) mode = Scene::ProjectMode::Mode2D;
-            else if (m_NewProjDlgTemplate == 2) mode = Scene::ProjectMode::Mixed;
-
-            // Initialize project via SceneManager
-            m_SceneManager.NewProject(projName);
-            std::string relativeScenePath = "scenes/" + sceneName + ".enjin";
-            m_SceneManager.AddScene(sceneName, relativeScenePath);
-            m_SceneManager.SetStartScene(0);
+        // The hub's creation, so both make the same project. This one used to
+        // build its own sparser copy: no scripts/enjin_api (so a script that
+        // included TegeBehavior.as failed to compile), no templates/ folder,
+        // and it wrote an empty scene rather than the blank template's.
+        Scene::ProjectMode mode = Scene::ProjectMode::Mode3D;
+        if (m_NewProjDlgTemplate == 1) mode = Scene::ProjectMode::Mode2D;
+        else if (m_NewProjDlgTemplate == 2) mode = Scene::ProjectMode::Mixed;
+        if (CreateProjectOnDisk(m_NewProjDlgLocation, m_NewProjDlgName, m_NewProjDlgScene, "blank")) {
             m_SceneManager.SetProjectMode(mode);
-
-            // Save manifest
-            fs::path manifestPath = projRoot / (projName + ".enjinproject");
-            if (m_SceneManager.SaveProject(manifestPath.string())) {
-                // Clear the world and save the empty scene -- deferred to
-                // Update(), because this dialog draws in the Render phase and
-                // World::Clear() there invalidates the recording command
-                // buffer. SaveAsNew keeps the clear and the save together in
-                // that order; ResetLayerSession still has to happen before the
-                // save or a stale layer stack is persisted beside the new
-                // scene, and ApplyPendingNewScene does exactly that.
-                fs::path sceneFilePath = projRoot / relativeScenePath;
-                m_PendingNewScene = NewSceneMode::SaveAsNew;
-                m_PendingNewScenePath = sceneFilePath.string();
-
-                // Track project and persist settings
-                m_EditorSettings.AddRecentProject(manifestPath.string());
-                m_EditorSettings.lastProjectDir = location;
-                m_EditorSettings.Save();
-
-                ShowNotification("Created project '" + projName + "'",
-                                NotificationType::Success);
-                ENJIN_LOG_INFO(Editor, "Created project '%s' at %s",
-                               projName.c_str(), projRoot.string().c_str());
-                m_ShowNewProjectDialog = false;
-            } else {
-                ShowNotification("Failed to save project manifest",
-                                NotificationType::Error);
-            }
-        } else {
-            ShowNotification("Failed to create project directories",
-                            NotificationType::Error);
+            m_SceneManager.SaveProject();
+            ShowNotification("Created project '" + std::string(m_NewProjDlgName) + "'",
+                             NotificationType::Success);
+            m_ShowNewProjectDialog = false;
         }
     }
     if (!canCreate) ImGui::EndDisabled();
@@ -2960,6 +2944,78 @@ void EditorLayer::DrawCrashReportDialog() {
     ImGui::EndPopup();
 }
 
+void EditorLayer::ContinueAfterUnsavedPrompt(UnsavedAction action) {
+    // Queued where it matters: this runs from a dialog in the Render phase.
+    switch (action) {
+        case UnsavedAction::Quit:
+            m_ShowQuitFeedbackDialog = true;
+            break;
+        case UnsavedAction::NewScene:
+            if (m_World) m_PendingNewScene = NewSceneMode::InProject;
+            break;
+        case UnsavedAction::OpenScene:
+            if (!m_PendingOpenPath.empty()) {
+                OpenScene(m_PendingOpenPath);
+                m_PendingOpenPath.clear();
+            }
+            break;
+        case UnsavedAction::OpenProject:
+            if (!m_PendingOpenProjectPath.empty()) {
+                OpenProjectFromPath(m_PendingOpenProjectPath);
+                m_PendingOpenProjectPath.clear();
+            }
+            break;
+        case UnsavedAction::NewProject:
+            m_ShowNewProjectDialog = true;
+            break;
+        default: break;
+    }
+}
+
+void EditorLayer::DrawNoProjectPrompt() {
+    if (!m_ShowNoProjectPrompt) return;
+    ImGui::OpenPopup("No Project");
+    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    if (!ImGui::BeginPopupModal("No Project", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) return;
+
+    ImGui::Text("This scene isn't in a project.");
+    if (!m_NoProjectPromptScene.empty()) ImGui::TextDisabled("%s", m_NoProjectPromptScene.c_str());
+    ImGui::Spacing();
+    ImGui::TextWrapped("A project holds a scene's assets and scripts, and is what gets built.");
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    auto close = [this]() {
+        m_ShowNoProjectPrompt = false;
+        m_NoProjectPromptScene.clear();
+        ImGui::CloseCurrentPopup();
+    };
+    const bool canBrowse = FileDialog::IsAvailable();
+    if (!canBrowse) ImGui::BeginDisabled();
+    if (ImGui::Button("Find Project...")) {
+        std::vector<FileFilter> filters = {{ "Enjin Project", "*.enjinproject" }};
+        const std::string manifest = FileDialog::OpenFile("Find the project for this scene", filters,
+            m_NoProjectPromptScene.empty() ? std::string()
+                : std::filesystem::path(m_NoProjectPromptScene).parent_path().string());
+        if (!manifest.empty() && AdoptProject(manifest)) {
+            if (!m_NoProjectPromptScene.empty() && !AddSceneToProjectIfInside(m_NoProjectPromptScene)) {
+                ShowNotification("This scene is outside the project's folder. Use Save Scene As "
+                                 "to put a copy in the project.", NotificationType::Warning);
+            }
+            close();
+        }
+    }
+    if (!canBrowse) ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (ImGui::Button("Create New Project")) {
+        if (CreateProjectForCurrentScene()) close();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Not Now")) close();
+    ImGui::EndPopup();
+}
+
 void EditorLayer::DrawUnsavedChangesDialog() {
     if (!m_ShowUnsavedChangesDialog) return;
 
@@ -2986,8 +3042,9 @@ void EditorLayer::DrawUnsavedChangesDialog() {
         const ImVec2 exitBtn(110.0f * exitScale, 34.0f * exitScale);
         if (ImGui::Button("Save", exitBtn)) {
             // Save, then proceed with the pending action
+            bool saved = false;
             if (!m_CurrentScenePath.empty()) {
-                SaveScene(m_CurrentScenePath);
+                saved = SaveScene(m_CurrentScenePath);
             } else {
                 // No path — open Save As dialog
                 std::vector<FileFilter> filters = {
@@ -2997,12 +3054,20 @@ void EditorLayer::DrawUnsavedChangesDialog() {
                 auto projRoot = std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path().string();
                 std::string path = FileDialog::SaveFile("Save Scene", filters, projRoot, "scene.enjin");
                 if (!path.empty()) {
-                    SaveScene(path);
+                    saved = SaveScene(path);
                 } else {
                     // User cancelled save — stay in the dialog
                     ImGui::EndPopup();
                     return;
                 }
+            }
+            // A save that failed must not be followed by the action it was
+            // protecting: this went on to quit or open regardless.
+            if (!saved) {
+                ShowNotification("Save failed, so nothing else was done. See the console.",
+                                 NotificationType::Error);
+                ImGui::EndPopup();
+                return;
             }
 
             // Proceed with the action
@@ -3011,22 +3076,7 @@ void EditorLayer::DrawUnsavedChangesDialog() {
             m_UnsavedChangesAction = UnsavedAction::None;
             ImGui::CloseCurrentPopup();
 
-            switch (action) {
-                case UnsavedAction::Quit:
-                    m_ShowQuitFeedbackDialog = true;
-                    break;
-                case UnsavedAction::NewScene:
-                    // Queued: this dialog draws in the Render phase.
-                    if (m_World) m_PendingNewScene = NewSceneMode::InProject;
-                    break;
-                case UnsavedAction::OpenScene:
-                    if (!m_PendingOpenPath.empty()) {
-                        OpenScene(m_PendingOpenPath);
-                        m_PendingOpenPath.clear();
-                    }
-                    break;
-                default: break;
-            }
+            ContinueAfterUnsavedPrompt(action);
         }
 
         ImGui::SameLine();
@@ -3038,24 +3088,7 @@ void EditorLayer::DrawUnsavedChangesDialog() {
             ClearDirty();
             ImGui::CloseCurrentPopup();
 
-            switch (action) {
-                case UnsavedAction::Quit:
-                    m_ShowQuitFeedbackDialog = true;
-                    break;
-                case UnsavedAction::NewScene:
-                    // Queued: this dialog draws in the Render phase. ClearDirty
-                    // already ran above on this branch; ApplyPendingNewScene
-                    // calling it again is harmless.
-                    if (m_World) m_PendingNewScene = NewSceneMode::InProject;
-                    break;
-                case UnsavedAction::OpenScene:
-                    if (!m_PendingOpenPath.empty()) {
-                        OpenScene(m_PendingOpenPath);
-                        m_PendingOpenPath.clear();
-                    }
-                    break;
-                default: break;
-            }
+            ContinueAfterUnsavedPrompt(action);
         }
 
         ImGui::SameLine();

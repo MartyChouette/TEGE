@@ -319,6 +319,13 @@ private:
     // Smallest non-negative build index not used by any scene
     i32 NextFreeBuildIndex() const;
 
+    // Every project-owned field back to what a freshly started editor has.
+    // LoadProject starts from here, so a key the new project's file does not
+    // have cannot keep the PREVIOUS project's value: window title and icon,
+    // audio, startup flow, input bindings and localization all used to carry
+    // over from whatever was open before.
+    void ResetProjectState();
+
     ECS::World* m_World = nullptr;
     Build::AssetReader* m_AssetReader = nullptr;  // Optional: read scenes from .enjpak
 

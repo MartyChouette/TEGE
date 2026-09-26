@@ -99,20 +99,27 @@ static json ToolList() {
              json::object(), json::array()),
         tool("list_scenes", "The project's scenes with paths, build order, start-scene flag, plus the open scene and play state.",
              json::object(), json::array()),
-        tool("open_scene", "Load a scene by project-relative path (e.g. scenes/Main.enjin). Refused during play mode; unsaved edits to the current scene are NOT saved first.",
-             {{"path", {{"type", "string"}, {"description", "scene path relative to the project root"}}}},
+        tool("open_scene", "Load a scene by project-relative path (e.g. scenes/Main.enjin). Refused during play mode, "
+             "and refused while the open scene has unsaved changes unless discard is true.",
+             {{"path", {{"type", "string"}, {"description", "scene path relative to the project root"}}},
+              {"discard", {{"type", "boolean"}, {"description", "throw away unsaved changes to the open scene"}}}},
              json::array({"path"})),
         tool("save_scene", "Save the open scene to its file.",
              json::object(), json::array()),
         tool("save_scene_as", "Save the open scene to a NEW project-relative path and make that "
-             "the open scene. Creates intermediate directories. Refused during play mode.",
-             {{"path", {{"type", "string"}, {"description", "scene path relative to the project root, e.g. scenes/chunks/house_interior.enjin"}}}},
+             "the open scene. Creates intermediate directories. Refused during play mode, and refused "
+             "if the file exists unless overwrite is true.",
+             {{"path", {{"type", "string"}, {"description", "scene path relative to the project root, e.g. scenes/chunks/house_interior.enjin"}}},
+              {"overwrite", {{"type", "boolean"}, {"description", "replace an existing file"}}}},
              json::array({"path"})),
         tool("new_scene", "Clear to an empty scene and write it to a NEW project-relative path, "
              "which becomes the open scene. This is how a streaming sub-scene is created. "
-             "Unsaved edits to the current scene are NOT saved first. Refused during play mode. "
+             "Refused during play mode, while the open scene has unsaved changes (unless discard), "
+             "and if the file exists (unless overwrite). "
              "Applied on the next editor update, so poll list_scenes to confirm.",
-             {{"path", {{"type", "string"}, {"description", "scene path relative to the project root"}}}},
+             {{"path", {{"type", "string"}, {"description", "scene path relative to the project root"}}},
+              {"discard", {{"type", "boolean"}, {"description", "throw away unsaved changes to the open scene"}}},
+              {"overwrite", {{"type", "boolean"}, {"description", "replace an existing file"}}}},
              json::array({"path"})),
         tool("press_key", "Inject a key press into the running game (merged with live input). key = single char or space/enter/escape/tab/shift/ctrl/up/down/left/right.",
              {{"key", {{"type", "string"}}},
