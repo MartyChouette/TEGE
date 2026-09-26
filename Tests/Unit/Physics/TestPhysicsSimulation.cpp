@@ -948,4 +948,53 @@ ENJIN_TEST(PhysicsSim3D, ABallSocketTwistLimitStopsTheTwist) {
     ENJIN_EXPECT_TRUE(limited < 15.0f);
 }
 
+// ===========================================================================
+// Character capsule resize: crouch and headroom (SD-19)
+// ===========================================================================
+
+ENJIN_TEST(PhysicsSim3D, ACrouchedCharacterCannotStandUpIntoACeiling) {
+    // Arrange: a floor (top at y = 0.5) and a ceiling whose underside is at
+    // y = 1.75, lower than a standing 1.8 m character but higher than a
+    // crouched one.
+    ECS::World world;
+    ECS::Entity floor = world.CreateEntity();
+    {
+        ECS::TransformComponent t;
+        world.AddComponent<ECS::TransformComponent>(floor, t);
+        ECS::BoxColliderComponent bc;
+        bc.size = Math::Vector3(20.0f, 1.0f, 20.0f);
+        world.AddComponent<ECS::BoxColliderComponent>(floor, bc);
+    }
+    ECS::Entity ceiling = world.CreateEntity();
+    {
+        ECS::TransformComponent t;
+        t.position = Math::Vector3(0.0f, 2.0f, 0.0f);
+        world.AddComponent<ECS::TransformComponent>(ceiling, t);
+        ECS::BoxColliderComponent bc;
+        bc.size = Math::Vector3(20.0f, 0.5f, 20.0f);   // underside at 1.75
+        world.AddComponent<ECS::BoxColliderComponent>(ceiling, bc);
+    }
+    auto backend = Physics::CreatePhysicsBackend(Physics::PhysicsBackendType::Auto);
+    ENJIN_ASSERT_NOT_NULL(backend.get());
+    backend->SetWorld(&world);
+    backend->Update(1.0f / 60.0f);   // bodies exist
+
+    // A crouched character: half-height 0.5 (1.0 m tall), feet on the floor.
+    const ECS::Entity player = world.CreateEntity();
+    backend->CreateCharacterController(player, 0.3f, 0.5f, Math::Vector3(0.0f, 1.0f, 0.0f));
+    ENJIN_ASSERT_TRUE(backend->HasCharacterController(player));
+
+    // Act / Assert: standing (half-height 0.9, head at 2.3) would be inside
+    // the ceiling, so it is refused and nothing changes.
+    ENJIN_EXPECT_FALSE(backend->ResizeCharacterController(player, 0.9f));
+    // Shrinking always fits.
+    ENJIN_EXPECT_TRUE(backend->ResizeCharacterController(player, 0.4f));
+    ENJIN_EXPECT_TRUE(backend->ResizeCharacterController(player, 0.5f));
+
+    // With the ceiling gone, standing up works.
+    world.RemoveComponent<ECS::BoxColliderComponent>(ceiling);
+    backend->Update(1.0f / 60.0f);
+    ENJIN_EXPECT_TRUE(backend->ResizeCharacterController(player, 0.9f));
+}
+
 ENJIN_TEST_MAIN()

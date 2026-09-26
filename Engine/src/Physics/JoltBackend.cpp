@@ -19,6 +19,7 @@
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
 #include <Jolt/Physics/Collision/Shape/SphereShape.h>
 #include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
+#include <cfloat>
 #include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
 #include <Jolt/Physics/Collision/Shape/OffsetCenterOfMassShape.h>
 #include <Jolt/Physics/Collision/Shape/ConvexHullShape.h>
@@ -1822,6 +1823,44 @@ void JoltBackend::DestroyCharacterController(ECS::Entity entity) {
 
 bool JoltBackend::HasCharacterController(ECS::Entity entity) const {
     return m_CharacterControllers.find(entity) != m_CharacterControllers.end();
+}
+
+bool JoltBackend::ResizeCharacterController(ECS::Entity entity, f32 capsuleHalfHeight) {
+    auto it = m_CharacterControllers.find(entity);
+    if (it == m_CharacterControllers.end() || !m_Initialized) return false;
+    JPH::CharacterVirtual* character = it->second;
+    if (character->GetShape()->GetSubType() != JPH::EShapeSubType::Capsule) return false;
+    const auto* current = static_cast<const JPH::CapsuleShape*>(character->GetShape());
+
+    const f32 radius = current->GetRadius();
+    const f32 currentHalf = current->GetHalfHeightOfCylinder() + radius;
+    const f32 newHalf = std::max(capsuleHalfHeight, radius + 0.01f);
+    if (std::fabs(newHalf - currentHalf) < 1e-4f) return true;
+
+    // The character's position is the capsule's centre. Moving it by the
+    // change in half-height keeps the bottom of the capsule, the feet, still.
+    const JPH::RVec3 oldPos = character->GetPosition();
+    character->SetPosition(oldPos + JPH::Vec3(0.0f, newHalf - currentHalf, 0.0f));
+
+    EnjinBodyFilter bodyFilter;
+    bodyFilter.filterData = &m_BodyFilterData;
+    bodyFilter.layerMask = 0xFFFFFFFF;
+    auto bodyIt = m_EntityToBody.find(entity);
+    if (bodyIt != m_EntityToBody.end()) bodyFilter.ignoreBodyID = bodyIt->second;
+    JPH::BroadPhaseLayerFilter bpFilter;
+    JPH::ObjectLayerFilter objFilter;
+    JPH::ShapeFilter shapeFilter;
+
+    // Shrinking can always fit. Growing must not end up inside anything: a
+    // little penetration is the character's normal contact with the floor.
+    const float maxPenetration = (newHalf < currentHalf) ? FLT_MAX : 0.05f;
+    JPH::Ref<JPH::Shape> shape = new JPH::CapsuleShape(newHalf - radius, radius);
+    if (!character->SetShape(shape, maxPenetration, bpFilter, objFilter, bodyFilter, shapeFilter,
+                             *m_TempAllocator)) {
+        character->SetPosition(oldPos);
+        return false;
+    }
+    return true;
 }
 
 void JoltBackend::DestroyAllCharacterControllers() {

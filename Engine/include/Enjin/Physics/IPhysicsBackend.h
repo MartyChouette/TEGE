@@ -70,6 +70,13 @@ public:
     virtual CharacterState UpdateCharacterController(ECS::Entity entity, const Math::Vector3& velocity,
                                                       f32 deltaTime) { return {}; }
     virtual bool HasCharacterController(ECS::Entity entity) const { return false; }
+    // Change a character's capsule to `capsuleHalfHeight` (half the TOTAL
+    // height, as CreateCharacterController takes it), keeping its feet where
+    // they are. Shrinking always succeeds; growing fails, changing nothing,
+    // when the taller capsule would overlap something -- the check that stops
+    // a crouching player standing up into a ceiling. A backend with no
+    // character controllers has nothing to resize and reports success.
+    virtual bool ResizeCharacterController(ECS::Entity entity, f32 capsuleHalfHeight) { return true; }
 
     // Spatial queries
     virtual std::vector<ECS::Entity> GetCollidersInRadius(const Math::Vector3& center, f32 radius, u32 layerMask = 0xFFFFFFFF) = 0;

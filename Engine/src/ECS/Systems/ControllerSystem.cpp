@@ -296,6 +296,9 @@ void ControllerSystem::Update(f32 deltaTime) {
                     WarnIfCapsuleMismatchesMesh(m_World, entity, *cap);
                 }
                 m_Physics->CreateCharacterController(entity, radius, totalHalfH, transform.position);
+                controller.standingCapsuleHalf = totalHalfH;
+                controller.capsuleCenterDrop = 0.0f;
+                controller.isCrouching = false;   // a fresh body is standing height
             }
             UpdateFirstPerson(entity, controller, transform, deltaTime);
         });
@@ -1918,9 +1921,20 @@ void ControllerSystem::UpdateFirstPerson(Entity entity, FirstPersonController& c
         }
     }
 
-    // Crouch toggle
+    // Crouch toggle. The physics capsule follows: shorter while crouched, and
+    // standing up is refused -- the player stays crouched -- when there is no
+    // headroom above (SD-19).
     if (ctrl.enableCrouch && IsCrouchPressed()) {
-        ctrl.isCrouching = !ctrl.isCrouching;
+        const bool wantCrouch = !ctrl.isCrouching;
+        bool fits = true;
+        if (m_Physics && ctrl.standingCapsuleHalf > 0.0f && m_Physics->HasCharacterController(entity)) {
+            const f32 scale = (ctrl.standingHeight > 0.0f)
+                ? Math::Clamp(ctrl.crouchingHeight / ctrl.standingHeight, 0.1f, 1.0f) : 1.0f;
+            const f32 half = wantCrouch ? ctrl.standingCapsuleHalf * scale : ctrl.standingCapsuleHalf;
+            fits = m_Physics->ResizeCharacterController(entity, half);
+            if (fits) ctrl.capsuleCenterDrop = ctrl.standingCapsuleHalf - half;
+        }
+        if (fits) ctrl.isCrouching = wantCrouch;
     }
 
     // Update height for crouching
@@ -2020,7 +2034,7 @@ void ControllerSystem::UpdateFirstPerson(Entity entity, FirstPersonController& c
             if (UpdateGridMovement(ctrl, transform, facingInput, dt)) {
                 // Camera follows position with yaw/pitch
                 Math::Vector3 eyePos = transform.position;
-                eyePos.y += ctrl.currentHeight;
+                eyePos.y += ctrl.currentHeight + ctrl.capsuleCenterDrop;
                 f32 yr = Math::Radians(ctrl.yaw);
                 f32 pr = Math::Radians(ctrl.pitch);
                 Math::Vector3 fwd;
@@ -2039,7 +2053,7 @@ void ControllerSystem::UpdateFirstPerson(Entity entity, FirstPersonController& c
             // Camera follows position in grid mode
             {
                 Math::Vector3 eyePos = transform.position;
-                eyePos.y += ctrl.currentHeight;
+                eyePos.y += ctrl.currentHeight + ctrl.capsuleCenterDrop;
                 // Apply look rotation
                 f32 yr = Math::Radians(ctrl.yaw);
                 f32 pr = Math::Radians(ctrl.pitch);
@@ -2254,7 +2268,7 @@ void ControllerSystem::UpdateFirstPerson(Entity entity, FirstPersonController& c
     // Update camera (first person camera IS the player's eyes)
     {
         Math::Vector3 eyePos = transform.position;
-        eyePos.y += ctrl.currentHeight;
+        eyePos.y += ctrl.currentHeight + ctrl.capsuleCenterDrop;
 
         // Add head bob offset
         if (ctrl.enableHeadBob) {

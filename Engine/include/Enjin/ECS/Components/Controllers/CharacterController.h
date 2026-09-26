@@ -267,6 +267,14 @@ struct FirstPersonController : public CharacterControllerBase {
     f32 crouchSpeed = 0.5f;     // Movement speed multiplier when crouching
     bool isCrouching = false;
     f32 currentHeight = 1.8f;
+    // Runtime: the physics capsule's total half-height when standing (set
+    // when the character body is created), and how far its centre has dropped
+    // from there while crouched. Crouching used to lower only the camera, so a
+    // crouching player still could not fit under anything lower than standing
+    // height (SD-19). The eye adds the drop back so it lands where
+    // crouchingHeight says.
+    f32 standingCapsuleHalf = 0.0f;
+    f32 capsuleCenterDrop = 0.0f;
 
     // Sprinting
     f32 sprintFOVIncrease = 10.0f;  // FOV increase when sprinting
