@@ -512,6 +512,9 @@ static u32 GetMinPayloadSize(MessageType type) {
         case MessageType::EntityDestroy: return 4;
         case MessageType::OwnershipRequest: return 4;
         case MessageType::OwnershipGrant: return 5;
+        case MessageType::OwnershipRevoke: return 5;     // [u32 netId][u8 newOwner]
+        case MessageType::PlayerJoined: return 1;        // [u8 id][string name]
+        case MessageType::PlayerLeft: return 1;          // [u8 id]
         // [u32 nameHash][u8 target][u32 size]
         case MessageType::RPCCall: return 9;
         case MessageType::SessionKeyExchange: return SESSION_KEY_SIZE;
@@ -899,6 +902,17 @@ void NetworkSystem::DispatchMessage(MessageType type, const NetworkAddress& send
             break;
         case MessageType::OwnershipGrant:
             HandleOwnershipGrant(payload, payloadSize);
+            break;
+        // These three were sent by the host and had no case, so they fell to
+        // `default` and a client never heard them (SD-3).
+        case MessageType::OwnershipRevoke:
+            HandleOwnershipRevoke(senderId, payload, payloadSize);
+            break;
+        case MessageType::PlayerJoined:
+            HandlePlayerJoined(payload, payloadSize);
+            break;
+        case MessageType::PlayerLeft:
+            HandlePlayerLeft(payload, payloadSize);
             break;
         case MessageType::RPCCall:
             HandleRPCCall(senderId, payload, payloadSize);
@@ -1361,6 +1375,7 @@ void NetworkSystem::HandleOwnershipRequest(PlayerId senderId, const u8* payload,
     if (oldOwner != senderId && oldOwner != INVALID_PLAYER) {
         std::vector<u8> revokePayload;
         WriteU32(revokePayload, netId);
+        WriteU8(revokePayload, senderId);   // the new owner, as in the grant
         ConnectionInfo* oldConn = FindConnectionByPlayerId(oldOwner);
         if (oldConn) SendPacket(oldConn->address, MessageType::OwnershipRevoke, revokePayload);
     }
@@ -1383,6 +1398,52 @@ void NetworkSystem::HandleOwnershipGrant(const u8* payload, u32 size) {
         netComp->isLocallyOwned = (newOwner == m_LocalPlayerId);
         ApplyPhysicsAuthority(it->second, netComp->isLocallyOwned);
     }
+}
+
+// The host gave an entity we owned to someone else. Without this the old owner
+// kept isLocallyOwned, went on simulating the body and sending snapshots for an
+// entity it no longer had authority over.
+void NetworkSystem::HandleOwnershipRevoke(PlayerId senderId, const u8* payload, u32 size) {
+    if (m_Role != NetworkRole::Client || senderId != kHostPlayerId) return;
+    if (!m_World || size < 5) return;
+
+    u32 offset = 0;
+    const NetworkId netId = ReadU32(payload, offset, size);
+    const PlayerId newOwner = ReadU8(payload, offset, size);
+
+    auto it = m_NetworkToEntity.find(netId);
+    if (it == m_NetworkToEntity.end()) return;
+    if (auto* netComp = m_World->GetComponent<ECS::NetworkIdentityComponent>(it->second)) {
+        netComp->ownerId = newOwner;
+        netComp->isLocallyOwned = false;
+        ApplyPhysicsAuthority(it->second, false);
+    }
+}
+
+// Join and leave keep the lobby list current between LobbyState broadcasts,
+// which stay the authority: the next one replaces the list wholesale.
+void NetworkSystem::HandlePlayerJoined(const u8* payload, u32 size) {
+    if (m_Role != NetworkRole::Client || size < 1) return;
+    u32 offset = 0;
+    const PlayerId id = ReadU8(payload, offset, size);
+    const std::string name = ReadString(payload, offset, size);
+    for (const auto& lp : m_LobbyPlayers) {
+        if (lp.id == id) return;
+    }
+    LobbyPlayer lp;
+    lp.id = id;
+    lp.name = name;
+    m_LobbyPlayers.push_back(lp);
+}
+
+void NetworkSystem::HandlePlayerLeft(const u8* payload, u32 size) {
+    if (m_Role != NetworkRole::Client || size < 1) return;
+    u32 offset = 0;
+    const PlayerId id = ReadU8(payload, offset, size);
+    m_LobbyPlayers.erase(
+        std::remove_if(m_LobbyPlayers.begin(), m_LobbyPlayers.end(),
+                       [id](const LobbyPlayer& lp) { return lp.id == id; }),
+        m_LobbyPlayers.end());
 }
 
 void NetworkSystem::ApplyPhysicsAuthority(ECS::Entity entity, bool isLocallyOwned) {

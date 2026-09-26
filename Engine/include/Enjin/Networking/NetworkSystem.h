@@ -203,6 +203,9 @@ private:
     bool IsSenderAuthoritativeFor(PlayerId senderId, ECS::Entity entity) const;
     void HandleOwnershipRequest(PlayerId senderId, const u8* payload, u32 size);
     void HandleOwnershipGrant(const u8* payload, u32 size);
+    void HandleOwnershipRevoke(PlayerId senderId, const u8* payload, u32 size);
+    void HandlePlayerJoined(const u8* payload, u32 size);
+    void HandlePlayerLeft(const u8* payload, u32 size);
     void HandleRPCCall(PlayerId senderId, const u8* payload, u32 size);
 
     // Physics authority: a networked Rigidbody we do NOT own is switched to network-driven

@@ -169,6 +169,94 @@ ENJIN_TEST(NetworkHandshake, ALateSessionKeyStillDeliversTheExistingEntities) {
 }
 
 // ============================================================================
+// OWNERSHIP AND THE LOBBY
+// ============================================================================
+
+// SD-3: the host sent OwnershipRevoke, PlayerJoined and PlayerLeft and no
+// client had a case for any of them. A revoked owner kept isLocallyOwned and
+// went on driving an entity it no longer owned.
+ENJIN_TEST(NetworkOwnership, TheOldOwnerIsToldWhenOwnershipMoves) {
+    // Arrange: a host and two clients; the host's entity belongs to client A.
+    ECS::World hostWorld, worldA, worldB;
+    LoopbackBus bus;
+    NetworkSystem host, a, b;
+    host.SetTransport(std::make_unique<LoopbackTransport>(&bus));
+    a.SetTransport(std::make_unique<LoopbackTransport>(&bus));
+    b.SetTransport(std::make_unique<LoopbackTransport>(&bus));
+    host.SetWorld(&hostWorld);
+    a.SetWorld(&worldA);
+    b.SetWorld(&worldB);
+    for (NetworkSystem* n : {&host, &a, &b}) n->SetEnabled(true);
+    auto pump = [&](int frames) {
+        for (int i = 0; i < frames; ++i) { host.Update(1.0f / 60.0f); a.Update(1.0f / 60.0f); b.Update(1.0f / 60.0f); }
+    };
+    ENJIN_ASSERT_TRUE(host.HostGame(Pair::kHostPort, "host"));
+    ENJIN_ASSERT_TRUE(a.JoinGame("127.0.0.1", Pair::kHostPort, "a"));
+    pump(10);
+    ENJIN_ASSERT_TRUE(b.JoinGame("127.0.0.1", Pair::kHostPort, "b"));
+    pump(10);
+    ENJIN_ASSERT_TRUE(a.IsConnected() && b.IsConnected());
+
+    const ECS::Entity e = hostWorld.CreateEntity();
+    hostWorld.AddComponent<ECS::TransformComponent>(e);
+    hostWorld.AddComponent<ECS::NetworkIdentityComponent>(e);
+    // Registering on the host broadcasts the spawn to both clients.
+    const NetworkId id = host.RegisterNetworkEntity(e, a.GetLocalPlayerId());
+    pump(10);
+    auto owned = [&](ECS::World& w) -> const ECS::NetworkIdentityComponent* {
+        for (ECS::Entity x : w.GetEntitiesWithComponent<ECS::NetworkIdentityComponent>()) {
+            const auto* n = w.GetComponent<ECS::NetworkIdentityComponent>(x);
+            if (n && n->networkId == id) return n;
+        }
+        return nullptr;
+    };
+    ENJIN_ASSERT_NOT_NULL(owned(worldA));
+    ENJIN_ASSERT_TRUE(owned(worldA)->isLocallyOwned);
+
+    // Act: client B asks for it.
+    b.RequestOwnership(id);
+    pump(10);
+
+    // Assert: B owns it, and A has been told it does not.
+    ENJIN_ASSERT_NOT_NULL(owned(worldB));
+    ENJIN_EXPECT_TRUE(owned(worldB)->isLocallyOwned);
+    ENJIN_EXPECT_FALSE(owned(worldA)->isLocallyOwned);
+    ENJIN_EXPECT_EQ(owned(worldA)->ownerId, b.GetLocalPlayerId());
+}
+
+ENJIN_TEST(NetworkOwnership, ALeavingPlayerLeavesTheLobbyAtOnce) {
+    // Arrange: a host and two clients.
+    LoopbackBus bus;
+    NetworkSystem host, a, b;
+    host.SetTransport(std::make_unique<LoopbackTransport>(&bus));
+    a.SetTransport(std::make_unique<LoopbackTransport>(&bus));
+    b.SetTransport(std::make_unique<LoopbackTransport>(&bus));
+    for (NetworkSystem* n : {&host, &a, &b}) n->SetEnabled(true);
+    auto pump = [&](int frames) {
+        for (int i = 0; i < frames; ++i) { host.Update(1.0f / 60.0f); a.Update(1.0f / 60.0f); b.Update(1.0f / 60.0f); }
+    };
+    ENJIN_ASSERT_TRUE(host.HostGame(Pair::kHostPort, "host"));
+    ENJIN_ASSERT_TRUE(a.JoinGame("127.0.0.1", Pair::kHostPort, "a"));
+    pump(10);
+    ENJIN_ASSERT_TRUE(b.JoinGame("127.0.0.1", Pair::kHostPort, "b"));
+    pump(10);
+    ENJIN_ASSERT_EQ(a.GetLobbyPlayers().size(), static_cast<usize>(3));
+
+    // Act: B leaves. Every LobbyState that follows is lost, so only
+    // PlayerLeft can tell A.
+    const PlayerId bId = b.GetLocalPlayerId();
+    bus.dropType = static_cast<u8>(MessageType::LobbyState);
+    bus.dropTypeRemaining = 1000;
+    b.Disconnect();
+    pump(10);
+
+    // Assert
+    bool stillListed = false;
+    for (const auto& lp : a.GetLobbyPlayers()) stillListed |= (lp.id == bId);
+    ENJIN_EXPECT_FALSE(stillListed);
+}
+
+// ============================================================================
 // THE RELIABLE CHANNEL
 // ============================================================================
 
