@@ -93,6 +93,22 @@ static void Health_Damage(u64 id, f32 amount) {
     Gameplay::GameplayLoop::ApplyDamage(s_BindingsWorld, static_cast<Entity>(id), amount);
 }
 
+// Typed damage from script: Health_Damage(target, amount, DamageType::Fire).
+// The two-argument form has no source, so ApplyDamage treats it as Physical,
+// and a script could not deal fire, ice or poison at all -- every resistance
+// and weakness was out of reach of script damage (SD-25). The type rides a
+// temporary DamageComponent, which is how ApplyDamage learns the type of any
+// hit; it carries no knockback, so this changes nothing else.
+static void Health_DamageTyped(u64 id, f32 amount, i32 type, u64 source) {
+    if (!s_BindingsWorld) return;
+    if (type < 0 || type > static_cast<i32>(DamageComponent::DamageType::Magic)) type = 0;
+    DamageComponent src;
+    src.type = static_cast<DamageComponent::DamageType>(type);
+    src.knockbackForce = 0.0f;
+    Gameplay::GameplayLoop::ApplyDamage(s_BindingsWorld, static_cast<Entity>(id), amount,
+                                        static_cast<Entity>(source), &src);
+}
+
 // ============================================================================
 // Material component access
 // ============================================================================
@@ -2483,6 +2499,16 @@ void RegisterComponentBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction("float Health_GetMax(uint64)", ENJIN_AS_FN(Health_GetMax), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Health_SetCurrent(uint64, float)", ENJIN_AS_FN(Health_SetCurrent), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Health_Damage(uint64, float)", ENJIN_AS_FN(Health_Damage), ENJIN_AS_CALL_CDECL));
+    // Same order as DamageComponent::DamageType; resistances key on it.
+    AS_CHECK(engine->RegisterEnum("DamageType"));
+    AS_CHECK(engine->RegisterEnumValue("DamageType", "Physical", 0));
+    AS_CHECK(engine->RegisterEnumValue("DamageType", "Fire", 1));
+    AS_CHECK(engine->RegisterEnumValue("DamageType", "Ice", 2));
+    AS_CHECK(engine->RegisterEnumValue("DamageType", "Electric", 3));
+    AS_CHECK(engine->RegisterEnumValue("DamageType", "Poison", 4));
+    AS_CHECK(engine->RegisterEnumValue("DamageType", "Magic", 5));
+    AS_CHECK(engine->RegisterGlobalFunction("void Health_Damage(uint64, float, DamageType, uint64 source = 0)",
+                                            ENJIN_AS_FN(Health_DamageTyped), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void GameOver_Trigger(uint64, bool)", ENJIN_AS_FN(GameOver_Trigger), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool GameOver_IsTriggered(uint64)", ENJIN_AS_FN(GameOver_IsTriggered), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void GameOver_SetMessages(uint64, const string &in, const string &in)", ENJIN_AS_FN(GameOver_SetMessages), ENJIN_AS_CALL_CDECL));

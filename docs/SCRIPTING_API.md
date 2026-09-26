@@ -338,7 +338,7 @@ the tagged form, which is what the editor writes:
 
 ## Component Access
 
-- **Health**: `Health_Get/GetMax/SetCurrent(uint64)`, `Health_Damage(uint64, float)`
+- **Health**: `Health_Get/GetMax/SetCurrent(uint64)`, `Health_Damage(uint64, float)` (physical), `Health_Damage(uint64 target, float amount, DamageType type, uint64 source = 0)` for typed damage; `DamageType` is Physical, Fire, Ice, Electric, Poison, Magic, and the target's DamageResistance applies
 - **Material**: `Material_SetBaseColor/GetBaseColor(uint64, Vector3)`, `Material_SetMetallic/SetRoughness(uint64, float)`, `Material_SetTransmission/GetTransmission(uint64, float)`, `Material_SetIOR/GetIOR(uint64, float)`, `Material_SetThickness/GetThickness(uint64, float)`, `Material_SetSSSIntensity/GetSSSIntensity(uint64, float)`, `Material_SetSSSRadius/GetSSSRadius(uint64, float)`, `Material_SetSSSColor/GetSSSColor(uint64, Vector3)`, `Material_SetOutlineWidth/GetOutlineWidth(uint64, float)`, `Material_SetOutlineColor/GetOutlineColor(uint64, Vector3)`, `Material_SetSurfaceNoiseScale/GetSurfaceNoiseScale(uint64, float)`, `Material_SetSurfaceNoiseStrength/GetSurfaceNoiseStrength(uint64, float)`
 - **Light**: `Light_SetColor/GetColor(uint64, Vector3)`, `Light_SetIntensity/GetIntensity(uint64, float)`, `Light_SetRange/GetRange(uint64, float)`, `Light_SetType/GetType(uint64, int)` — 0=Directional, 1=Point, 2=Spot, `Light_SetCastShadows/GetCastShadows(uint64, bool)`, `Light_SetSpotAngles(uint64, float inner, float outer)` — cone angles in degrees
 - **Camera**: `Camera_SetFOV/GetFOV(uint64, float)`, `Camera_SetOrthoSize/GetOrthoSize(uint64, float)` — orthographic half-height (2D zoom), `Camera_SetProjectionType/GetProjectionType(uint64, int)` — 0=Perspective, 1=Orthographic, `Camera_SetNearFar(uint64, float near, float far)`
@@ -1326,6 +1326,7 @@ merely absent.
 - `void GameOver_SetMessages(uint64, const string &in, const string &in)`
 - `void GameOver_Trigger(uint64, bool)`
 - `void Health_Damage(uint64, float)`
+- `void Health_Damage(uint64, float, DamageType, uint64 = 0)`
 - `void Health_Heal(uint64, float)`
 - `void Health_SetCurrent(uint64, float)`
 - `void Health_SetInvulnerable(uint64, bool)`

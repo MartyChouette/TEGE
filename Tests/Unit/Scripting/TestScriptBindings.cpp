@@ -3,6 +3,7 @@
 #include "Enjin/Scripting/ScriptBindings.h"
 #include "Enjin/Scripting/ScriptEvents.h"
 #include "Enjin/ECS/World.h"
+#include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/Platform/Input.h"
 #include "Enjin/Effects/WorldTime.h"
 #include "Enjin/Effects/SeasonalWeather.h"
@@ -1199,6 +1200,47 @@ ENJIN_TEST(FileBindings, ShrinkingTheCalendarClampsTheDate) {
     ENJIN_EXPECT_EQ(r, 0);
     engine.Shutdown();
     SetBindingsWorldTime(nullptr, nullptr);
+}
+
+// SD-25: Health_Damage from script had no source, so every script hit was
+// Physical and resistances and weaknesses were out of its reach. The typed
+// overload carries the type through the shared damage path.
+ENJIN_TEST(Execution, ScriptDamageCanBeTyped) {
+    // Arrange: a target that takes half damage from fire and double from ice.
+    ECS::World world;
+    const ECS::Entity target = world.CreateEntity();
+    auto& hp = world.AddComponent<ECS::HealthComponent>(target);
+    hp.maxHealth = hp.currentHealth = 100.0f;
+    auto& resist = world.AddComponent<ECS::DamageResistanceComponent>(target);
+    resist.fireMult = 0.5f;
+    resist.iceMult = 2.0f;
+    SetBindingsWorld(&world);
+
+    ScriptEngine engine;
+    ENJIN_ASSERT_TRUE(InitWithBindings(engine));
+    ENJIN_ASSERT_TRUE(engine.CompileScriptFromMemory("typed_damage",
+        "uint64 gTarget = 0;\n"
+        "void Burn()   { Health_Damage(gTarget, 10.0f, DamageType::Fire); }\n"
+        "void Freeze() { Health_Damage(gTarget, 10.0f, DamageType::Ice); }\n"
+        "void Hit()    { Health_Damage(gTarget, 10.0f); }\n"));
+    asIScriptModule* mod = engine.GetASEngine()->GetModule("typed_damage");
+    ENJIN_ASSERT_NOT_NULL(mod);
+    *static_cast<u64*>(mod->GetAddressOfGlobalVar(mod->GetGlobalVarIndexByName("gTarget"))) = target;
+    auto run = [&](const char* fn) {
+        asIScriptContext* ctx = engine.AcquireContext();
+        ctx->Prepare(mod->GetFunctionByName(fn));
+        ctx->Execute();
+        engine.ReturnContext(ctx);
+        return world.GetComponent<ECS::HealthComponent>(target)->currentHealth;
+    };
+
+    // Act / Assert
+    ENJIN_EXPECT_FLOAT_EQ(run("Burn"), 95.0f);     // fire at half
+    ENJIN_EXPECT_FLOAT_EQ(run("Freeze"), 75.0f);   // ice at double
+    ENJIN_EXPECT_FLOAT_EQ(run("Hit"), 65.0f);      // untyped stays physical
+
+    SetBindingsWorld(nullptr);
+    engine.Shutdown();
 }
 
 ENJIN_TEST_MAIN()
