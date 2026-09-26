@@ -33,6 +33,7 @@
 #include <Jolt/Physics/Constraints/HingeConstraint.h>
 #include <Jolt/Physics/Constraints/PointConstraint.h>
 #include <Jolt/Physics/Constraints/ConeConstraint.h>
+#include <Jolt/Physics/Constraints/SwingTwistConstraint.h>
 #include <Jolt/Physics/Constraints/FixedConstraint.h>
 #include <Jolt/Physics/Constraints/SliderConstraint.h>
 #include <Jolt/Physics/Character/CharacterVirtual.h>
@@ -1391,9 +1392,48 @@ void JoltBackend::CreateJointForEntity(ECS::Entity entity, u8 jointType) {
         JPH::BodyID bodyB = getBodyID(joint->entityB);
         if (bodyA.IsInvalid() || bodyB.IsInvalid()) return;
 
+        const Math::Vector3 pointA = FromJoltR(bodyInterface.GetPosition(bodyA)) + joint->anchorA;
+        const Math::Vector3 pointB = FromJoltR(bodyInterface.GetPosition(bodyB)) + joint->anchorB;
+
+        // A twist limit needs a constraint that knows about twist: Jolt's
+        // swing-twist, which also carries the cone. The point + cone pair
+        // below has no twist axis at all, so useTwistLimit and its range were
+        // shown in the inspector and did nothing (SD-21). Joints without a
+        // twist limit keep the point + cone setup unchanged.
+        if (joint->useTwistLimit) {
+            constexpr f32 kDeg = 3.14159265358979323846f / 180.0f;
+            // The twist axis is the line joining the two bodies (the
+            // "connecting axis" the component describes), falling back to +Y
+            // when they sit on top of each other.
+            Math::Vector3 axis = FromJoltR(bodyInterface.GetPosition(bodyB)) -
+                                 FromJoltR(bodyInterface.GetPosition(bodyA));
+            if (axis.Length() < 1e-4f) axis = Math::Vector3(0.0f, 1.0f, 0.0f);
+            axis = axis.Normalized();
+            // Any direction perpendicular to it will do as the plane axis.
+            Math::Vector3 plane = axis.Cross(std::fabs(axis.y) < 0.9f ? Math::Vector3(0.0f, 1.0f, 0.0f)
+                                                                     : Math::Vector3(1.0f, 0.0f, 0.0f));
+            plane = plane.Normalized();
+
+            JPH::SwingTwistConstraintSettings st;
+            st.mSpace = JPH::EConstraintSpace::WorldSpace;
+            st.mPosition1 = ToJoltR(pointA);
+            st.mPosition2 = ToJoltR(pointB);
+            st.mTwistAxis1 = st.mTwistAxis2 = ToJolt(axis);
+            st.mPlaneAxis1 = st.mPlaneAxis2 = ToJolt(plane);
+            const f32 cone = joint->useConeLimit ? joint->coneAngleLimit * kDeg : 3.14159265358979323846f;
+            st.mNormalHalfConeAngle = cone;
+            st.mPlaneHalfConeAngle = cone;
+            const f32 lo = std::clamp(std::min(joint->twistLowerLimit, joint->twistUpperLimit), -180.0f, 180.0f);
+            const f32 hi = std::clamp(std::max(joint->twistLowerLimit, joint->twistUpperLimit), -180.0f, 180.0f);
+            st.mTwistMinAngle = lo * kDeg;
+            st.mTwistMaxAngle = hi * kDeg;
+            constraint = createConstraint(bodyA, bodyB, st, noop);
+            break;
+        }
+
         JPH::PointConstraintSettings settings;
-        settings.mPoint1 = ToJoltR(FromJoltR(bodyInterface.GetPosition(bodyA)) + joint->anchorA);
-        settings.mPoint2 = ToJoltR(FromJoltR(bodyInterface.GetPosition(bodyB)) + joint->anchorB);
+        settings.mPoint1 = ToJoltR(pointA);
+        settings.mPoint2 = ToJoltR(pointB);
 
         bool useCone = joint->useConeLimit;
         f32 coneAngle = joint->coneAngleLimit;

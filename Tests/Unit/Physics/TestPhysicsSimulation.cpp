@@ -873,4 +873,79 @@ ENJIN_TEST(PhysicsSim2D, ARestingBodyStaysOnTheFloor) {
     ENJIN_EXPECT_TRUE(HasPair(backend->GetStayingContacts(), floor, box));
 }
 
+// ===========================================================================
+// Ball-socket twist limit (SD-21)
+// ===========================================================================
+
+// How far `body` has turned about world Y, in degrees: the twist part of its
+// rotation (swing-twist split about the Y axis).
+static f32 TwistAboutYDegrees(const Math::Quaternion& q) {
+    const f32 angle = 2.0f * std::atan2(q.y, q.w);
+    f32 deg = angle * 57.2957795f;
+    while (deg > 180.0f) deg -= 360.0f;
+    while (deg < -180.0f) deg += 360.0f;
+    return std::fabs(deg);
+}
+
+// A dynamic box hung from a static one by a ball-socket, spun about the axis
+// joining them with gravity off. Returns how far it twisted after a second.
+static f32 SpinHungBox(bool twistLimit) {
+    ECS::World world;
+    ECS::Entity anchor = world.CreateEntity();
+    {
+        ECS::TransformComponent t;
+        t.position = Math::Vector3(0.0f, 3.0f, 0.0f);
+        world.AddComponent<ECS::TransformComponent>(anchor, t);
+        ECS::BoxColliderComponent bc;
+        bc.size = Math::Vector3(0.5f, 0.5f, 0.5f);
+        world.AddComponent<ECS::BoxColliderComponent>(anchor, bc);
+    }
+    ECS::Entity box = world.CreateEntity();
+    {
+        ECS::TransformComponent t;
+        t.position = Math::Vector3(0.0f, 1.0f, 0.0f);
+        world.AddComponent<ECS::TransformComponent>(box, t);
+        ECS::BoxColliderComponent bc;
+        bc.size = Math::Vector3(0.5f, 0.5f, 0.5f);
+        world.AddComponent<ECS::BoxColliderComponent>(box, bc);
+        ECS::RigidbodyComponent rb;
+        rb.bodyType = ECS::RigidbodyComponent::BodyType::Dynamic;
+        rb.mass = 1.0f;
+        world.AddComponent<ECS::RigidbodyComponent>(box, rb);
+    }
+    ECS::Entity jointEntity = world.CreateEntity();
+    {
+        ECS::BallSocketJointComponent j;
+        j.entityA = anchor;
+        j.entityB = box;
+        j.anchorA = Math::Vector3(0.0f, -1.0f, 0.0f);   // both meet at y = 2
+        j.anchorB = Math::Vector3(0.0f, 1.0f, 0.0f);
+        j.useTwistLimit = twistLimit;
+        j.twistLowerLimit = -10.0f;
+        j.twistUpperLimit = 10.0f;
+        world.AddComponent<ECS::BallSocketJointComponent>(jointEntity, j);
+    }
+    auto backend = Physics::CreatePhysicsBackend(Physics::PhysicsBackendType::Auto);
+    if (!backend) return -1.0f;
+    backend->SetWorld(&world);
+    backend->SetGravity(Math::Vector3(0.0f, 0.0f, 0.0f));
+    backend->Update(1.0f / 60.0f);   // bodies and the joint exist after this
+    backend->ForceSetBodyState(box, Math::Vector3(0.0f, 1.0f, 0.0f), Math::Quaternion::Identity(),
+                               Math::Vector3(0.0f, 0.0f, 0.0f), Math::Vector3(0.0f, 4.0f, 0.0f));
+    for (int i = 0; i < 60; ++i) backend->Update(1.0f / 60.0f);
+    return TwistAboutYDegrees(world.GetComponent<ECS::TransformComponent>(box)->rotation);
+}
+
+ENJIN_TEST(PhysicsSim3D, ABallSocketTwistLimitStopsTheTwist) {
+    // Arrange / Act: the same spin with and without the limit.
+    const f32 limited = SpinHungBox(true);
+    const f32 free = SpinHungBox(false);
+
+    // Assert: free, 4 rad/s turns it far past 10 degrees; limited, it stops
+    // at the limit (a little over, as Jolt solves limits softly).
+    ENJIN_ASSERT_TRUE(limited >= 0.0f && free >= 0.0f);
+    ENJIN_EXPECT_TRUE(free > 45.0f);
+    ENJIN_EXPECT_TRUE(limited < 15.0f);
+}
+
 ENJIN_TEST_MAIN()
