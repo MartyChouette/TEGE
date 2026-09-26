@@ -175,12 +175,13 @@ ENJIN_TEST(NetworkHandshake, ALateSessionKeyStillDeliversTheExistingEntities) {
 namespace {
 
 // A host and two clients on one bus, each with its own world, joined in turn.
+// `withC` adds a third client, for what a bystander sees.
 struct Trio {
-    ECS::World hostWorld, worldA, worldB;   // declared first: the systems point into them
+    ECS::World hostWorld, worldA, worldB, worldC;   // declared first: the systems point into them
     LoopbackBus bus;
-    NetworkSystem host, a, b;
+    NetworkSystem host, a, b, c;
 
-    bool Join() {
+    bool Join(bool withC = false) {
         host.SetTransport(std::make_unique<LoopbackTransport>(&bus));
         a.SetTransport(std::make_unique<LoopbackTransport>(&bus));
         b.SetTransport(std::make_unique<LoopbackTransport>(&bus));
@@ -193,6 +194,14 @@ struct Trio {
         Pump(10);
         if (!b.JoinGame("127.0.0.1", Pair::kHostPort, "b")) return false;
         Pump(10);
+        if (withC) {
+            c.SetTransport(std::make_unique<LoopbackTransport>(&bus));
+            c.SetWorld(&worldC);
+            c.SetEnabled(true);
+            if (!c.JoinGame("127.0.0.1", Pair::kHostPort, "c")) return false;
+            Pump(10);
+            if (!c.IsConnected()) return false;
+        }
         return a.IsConnected() && b.IsConnected();
     }
     void Pump(int frames) {
@@ -200,6 +209,7 @@ struct Trio {
             host.Update(1.0f / 60.0f);
             a.Update(1.0f / 60.0f);
             b.Update(1.0f / 60.0f);
+            c.Update(1.0f / 60.0f);   // returns at once when c never joined
         }
     }
     // A host entity owned by `owner`. Registering broadcasts the spawn.
@@ -266,6 +276,24 @@ ENJIN_TEST(NetworkOwnership, ALeavingPlayerLeavesTheLobbyAtOnce) {
     bool stillListed = false;
     for (const auto& lp : net.a.GetLobbyPlayers()) stillListed |= (lp.id == bId);
     ENJIN_EXPECT_FALSE(stillListed);
+}
+
+// SD-12b: the grant went to the new owner and the revoke to the old one, and
+// nobody else heard, so a bystander kept the previous ownerId.
+ENJIN_TEST(NetworkOwnership, ABystanderLearnsTheNewOwner) {
+    // Arrange: three clients; A owns the entity.
+    Trio net;
+    ENJIN_ASSERT_TRUE(net.Join(/*withC=*/true));
+    const NetworkId id = net.SpawnOwnedBy(net.a.GetLocalPlayerId());
+    ENJIN_ASSERT_NOT_NULL(Trio::Identity(net.worldC, id));
+
+    // Act: B takes it.
+    net.b.RequestOwnership(id);
+    net.Pump(10);
+
+    // Assert: C, which neither gave nor took it, knows B owns it now.
+    ENJIN_EXPECT_EQ(Trio::Identity(net.worldC, id)->ownerId, net.b.GetLocalPlayerId());
+    ENJIN_EXPECT_FALSE(Trio::Identity(net.worldC, id)->isLocallyOwned);
 }
 
 // SD-12: a client's snapshots of an entity it owns went to the host, which

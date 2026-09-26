@@ -1390,13 +1390,15 @@ void NetworkSystem::HandleOwnershipRequest(PlayerId senderId, const u8* payload,
     netComp->isLocallyOwned = (senderId == m_LocalPlayerId);
     ApplyPhysicsAuthority(entity, netComp->isLocallyOwned);
 
-    // Notify requester
+    // Tell every client, not only the requester: each one sets isLocallyOwned
+    // from `newOwner == local`, so the new owner takes it, and everyone else
+    // records the new owner. Sent only to the requester, a bystander kept the
+    // previous ownerId for as long as the session lasted (SD-12b).
     {
         std::vector<u8> grantPayload;
         WriteU32(grantPayload, netId);
         WriteU8(grantPayload, senderId);
-        ConnectionInfo* conn = FindConnectionByPlayerId(senderId);
-        if (conn) SendPacket(conn->address, MessageType::OwnershipGrant, grantPayload);
+        SendToAll(MessageType::OwnershipGrant, grantPayload);
     }
 
     // Notify old owner (revoke)
