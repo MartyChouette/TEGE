@@ -177,11 +177,11 @@ const browser = await launch({
 });
 
 let exitCode = 0;
+const logLines = [];
 try {
     const page = await browser.newPage();
     await page.setViewport({ width: 900, height: 600, deviceScaleFactor: 1 });
 
-    const logLines = [];
     page.on('console', (m) => logLines.push(`[${m.type()}] ${m.text()}`));
     page.on('pageerror', (e) => logLines.push(`[pageerror] ${e.message}`));
     // The URL, not just "Failed to load resource". A console 404 carries no URL, so a
@@ -327,6 +327,34 @@ try {
                       'counting browser frames, which start before the game does');
     }
 
+    // A web game does not simulate until the page has been ACTIVATED -- a real
+    // click or key, the same fact that unlocks audio (web_main.cpp, the gate in
+    // Update). A shell with a Click to Play card gets that from dismissGate;
+    // a page without one, like the CI demo, never gets it, so the sim clock sat
+    // at 0 and every capture waited on it until the protocol timed out
+    // ("Runtime.callFunctionOn timed out", CI red since the gate landed).
+    // A trusted click in the canvas corner is the player's first click.
+    if (hasSimClock) {
+        const started = await page.evaluate(() => new Promise((resolve) => {
+            let n = 0;
+            const tick = () => {
+                if (Module._getSimFrame() > 0) resolve(true);
+                else if (++n >= 30) resolve(false);
+                else requestAnimationFrame(tick);
+            };
+            requestAnimationFrame(tick);
+        })).catch(() => false);
+        if (!started) {
+            const at = await page.$eval('canvas', (c) => {
+                const r = c.getBoundingClientRect();
+                return { x: r.left + 4, y: r.top + 4 };
+            }).catch(() => ({ x: 4, y: 4 }));
+            await page.mouse.click(at.x, at.y);
+            console.error('  note: the game waits for page activation before it simulates; ' +
+                          'clicked the canvas corner to give it one');
+        }
+    }
+
     const dest0 = (st, t, m, o) =>
         m ? `${st}.f${String(t).padStart(4, '0')}.png` : o;
 
@@ -341,9 +369,14 @@ try {
                     // desktop capture at that frame photographs -- a relative
                     // wait would just re-add whatever offset this tool's own
                     // startup happened to cost.
+                    // A deadline of its own, so a game that never starts
+                    // fails as "never started" instead of as a protocol timeout
+                    // that says nothing about why.
+                    const deadline = performance.now() + 90000;
                     const tick = () => {
                         const now = Module._getSimFrame();
                         if (now >= t) resolve(now);
+                        else if (performance.now() > deadline) resolve(-1 - now);
                         else requestAnimationFrame(tick);
                     };
                     requestAnimationFrame(tick);
@@ -356,6 +389,10 @@ try {
                     };
                     requestAnimationFrame(tick);
                 }), step, waited);
+        }
+        if (waited < 0) {
+            throw new Error(`the simulation never reached frame ${target} ` +
+                            `(stuck at ${-1 - waited} after 90 s of browser frames)`);
         }
         frames = waited;
         if (hasSimClock && waited > target + 5) {
@@ -448,6 +485,12 @@ try {
     }
 } catch (err) {
     console.error('capture failed: ' + err.message);
+    // A hung page fails here with a protocol timeout and nothing else. What the
+    // page printed before it stopped is the only clue to WHERE it stopped.
+    if (logLines.length) {
+        console.error('  last page output:');
+        for (const l of logLines.slice(-40)) console.error('  ' + l);
+    }
     exitCode = 1;
 } finally {
     await browser.close();
