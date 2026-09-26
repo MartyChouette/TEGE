@@ -581,23 +581,16 @@ Math::Vector2 ControllerSystem::GetMovementInput(const CharacterControllerBase& 
         return m_InputMap->GetMovementVector();
     }
 
+    // No map (headless tools and tests): the engine's default movement keys,
+    // the same ones the action table binds.
     Math::Vector2 input(0.0f, 0.0f);
 
-    if (controller.useWASD) {
-        if (Input::IsKeyDown(KeyCode::W)) input.y += 1.0f;
-        if (Input::IsKeyDown(KeyCode::S)) input.y -= 1.0f;
-        if (Input::IsKeyDown(KeyCode::A)) input.x -= 1.0f;
-        if (Input::IsKeyDown(KeyCode::D)) input.x += 1.0f;
-    }
+    if (Input::IsKeyDown(KeyCode::W) || Input::IsKeyDown(KeyCode::Up))    input.y += 1.0f;
+    if (Input::IsKeyDown(KeyCode::S) || Input::IsKeyDown(KeyCode::Down))  input.y -= 1.0f;
+    if (Input::IsKeyDown(KeyCode::A) || Input::IsKeyDown(KeyCode::Left))  input.x -= 1.0f;
+    if (Input::IsKeyDown(KeyCode::D) || Input::IsKeyDown(KeyCode::Right)) input.x += 1.0f;
 
-    if (controller.useArrowKeys) {
-        if (Input::IsKeyDown(KeyCode::Up)) input.y += 1.0f;
-        if (Input::IsKeyDown(KeyCode::Down)) input.y -= 1.0f;
-        if (Input::IsKeyDown(KeyCode::Left)) input.x -= 1.0f;
-        if (Input::IsKeyDown(KeyCode::Right)) input.x += 1.0f;
-    }
-
-    if (controller.useGamepad && Input::IsGamepadConnected(controller.gamepadIndex)) {
+    if (Input::IsGamepadConnected(controller.gamepadIndex)) {
         // Left stick for movement
         Math::Vector2 stick = Input::GetGamepadLeftStick(controller.gamepadIndex);
         input.x += stick.x;
@@ -1566,7 +1559,7 @@ void ControllerSystem::UpdateThirdPerson(Entity entity, ThirdPersonController& c
         }
 
         // Gamepad right stick for camera orbit
-        if (ctrl.useGamepad && Input::IsGamepadConnected(ctrl.gamepadIndex)) {
+        if (Input::IsGamepadConnected(ctrl.gamepadIndex)) {
             Math::Vector2 rightStick = Input::GetGamepadRightStick(ctrl.gamepadIndex);
             if (rightStick.x != 0.0f || rightStick.y != 0.0f) {
                 ctrl.cameraYaw += rightStick.x * ctrl.gamepadLookSensitivity * 100.0f * dt;
@@ -1902,7 +1895,7 @@ void ControllerSystem::UpdateFirstPerson(Entity entity, FirstPersonController& c
         }
 
         // Gamepad right stick for look
-        if (ctrl.useGamepad && Input::IsGamepadConnected(ctrl.gamepadIndex)) {
+        if (Input::IsGamepadConnected(ctrl.gamepadIndex)) {
             Math::Vector2 rightStick = Input::GetGamepadRightStick(ctrl.gamepadIndex);
             if (rightStick.x != 0.0f || rightStick.y != 0.0f) {
                 if (!lockYaw) {
@@ -2737,7 +2730,7 @@ void ControllerSystem::UpdateSurfaceAligned(Entity entity, SurfaceAlignedControl
             ctrl.cameraPitch = Math::Clamp(ctrl.cameraPitch, ctrl.cameraMinPitch, ctrl.cameraMaxPitch);
         }
 
-        if (ctrl.useGamepad && Input::IsGamepadConnected(ctrl.gamepadIndex)) {
+        if (Input::IsGamepadConnected(ctrl.gamepadIndex)) {
             Math::Vector2 rightStick = Input::GetGamepadRightStick(ctrl.gamepadIndex);
             if (rightStick.x != 0.0f || rightStick.y != 0.0f) {
                 ctrl.cameraYaw += rightStick.x * ctrl.gamepadLookSensitivity * 100.0f * dt;

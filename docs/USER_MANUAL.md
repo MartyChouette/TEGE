@@ -607,9 +607,6 @@ All controllers share a common base with these fields:
 | `moveSpeed` | f32 | 5.0 | Base movement speed. |
 | `sprintMultiplier` | f32 | 2.0 | Speed multiplier when sprinting. |
 | `isEnabled` | bool | true | Whether the controller processes input. |
-| `useWASD` | bool | true | Use WASD keys for movement. |
-| `useArrowKeys` | bool | false | Use arrow keys for movement. |
-| `useGamepad` | bool | false | Use gamepad input. |
 | `gamepadIndex` | i32 | 0 | Gamepad index (0-3) for splitscreen. |
 | `gamepadLookSensitivity` | f32 | 2.0 | Right stick camera sensitivity. |
 | `disableMouseLook` | bool | false | Disable mouse/stick camera control. |

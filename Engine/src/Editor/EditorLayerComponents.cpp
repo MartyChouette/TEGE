@@ -4602,12 +4602,11 @@ void EditorLayer::DrawPlatformer2DController(ECS::Entity entity) {
         InspectorUndo::Checkbox(m_UndoRedo, "Enabled", &ctrl->isEnabled);
 
         if (ImGui::TreeNode("Input##Platformer2D")) {
-            InspectorUndo::Checkbox(m_UndoRedo, "WASD", &ctrl->useWASD);
-            ImGui::SameLine();
-            InspectorUndo::Checkbox(m_UndoRedo, "Arrow Keys", &ctrl->useArrowKeys);
-            ImGui::SameLine();
-            InspectorUndo::Checkbox(m_UndoRedo, "Gamepad", &ctrl->useGamepad);
-            if (ctrl->useGamepad) {
+            // Which keys and sticks move the player is the controls bindings'
+            // business (Options > Controls, Project Settings > Input). The
+            // WASD / Arrow Keys / Gamepad checkboxes that stood here did nothing
+            // once a runtime attached its input map, which every one does.
+            {
                 InspectorUndo::DragInt(m_UndoRedo, "Gamepad Index", &ctrl->gamepadIndex, 1, 0, 3);
                 InspectorUndo::DragFloat(m_UndoRedo, "Stick Sensitivity", &ctrl->gamepadLookSensitivity, 0.1f, 0.1f, 10.0f);
                 bool connected = Input::IsGamepadConnected(ctrl->gamepadIndex);
@@ -4700,12 +4699,11 @@ void EditorLayer::DrawTopDown2DController(ECS::Entity entity) {
         InspectorUndo::Checkbox(m_UndoRedo, "Enabled", &ctrl->isEnabled);
 
         if (ImGui::TreeNode("Input##TopDown2D")) {
-            InspectorUndo::Checkbox(m_UndoRedo, "WASD", &ctrl->useWASD);
-            ImGui::SameLine();
-            InspectorUndo::Checkbox(m_UndoRedo, "Arrow Keys", &ctrl->useArrowKeys);
-            ImGui::SameLine();
-            InspectorUndo::Checkbox(m_UndoRedo, "Gamepad", &ctrl->useGamepad);
-            if (ctrl->useGamepad) {
+            // Which keys and sticks move the player is the controls bindings'
+            // business (Options > Controls, Project Settings > Input). The
+            // WASD / Arrow Keys / Gamepad checkboxes that stood here did nothing
+            // once a runtime attached its input map, which every one does.
+            {
                 InspectorUndo::DragInt(m_UndoRedo, "Gamepad Index", &ctrl->gamepadIndex, 1, 0, 3);
                 InspectorUndo::DragFloat(m_UndoRedo, "Stick Sensitivity", &ctrl->gamepadLookSensitivity, 0.1f, 0.1f, 10.0f);
                 bool connected = Input::IsGamepadConnected(ctrl->gamepadIndex);
@@ -4776,12 +4774,11 @@ void EditorLayer::DrawTopDown3DController(ECS::Entity entity) {
         InspectorUndo::Checkbox(m_UndoRedo, "Enabled", &ctrl->isEnabled);
 
         if (ImGui::TreeNode("Input##TopDown3D")) {
-            InspectorUndo::Checkbox(m_UndoRedo, "WASD", &ctrl->useWASD);
-            ImGui::SameLine();
-            InspectorUndo::Checkbox(m_UndoRedo, "Arrow Keys", &ctrl->useArrowKeys);
-            ImGui::SameLine();
-            InspectorUndo::Checkbox(m_UndoRedo, "Gamepad", &ctrl->useGamepad);
-            if (ctrl->useGamepad) {
+            // Which keys and sticks move the player is the controls bindings'
+            // business (Options > Controls, Project Settings > Input). The
+            // WASD / Arrow Keys / Gamepad checkboxes that stood here did nothing
+            // once a runtime attached its input map, which every one does.
+            {
                 InspectorUndo::DragInt(m_UndoRedo, "Gamepad Index", &ctrl->gamepadIndex, 1, 0, 3);
                 InspectorUndo::DragFloat(m_UndoRedo, "Stick Sensitivity", &ctrl->gamepadLookSensitivity, 0.1f, 0.1f, 10.0f);
                 bool connected = Input::IsGamepadConnected(ctrl->gamepadIndex);
@@ -4891,12 +4888,11 @@ void EditorLayer::DrawThirdPersonController(ECS::Entity entity) {
         InspectorUndo::Checkbox(m_UndoRedo, "Enabled", &ctrl->isEnabled);
 
         if (ImGui::TreeNode("Input##ThirdPerson")) {
-            InspectorUndo::Checkbox(m_UndoRedo, "WASD", &ctrl->useWASD);
-            ImGui::SameLine();
-            InspectorUndo::Checkbox(m_UndoRedo, "Arrow Keys", &ctrl->useArrowKeys);
-            ImGui::SameLine();
-            InspectorUndo::Checkbox(m_UndoRedo, "Gamepad", &ctrl->useGamepad);
-            if (ctrl->useGamepad) {
+            // Which keys and sticks move the player is the controls bindings'
+            // business (Options > Controls, Project Settings > Input). The
+            // WASD / Arrow Keys / Gamepad checkboxes that stood here did nothing
+            // once a runtime attached its input map, which every one does.
+            {
                 InspectorUndo::DragInt(m_UndoRedo, "Gamepad Index", &ctrl->gamepadIndex, 1, 0, 3);
                 InspectorUndo::DragFloat(m_UndoRedo, "Stick Sensitivity", &ctrl->gamepadLookSensitivity, 0.1f, 0.1f, 10.0f);
                 bool connected = Input::IsGamepadConnected(ctrl->gamepadIndex);
@@ -4996,12 +4992,11 @@ void EditorLayer::DrawFirstPersonController(ECS::Entity entity) {
         InspectorUndo::Checkbox(m_UndoRedo, "Enabled", &ctrl->isEnabled);
 
         if (ImGui::TreeNode("Input##FirstPerson")) {
-            InspectorUndo::Checkbox(m_UndoRedo, "WASD", &ctrl->useWASD);
-            ImGui::SameLine();
-            InspectorUndo::Checkbox(m_UndoRedo, "Arrow Keys", &ctrl->useArrowKeys);
-            ImGui::SameLine();
-            InspectorUndo::Checkbox(m_UndoRedo, "Gamepad", &ctrl->useGamepad);
-            if (ctrl->useGamepad) {
+            // Which keys and sticks move the player is the controls bindings'
+            // business (Options > Controls, Project Settings > Input). The
+            // WASD / Arrow Keys / Gamepad checkboxes that stood here did nothing
+            // once a runtime attached its input map, which every one does.
+            {
                 InspectorUndo::DragInt(m_UndoRedo, "Gamepad Index", &ctrl->gamepadIndex, 1, 0, 3);
                 InspectorUndo::DragFloat(m_UndoRedo, "Stick Sensitivity", &ctrl->gamepadLookSensitivity, 0.1f, 0.1f, 10.0f);
                 bool connected = Input::IsGamepadConnected(ctrl->gamepadIndex);
@@ -8897,12 +8892,11 @@ void EditorLayer::DrawVehicleController(ECS::Entity entity) {
                     "Run this controller at normal speed while Time_SetScale slows\n"
                     "the world - Max Payne / Superhot bullet time. Movement, jumps,\n"
                     "and gravity all stay wall-clock correct.");
-            InspectorUndo::Checkbox(m_UndoRedo, "WASD", &ctrl->useWASD);
-            ImGui::SameLine();
-            InspectorUndo::Checkbox(m_UndoRedo, "Arrow Keys##veh", &ctrl->useArrowKeys);
-            ImGui::SameLine();
-            InspectorUndo::Checkbox(m_UndoRedo, "Gamepad", &ctrl->useGamepad);
-            if (ctrl->useGamepad) {
+            // Which keys and sticks move the player is the controls bindings'
+            // business (Options > Controls, Project Settings > Input). The
+            // WASD / Arrow Keys / Gamepad checkboxes that stood here did nothing
+            // once a runtime attached its input map, which every one does.
+            {
                 InspectorUndo::DragInt(m_UndoRedo, "Gamepad Index", &ctrl->gamepadIndex, 1, 0, 3);
                 InspectorUndo::DragFloat(m_UndoRedo, "Stick Sensitivity##veh", &ctrl->gamepadLookSensitivity, 0.1f, 0.1f, 10.0f);
             }
@@ -8937,12 +8931,11 @@ void EditorLayer::DrawSurfaceAlignedController(ECS::Entity entity) {
         InspectorUndo::Checkbox(m_UndoRedo, "Enabled", &ctrl->isEnabled);
 
         if (ImGui::TreeNode("Input##SurfAligned")) {
-            InspectorUndo::Checkbox(m_UndoRedo, "WASD##sa", &ctrl->useWASD);
-            ImGui::SameLine();
-            InspectorUndo::Checkbox(m_UndoRedo, "Arrow Keys##sa", &ctrl->useArrowKeys);
-            ImGui::SameLine();
-            InspectorUndo::Checkbox(m_UndoRedo, "Gamepad##sa", &ctrl->useGamepad);
-            if (ctrl->useGamepad) {
+            // Which keys and sticks move the player is the controls bindings'
+            // business (Options > Controls, Project Settings > Input). The
+            // WASD / Arrow Keys / Gamepad checkboxes that stood here did nothing
+            // once a runtime attached its input map, which every one does.
+            {
                 InspectorUndo::DragInt(m_UndoRedo, "Gamepad Index##sa", &ctrl->gamepadIndex, 1, 0, 3);
                 InspectorUndo::DragFloat(m_UndoRedo, "Stick Sensitivity##sa", &ctrl->gamepadLookSensitivity, 0.1f, 0.1f, 10.0f);
             }

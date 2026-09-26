@@ -41,11 +41,11 @@ struct CharacterControllerBase {
     bool isGrounded = true;
     Math::Vector3 velocity = Math::Vector3(0.0f, 0.0f, 0.0f);
 
-    // Input mapping (can be remapped)
-    bool useWASD = true;       // Use WASD keys
-    bool useArrowKeys = false; // Use arrow keys
-    bool useGamepad = false;   // Use gamepad input
-    i32 gamepadIndex = 0;      // Which gamepad (0-3)
+    // Which keys move the player is decided by the controls bindings alone
+    // (InputActionMap). The per-controller WASD / Arrow Keys / Gamepad
+    // switches are gone: every runtime attaches an input map, which already
+    // ignored them. A connected pad always works.
+    i32 gamepadIndex = 0;      // Which gamepad (0-3) this controller reads for look
 
     // Gamepad settings
     f32 gamepadLookSensitivity = 2.0f;  // Right stick look speed

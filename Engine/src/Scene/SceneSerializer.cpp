@@ -3178,9 +3178,6 @@ json SerializeControllerBase(const ECS::CharacterControllerBase& base) {
     j["sprintMultiplier"] = RF(base.sprintMultiplier);
     j["isEnabled"] = base.isEnabled;
     j["ignoreGlobalTimeScale"] = base.ignoreGlobalTimeScale;
-    j["useWASD"] = base.useWASD;
-    j["useArrowKeys"] = base.useArrowKeys;
-    j["useGamepad"] = base.useGamepad;
     j["gamepadIndex"] = RF(base.gamepadIndex);
     j["gamepadLookSensitivity"] = RF(base.gamepadLookSensitivity);
     j["disableMouseLook"] = base.disableMouseLook;
@@ -3206,9 +3203,6 @@ void DeserializeControllerBase(const json& j, ECS::CharacterControllerBase& base
     if (j.contains("sprintMultiplier")) base.sprintMultiplier = j["sprintMultiplier"].get<f32>();
     if (j.contains("isEnabled")) base.isEnabled = JB(j["isEnabled"]);
     if (j.contains("ignoreGlobalTimeScale")) base.ignoreGlobalTimeScale = JB(j["ignoreGlobalTimeScale"]);
-    if (j.contains("useWASD")) base.useWASD = JB(j["useWASD"]);
-    if (j.contains("useArrowKeys")) base.useArrowKeys = JB(j["useArrowKeys"]);
-    if (j.contains("useGamepad")) base.useGamepad = JB(j["useGamepad"]);
     if (j.contains("gamepadIndex")) base.gamepadIndex = j["gamepadIndex"].get<i32>();
     if (j.contains("gamepadLookSensitivity")) base.gamepadLookSensitivity = j["gamepadLookSensitivity"].get<f32>();
     if (j.contains("disableMouseLook")) base.disableMouseLook = JB(j["disableMouseLook"]);
