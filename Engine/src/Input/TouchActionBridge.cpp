@@ -41,10 +41,11 @@ namespace {
     // Sprint anyway, which meant a scene that is only a camera told the player
     // to move and sprint - FoliageDemo does exactly that.
     //
-    // Empty. Look stays enabled below because a camera the player can turn is
-    // real in these scenes; anything else the scene can do arrives from its own
-    // ActionTriggers or from script (Touch_AddActionButton), both of which are
-    // already in the scheme fingerprint and appear in the hint on their own.
+    // Empty, and no look either: with no controller nothing reads the mouse,
+    // so offering look told the player to do something that did nothing.
+    // Anything the scene can do arrives from its own ActionTriggers or from
+    // script (Touch_AddActionButton), both of which are already in the scheme
+    // fingerprint and appear in the hint on their own.
     //
     // A game that drives movement from script with no controller component
     // should set its touch layout in Project Settings > Input & Touch rather
@@ -60,7 +61,7 @@ namespace {
         { kTopDown3D,    7, true  },
         { kFirstPerson,  8, true  },
         { kThirdPerson,  7, true  },
-        { kGeneric,      0, true  },   // no movement; look only
+        { kGeneric,      0, false },   // no controller: nothing reads the mouse (IN-36)
     };
 
     const PresetDef& Preset(TouchPreset p) {
@@ -350,6 +351,11 @@ bool s_ControlsHintEnabled = true;
 void SetControlsHintEnabled(bool enabled) { s_ControlsHintEnabled = enabled; }
 bool IsControlsHintEnabled() { return s_ControlsHintEnabled; }
 
+const char* ControlsHintLookKey(TouchPreset preset, bool mouseCaptured) {
+    if (!Preset(preset).look) return nullptr;
+    return mouseCaptured ? "Mouse" : "Hold RMB";
+}
+
 void DrawControlsHint(f32 x0, f32 y0, f32 w, f32 h) {
     if (!s_ControlsHintEnabled) return;   // the game draws its own
     if (!s_TouchMap) return;
@@ -374,7 +380,9 @@ void DrawControlsHint(f32 x0, f32 y0, f32 w, f32 h) {
         segs.push_back({ bind, info.hintVerb });
     }
     // Movement first, then look, then the rest in preset order.
-    if (d.look) segs.insert(segs.begin(), { s_ActivePreset == TouchPreset::FirstPerson ? "Mouse" : "Hold RMB", "look" });
+    if (const char* look = ControlsHintLookKey(s_ActivePreset, Input::IsMouseCaptured())) {
+        segs.insert(segs.begin(), { look, "look" });
+    }
     if (!moveKeys.empty()) segs.insert(segs.begin(), { moveKeys, "move" });
     // Named custom actions with a binding (game-specific, e.g. "B slo-mo").
     for (u32 c = 0; c < kCustomActionCount; ++c) {

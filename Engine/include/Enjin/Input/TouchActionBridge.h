@@ -90,6 +90,14 @@ ENJIN_API void DrawTouchOverlay();
 // action map is wired. The rect is the game surface in ImGui coordinates.
 ENJIN_API void DrawControlsHint(f32 x0, f32 y0, f32 w, f32 h);
 
+// What the hint says looks with, or nullptr when the scene has no look to
+// offer. Taken from whether the mouse is actually captured: a captured camera
+// turns on any mouse movement ("Mouse"), an uncaptured one on a held right
+// button ("Hold RMB"). It used to say "Hold RMB" for every preset but first
+// person, which was wrong in every captured third-person game, and it offered
+// look in scenes with no controller, where nothing reads the mouse (IN-36).
+ENJIN_API const char* ControlsHintLookKey(TouchPreset preset, bool mouseCaptured);
+
 // Whether the engine draws its own controls hint at all.
 //
 // The hint is built from the active touch PRESET, so it describes the controls

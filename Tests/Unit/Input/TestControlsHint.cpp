@@ -109,4 +109,19 @@ ENJIN_TEST(ControlsHint, ApplyToPushesTheChoiceToTheRuntime) {
     ENJIN_EXPECT_TRUE(!IsControlsHintEnabled());
 }
 
+// IN-36: the hint said "Hold RMB look" for every preset but first person. A
+// captured third-person camera turns on any mouse movement, and a scene with
+// no controller has nothing that reads the mouse at all.
+ENJIN_TEST(ControlsHint, TheLookLabelFollowsWhetherTheMouseIsCaptured) {
+    // Captured: any movement turns the camera.
+    ENJIN_EXPECT_STR_EQ(ControlsHintLookKey(TouchPreset::ThirdPerson, true), "Mouse");
+    ENJIN_EXPECT_STR_EQ(ControlsHintLookKey(TouchPreset::FirstPerson, true), "Mouse");
+    // Not captured: a held right button does.
+    ENJIN_EXPECT_STR_EQ(ControlsHintLookKey(TouchPreset::ThirdPerson, false), "Hold RMB");
+    // No look to offer: no controller, or a 2D preset.
+    ENJIN_EXPECT_TRUE(ControlsHintLookKey(TouchPreset::Generic, true) == nullptr);
+    ENJIN_EXPECT_TRUE(ControlsHintLookKey(TouchPreset::Generic, false) == nullptr);
+    ENJIN_EXPECT_TRUE(ControlsHintLookKey(TouchPreset::Platformer2D, false) == nullptr);
+}
+
 ENJIN_TEST_MAIN()
