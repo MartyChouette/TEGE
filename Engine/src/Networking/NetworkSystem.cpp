@@ -9,6 +9,7 @@
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Debug/Profiler.h"
 #include <cmath>
+#include <cstring>
 #include <algorithm>
 
 // Transport is created lazily on first HostGame/JoinGame via EnsureTransport().
@@ -208,6 +209,7 @@ void NetworkSystem::Update(f32 deltaTime) {
     m_Discovery.Update(deltaTime);
 
     ProcessIncomingPackets();
+    ResendPendingSessionKeys();
     UpdateHeartbeats(deltaTime);
     CheckTimeouts(deltaTime);
     UpdateReliableMessages(deltaTime);
@@ -717,9 +719,18 @@ void NetworkSystem::HandlePacket(const NetworkAddress& sender, const u8* data, u
                  msgTypeByte == static_cast<u8>(MessageType::ConnectionReject) ||
                  msgTypeByte == static_cast<u8>(MessageType::SessionKeyExchange));
 
+            // Host: a client that has not yet signed anything with the key may
+            // not have the key at all -- it can be lost or still in flight --
+            // and until it does, everything it sends is unsigned. Those packets
+            // are dropped without counting against it. Counting them banned a
+            // client within seconds of a lost key, from its own heartbeats.
+            const bool awaitingKeyProof =
+                m_Role == NetworkRole::Host && preConn && !preConn->authenticated;
+
             if (!isUnauthenticatedMsg) {
                 u32 authOverhead = 4 + HMAC_TAG_SIZE;  // auth sequence (4) + HMAC tag (32)
                 if (size < PACKET_HEADER_SIZE + authOverhead) {
+                    if (awaitingKeyProof) return;
                     ENJIN_LOG_WARN(Network, "NetworkSystem: Packet too small for auth tag, dropping");
                     RegisterViolation(sender, "auth tag too small");
                     return;
@@ -735,9 +746,18 @@ void NetworkSystem::HandlePacket(const NetworkAddress& sender, const u8* data, u
                 u32 signedLen = seqOffset + 4;
                 if (!HMACSHA256::Verify(m_SessionKey.data(), SESSION_KEY_SIZE,
                                         data, signedLen, hmacTag)) {
+                    if (awaitingKeyProof) return;
                     ENJIN_LOG_WARN(Network, "NetworkSystem: HMAC verification failed, dropping packet");
                     RegisterViolation(sender, "HMAC failed");
                     return;
+                }
+
+                // The first signed packet from a client proves the key reached
+                // it. Only now can it read the join-time state, so that goes
+                // out here rather than beside the accept.
+                if (awaitingKeyProof) {
+                    preConn->authenticated = true;
+                    SendJoinState(sender);
                 }
 
                 // Read auth sequence
@@ -766,6 +786,17 @@ void NetworkSystem::HandlePacket(const NetworkAddress& sender, const u8* data, u
     // S11: Validate payload size matches actual remaining bytes
     u32 actualPayload = (size > offset) ? size - offset : 0;
     if (header.payloadSize != actualPayload) {
+        // Client without its key yet: the host signs everything after the
+        // handshake, so a packet exactly one trailer too long is a signed
+        // packet that arrived before the key. It cannot be verified, so it is
+        // dropped, but it is not the host misbehaving. Counting it banned the
+        // host and disconnected the client whenever the key came late.
+        // The host holds its join-time state until the key is confirmed, so
+        // nothing lost here is lost for good.
+        if (m_Role == NetworkRole::Client && m_AuthEnabled && !m_SessionKeyGenerated &&
+            actualPayload == header.payloadSize + 4 + HMAC_TAG_SIZE) {
+            return;
+        }
         ENJIN_LOG_WARN(Network, "NetworkSystem: Payload size mismatch (header=%u, actual=%u), dropping packet",
                        header.payloadSize, actualPayload);
         RegisterViolation(sender, "payload size mismatch");
@@ -935,9 +966,14 @@ void NetworkSystem::HandleConnectionRequest(const NetworkAddress& sender, const 
     WriteU8(acceptPayload, newId);
     SendPacket(sender, MessageType::ConnectionAccept, acceptPayload);
 
-    // Send session key to the new client for HMAC authentication
-    if (m_AuthEnabled && m_SessionKeyGenerated) {
+    // Send session key to the new client for HMAC authentication. It is resent
+    // (ResendPendingSessionKeys) until the client signs a packet with it.
+    const bool keyed = m_AuthEnabled && m_SessionKeyGenerated;
+    if (keyed) {
         SendSessionKey(sender);
+        m_Connections.back().lastKeySendTime = m_Time;
+    } else {
+        m_Connections.back().authenticated = true;   // nothing to prove
     }
 
     // Update lobby
@@ -955,7 +991,20 @@ void NetworkSystem::HandleConnectionRequest(const NetworkAddress& sender, const 
     SendToAll(MessageType::PlayerJoined, joinPayload, newId);
     BroadcastLobbyState();
 
-    // Send existing networked entities to the new client
+    // The new client gets the existing entities once it can read them: now if
+    // there is no key, otherwise when its first signed packet arrives. They
+    // used to go out here, right behind the key, all unreliable; a key that
+    // came late made the client drop every one, and nothing resent them.
+    if (!keyed) SendJoinState(sender);
+
+    ENJIN_LOG_INFO(Network, "NetworkSystem: Player '%s' joined (id=%u)", playerName.c_str(), newId);
+}
+
+void NetworkSystem::SendJoinState(const NetworkAddress& sender) {
+    // The lobby went out at the accept too, but signed, so a client that had
+    // no key yet dropped it. Cheap to send again to everyone.
+    BroadcastLobbyState();
+
     for (const auto& [netId, entity] : m_NetworkToEntity) {
         if (!m_World) continue;
         auto* netComp = m_World->GetComponent<ECS::NetworkIdentityComponent>(entity);
@@ -976,8 +1025,6 @@ void NetworkSystem::HandleConnectionRequest(const NetworkAddress& sender, const 
         }
         SendPacket(sender, MessageType::EntitySpawn, spawnPayload);
     }
-
-    ENJIN_LOG_INFO(Network, "NetworkSystem: Player '%s' joined (id=%u)", playerName.c_str(), newId);
 }
 
 void NetworkSystem::HandleConnectionAccept(const u8* payload, u32 size) {
@@ -2160,6 +2207,16 @@ void NetworkSystem::SendSessionKey(const NetworkAddress& addr) {
     SendPacket(addr, MessageType::SessionKeyExchange, payload);
 }
 
+void NetworkSystem::ResendPendingSessionKeys() {
+    if (m_Role != NetworkRole::Host || !m_AuthEnabled || !m_SessionKeyGenerated) return;
+    for (auto& conn : m_Connections) {
+        if (conn.state != ConnectionState::Connected || conn.authenticated) continue;
+        if (m_Time - conn.lastKeySendTime < SESSION_KEY_RESEND_INTERVAL) continue;
+        SendSessionKey(conn.address);
+        conn.lastKeySendTime = m_Time;
+    }
+}
+
 void NetworkSystem::HandleSessionKeyExchange(const NetworkAddress& sender, const u8* payload, u32 size) {
     if (m_Role != NetworkRole::Client) return;
     if (size < SESSION_KEY_SIZE) {
@@ -2176,6 +2233,13 @@ void NetworkSystem::HandleSessionKeyExchange(const NetworkAddress& sender, const
 
     // C2 fix: reject if we already have a session key (prevent key replacement attacks)
     if (m_SessionKeyGenerated) {
+        // The host resends the key until it hears a signed packet back, so the
+        // same key arriving again means our answer was lost: answer again.
+        // A DIFFERENT key is still refused.
+        if (std::memcmp(payload, m_SessionKey.data(), SESSION_KEY_SIZE) == 0) {
+            SendPacket(sender, MessageType::Heartbeat, {});
+            return;
+        }
         ENJIN_LOG_WARN(Network, "NetworkSystem: SessionKeyExchange received but key already set, ignoring");
         return;
     }
@@ -2210,6 +2274,10 @@ void NetworkSystem::HandleSessionKeyExchange(const NetworkAddress& sender, const
     }
 
     ENJIN_LOG_INFO(Network, "NetworkSystem: Received session key from host, authentication enabled");
+
+    // Answer at once with a signed packet: it is how the host learns the key
+    // arrived, and what releases the join-time state it is holding for us.
+    SendPacket(sender, MessageType::Heartbeat, {});
 }
 
 bool NetworkSystem::AuthenticateOutgoing(std::vector<u8>& packet, ConnectionInfo* conn) {

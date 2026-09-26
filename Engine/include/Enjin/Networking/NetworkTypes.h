@@ -26,6 +26,9 @@ static constexpr f32 CONNECTION_TIMEOUT = 10.0f;
 static constexpr f32 DEFAULT_SYNC_RATE = 1.0f / 20.0f;  // 20 Hz
 static constexpr u32 RELIABLE_MAX_RETRIES = 10;
 static constexpr f32 RELIABLE_RETRY_INTERVAL = 0.2f;
+// The session key goes out in one plain datagram, so the host resends it this
+// often until the client answers with a packet signed with it.
+static constexpr f32 SESSION_KEY_RESEND_INTERVAL = 0.25f;
 
 // A reliable message larger than one datagram is split across several.
 //
@@ -235,7 +238,12 @@ struct ConnectionInfo {
 
     // Authentication sequence (monotonically increasing per-connection)
     u32 authSendSequence = 0;       // Next outgoing auth sequence
-    bool authenticated = false;     // True once session key has been exchanged
+    // Client side: set when the host's key arrives. Host side: set when the
+    // first packet signed with that key arrives from this client, which is
+    // the only proof the key got there. Until then the host keeps resending
+    // it and holds back the join-time state (SD-10).
+    bool authenticated = false;
+    f32 lastKeySendTime = 0.0f;     // Host: when the key last went to this client
 
     // Reliable-message de-duplication.
     //

@@ -17,6 +17,7 @@
 #include <cstring>
 #include <deque>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace EnjinTestNet {
@@ -37,6 +38,22 @@ struct LoopbackBus {
     u32 dropsRemaining = 0;   // Swallow the next N datagrams, to force retransmits
     u32 reliableSent = 0;     // Datagrams whose header type is ReliableMessage
     u32 reliableDropped = 0;
+
+    // Swallow the next N datagrams of ONE message type (the first byte of a
+    // packet is its type), to lose one specific packet such as the session key.
+    u8 dropType = 0;
+    u32 dropTypeRemaining = 0;
+
+    // Hold back every datagram of one type until ReleaseHeld(), which delivers
+    // them behind whatever arrived meanwhile: a packet that comes LATE.
+    u8 holdType = 0;
+    std::vector<std::pair<u16, Datagram>> held;   // destination port, datagram
+
+    void ReleaseHeld() {
+        holdType = 0;
+        for (auto& [port, dg] : held) inboxes[port].push_back(std::move(dg));
+        held.clear();
+    }
 };
 
 class LoopbackTransport : public INetworkTransport {
@@ -59,10 +76,19 @@ public:
             if (isReliable) m_Bus->reliableDropped++;
             return true;   // The sender cannot tell a swallowed datagram from a delivered one
         }
+        if (size > 0 && m_Bus->dropTypeRemaining > 0 && data[0] == m_Bus->dropType) {
+            m_Bus->dropTypeRemaining--;
+            return true;
+        }
         NetworkAddress self;
         self.ip = NetworkAddress::ParseIP("127.0.0.1");
         self.port = m_Port;
-        m_Bus->inboxes[addr.port].push_back({self, std::vector<u8>(data, data + size)});
+        Datagram dg{self, std::vector<u8>(data, data + size)};
+        if (size > 0 && m_Bus->holdType != 0 && data[0] == m_Bus->holdType) {
+            m_Bus->held.emplace_back(addr.port, std::move(dg));
+            return true;
+        }
+        m_Bus->inboxes[addr.port].push_back(std::move(dg));
         return true;
     }
 

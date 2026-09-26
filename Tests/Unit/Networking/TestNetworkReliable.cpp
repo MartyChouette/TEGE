@@ -3,6 +3,9 @@
 #include "Enjin/Networking/INetworkTransport.h"
 #include "Enjin/Networking/NetworkTypes.h"
 #include "LoopbackTransport.h"
+#include "Enjin/ECS/World.h"
+#include "Enjin/ECS/Components/Transform.h"
+#include "Enjin/ECS/Components/Gameplay.h"
 #include <cstring>
 #include <deque>
 #include <memory>
@@ -68,6 +71,101 @@ ENJIN_TEST(NetworkHandshake, CompletesWithAuthenticationEnabled) {
     net.client.SetAuthenticationEnabled(true);
     ENJIN_ASSERT_TRUE(net.Connect());
     ENJIN_EXPECT_TRUE(net.client.IsConnected());
+}
+
+// The session key goes out as one plain datagram, followed at once by signed
+// join-time state. SD-10: a LOST key banned both sides within seconds (every
+// signed host packet was a violation on the client, every unsigned client
+// heartbeat one on the host), and a LATE key made the client drop the entity
+// spawns sent ahead of it, which nothing resent. The host now resends the key
+// until the client signs a packet with it, neither side counts the other's
+// packets from that window against it, and the entities go out after the key
+// is confirmed.
+namespace {
+
+// A host world holding one networked entity, registered before the client
+// joins, and an empty client world to receive it.
+struct Worlds {
+    ECS::World hostWorld;
+    ECS::World clientWorld;
+    NetworkId netId = 0;
+
+    void Attach(Pair& net) {
+        net.host.SetWorld(&hostWorld);
+        net.client.SetWorld(&clientWorld);
+    }
+    void SpawnOnHost(Pair& net) {
+        const ECS::Entity e = hostWorld.CreateEntity();
+        ECS::TransformComponent t;
+        t.position = Math::Vector3(3.0f, 0.0f, 0.0f);
+        hostWorld.AddComponent<ECS::TransformComponent>(e, t);
+        hostWorld.AddComponent<ECS::NetworkIdentityComponent>(e);
+        netId = net.host.RegisterNetworkEntity(e, 0);
+    }
+    bool ClientHasIt() {
+        for (ECS::Entity e : clientWorld.GetEntitiesWithComponent<ECS::NetworkIdentityComponent>()) {
+            const auto* n = clientWorld.GetComponent<ECS::NetworkIdentityComponent>(e);
+            if (n && n->networkId == netId) return true;
+        }
+        return false;
+    }
+};
+
+bool StartJoin(Pair& net) {
+    net.host.SetTransport(std::make_unique<LoopbackTransport>(&net.bus));
+    net.client.SetTransport(std::make_unique<LoopbackTransport>(&net.bus));
+    net.host.SetEnabled(true);
+    net.client.SetEnabled(true);
+    net.host.SetAuthenticationEnabled(true);
+    net.client.SetAuthenticationEnabled(true);
+    return net.host.HostGame(Pair::kHostPort, "host");
+}
+
+} // namespace
+
+ENJIN_TEST(NetworkHandshake, ALostSessionKeyIsResentAndTheSessionSurvives) {
+    // Arrange: the host's first key datagram is lost.
+    Worlds w;   // before net: the network systems hold pointers into it
+    Pair net;
+    w.Attach(net);
+    ENJIN_ASSERT_TRUE(StartJoin(net));
+    w.SpawnOnHost(net);
+    net.bus.dropType = static_cast<u8>(MessageType::SessionKeyExchange);
+    net.bus.dropTypeRemaining = 1;
+
+    // Act: join, then run past the 10 s violation window and the timeout.
+    ENJIN_ASSERT_TRUE(net.client.JoinGame("127.0.0.1", Pair::kHostPort, "client"));
+    net.Pump(12 * 60);
+
+    // Assert: the key was lost and resent, both sides are still talking, and
+    // the entity the host already had reached the client.
+    ENJIN_EXPECT_EQ(net.bus.dropTypeRemaining, 0u);
+    ENJIN_EXPECT_TRUE(net.client.IsConnected());
+    ENJIN_EXPECT_EQ(net.host.GetConnectedPlayerCount(), 2u);
+    ENJIN_EXPECT_TRUE(w.ClientHasIt());
+}
+
+ENJIN_TEST(NetworkHandshake, ALateSessionKeyStillDeliversTheExistingEntities) {
+    // Arrange: every key datagram is held back behind the rest of the join.
+    Worlds w;   // before net: the network systems hold pointers into it
+    Pair net;
+    w.Attach(net);
+    ENJIN_ASSERT_TRUE(StartJoin(net));
+    w.SpawnOnHost(net);
+    net.bus.holdType = static_cast<u8>(MessageType::SessionKeyExchange);
+
+    // Act: let the accept, the lobby and the snapshots arrive keyless for
+    // half a second, then deliver the key.
+    ENJIN_ASSERT_TRUE(net.client.JoinGame("127.0.0.1", Pair::kHostPort, "client"));
+    net.Pump(30);
+    ENJIN_EXPECT_FALSE(net.bus.held.empty());
+    net.bus.ReleaseHeld();
+    net.Pump(12 * 60);
+
+    // Assert
+    ENJIN_EXPECT_TRUE(net.client.IsConnected());
+    ENJIN_EXPECT_EQ(net.host.GetConnectedPlayerCount(), 2u);
+    ENJIN_EXPECT_TRUE(w.ClientHasIt());
 }
 
 // ============================================================================

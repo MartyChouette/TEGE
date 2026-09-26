@@ -218,6 +218,11 @@ private:
     // Authentication & Replay protection
     void GenerateSessionKey();
     void SendSessionKey(const NetworkAddress& addr);
+    // Host: resend the key to every client that has not signed a packet with it.
+    void ResendPendingSessionKeys();
+    // Host: what a joining client needs once it can read signed packets -- the
+    // lobby and one EntitySpawn per networked entity.
+    void SendJoinState(const NetworkAddress& addr);
     void HandleSessionKeyExchange(const NetworkAddress& sender, const u8* payload, u32 size);
     bool AuthenticateOutgoing(std::vector<u8>& packet, ConnectionInfo* conn);
 
