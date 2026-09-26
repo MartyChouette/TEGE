@@ -1169,11 +1169,6 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<Scene::StreamingVolumeComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<Scene::StreamingVolumeComponent>(e); },
             "streamingVolume", DimensionTag::Only3D},
-        {"Streaming Portal", "Scene", nullptr,
-            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<Scene::StreamingPortalComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<Scene::StreamingPortalComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<Scene::StreamingPortalComponent>(e); },
-            "streamingPortal", DimensionTag::Only3D},
 
         // -- Effects --
         {"Interactive Water", "Effects", nullptr,
@@ -3743,9 +3738,6 @@ void EditorLayer::DrawInspectorPanel() {
         }
         if (m_World->HasComponent<Scene::StreamingVolumeComponent>(m_PrimarySelected)) {
             DrawStreamingVolumeComponent(m_PrimarySelected);
-        }
-        if (m_World->HasComponent<Scene::StreamingPortalComponent>(m_PrimarySelected)) {
-            DrawStreamingPortalComponent(m_PrimarySelected);
         }
         if (m_World->HasComponent<Effects::InteractiveWaterComponent>(m_PrimarySelected)) {
             bool waterOpen = UI::SectionHeader("[~] Interactive Water", ImGuiTreeNodeFlags_DefaultOpen);

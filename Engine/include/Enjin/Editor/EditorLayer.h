@@ -919,7 +919,6 @@ private:
     void DrawSkeletonComponent(ECS::Entity entity);
     void DrawBoneAttachmentComponent(ECS::Entity entity);
     void DrawStreamingVolumeComponent(ECS::Entity entity);
-    void DrawStreamingPortalComponent(ECS::Entity entity);
 
     // Flower components
     void DrawJellyMeshComponent(ECS::Entity entity);

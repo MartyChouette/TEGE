@@ -7081,26 +7081,6 @@ Scene::StreamingVolumeComponent DeserializeStreamingVolumeComponent(const json& 
     return sv;
 }
 
-json SerializeStreamingPortalComponent(const Scene::StreamingPortalComponent& sp) {
-    json j;
-    j["chunkA"] = sp.chunkA;
-    j["chunkB"] = sp.chunkB;
-    j["halfExtents"] = {RF(sp.halfExtents.x), RF(sp.halfExtents.y), RF(sp.halfExtents.z)};
-    j["bidirectional"] = sp.bidirectional;
-    return j;
-}
-
-Scene::StreamingPortalComponent DeserializeStreamingPortalComponent(const json& j) {
-    Scene::StreamingPortalComponent sp;
-    if (j.contains("chunkA")) sp.chunkA = j["chunkA"].get<std::string>();
-    if (j.contains("chunkB")) sp.chunkB = j["chunkB"].get<std::string>();
-    if (j.contains("halfExtents") && j["halfExtents"].is_array() && j["halfExtents"].size() >= 3) {
-        sp.halfExtents = Math::Vector3(j["halfExtents"][0].get<f32>(), j["halfExtents"][1].get<f32>(), j["halfExtents"][2].get<f32>());
-    }
-    if (j.contains("bidirectional")) sp.bidirectional = JB(j["bidirectional"]);
-    return sp;
-}
-
 json SerializeInteractiveWaterComponent(const Effects::InteractiveWaterComponent& iw) {
     json j;
     j["gridResolution"] = iw.gridResolution;
@@ -10174,7 +10154,6 @@ static const std::vector<ComponentSerdes>& ComponentRegistry() {
         ENJIN_SERDES("springJoint", ECS::SpringJointComponent, SerializeSpringJointComponent, DeserializeSpringJointComponent),
         ENJIN_SERDES("sprite2D", ECS::Sprite2DComponent, SerializeSprite2DComponent, DeserializeSprite2DComponent),
         ENJIN_SERDES("stateMachine", ECS::StateMachineComponent, SerializeStateMachineComponent, DeserializeStateMachineComponent),
-        ENJIN_SERDES("streamingPortal", Scene::StreamingPortalComponent, SerializeStreamingPortalComponent, DeserializeStreamingPortalComponent),
         ENJIN_SERDES("ambientSoundLayer", ECS::AmbientSoundLayerComponent, SerializeAmbientSoundLayerComponent, DeserializeAmbientSoundLayerComponent),
         ENJIN_SERDES("lipSync", ECS::LipSyncComponent, SerializeLipSyncComponent, DeserializeLipSyncComponent),
         ENJIN_SERDES("faceCard", ECS::FaceCardComponent, SerializeFaceCardComponent, DeserializeFaceCardComponent),

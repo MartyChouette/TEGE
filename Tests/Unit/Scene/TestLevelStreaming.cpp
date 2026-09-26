@@ -54,17 +54,6 @@ ENJIN_TEST(StreamingVolume, Defaults) {
 }
 
 // ===========================================================================
-// StreamingPortalComponent
-// ===========================================================================
-
-ENJIN_TEST(StreamingPortal, Defaults) {
-    StreamingPortalComponent portal;
-    ENJIN_EXPECT_TRUE(portal.bidirectional);
-    ENJIN_EXPECT_FLOAT_EQ(portal.halfExtents.x, 2.0f);
-    ENJIN_EXPECT_FLOAT_EQ(portal.halfExtents.y, 3.0f);
-}
-
-// ===========================================================================
 // StreamingManager
 // ===========================================================================
 

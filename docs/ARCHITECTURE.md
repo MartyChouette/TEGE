@@ -282,7 +282,7 @@ Alternative render path: geometry-only pass writes triangle ID + instance ID to 
   - AI (AIController, FollowTarget, LookAtTarget, Waypoint, BehaviorTreeComponent)
   - Visual (Billboard, ParticleEmitter, Sprite2D, AnimatedSprite2D, Tilemap, Camera2DBounds)
   - Animation (Skeleton, Animator, BoneAttachment, TwoBoneIK, LookAtIK, InteractionIK, AnimationRecorder, Ragdoll)
-  - Streaming (StreamingVolume, StreamingPortal)
+  - Streaming (StreamingVolume)
   - Timeline (TimelineComponent)
   - Networking (NetworkIdentity, NetworkTransform)
   - Other (StateMachine, Dialogue)
@@ -583,7 +583,6 @@ Alternative render path: geometry-only pass writes triangle ID + instance ID to 
 - `StreamingManager` - Distance-based chunk loading/unloading
 - `StreamingChunk` - Spatial region with entity list, load state, LOD level
 - `StreamingVolumeComponent` - Defines chunk boundaries
-- `StreamingPortalComponent` - Connects chunks (doorways, corridors)
 - Priority-sorted load queue with concurrent load limiting
 - Async chunk loading via SceneSerializer
 - ImGui debug overlay showing chunk states

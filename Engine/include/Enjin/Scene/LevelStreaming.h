@@ -65,14 +65,6 @@ struct StreamingVolumeComponent {
     StreamPriority priority = StreamPriority::Normal;
 };
 
-// Portal connecting two chunks (doorways, corridors)
-struct StreamingPortalComponent {
-    std::string chunkA;
-    std::string chunkB;
-    Math::Vector3 halfExtents = Math::Vector3(2.0f, 3.0f, 0.5f);
-    bool bidirectional = true;
-};
-
 // Streaming manager — tracks camera, loads/unloads chunks by distance
 class ENJIN_API StreamingManager {
 public:

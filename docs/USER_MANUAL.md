@@ -3401,7 +3401,6 @@ Each chunk defines:
 ### Components
 
 - **StreamingVolumeComponent** - Placed on entities to define chunk boundaries
-- **StreamingPortalComponent** - Connects two chunks (doorways, corridors) for seamless transitions
 
 ### Priority System
 

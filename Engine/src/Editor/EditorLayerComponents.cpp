@@ -7566,37 +7566,6 @@ void EditorLayer::DrawStreamingVolumeComponent(ECS::Entity entity) {
     }
 }
 
-void EditorLayer::DrawStreamingPortalComponent(ECS::Entity entity) {
-    if (UI::SectionHeader("Streaming Portal", ImGuiTreeNodeFlags_DefaultOpen)) {
-        auto* portal = m_World->GetComponent<Scene::StreamingPortalComponent>(entity);
-        if (!portal) return;
-        DrawComponentHelp("streamingPortal", m_World, entity);
-
-        char chunkABuf[256], chunkBBuf[256];
-        strncpy(chunkABuf, portal->chunkA.c_str(), sizeof(chunkABuf) - 1);
-        chunkABuf[sizeof(chunkABuf) - 1] = '\0';
-        strncpy(chunkBBuf, portal->chunkB.c_str(), sizeof(chunkBBuf) - 1);
-        chunkBBuf[sizeof(chunkBBuf) - 1] = '\0';
-
-        InspectorUndo::InputText(m_UndoRedo, "Chunk A", chunkABuf, sizeof(chunkABuf), [portal](const std::string& val) { portal->chunkA = val; });
-        InspectorUndo::InputText(m_UndoRedo, "Chunk B", chunkBBuf, sizeof(chunkBBuf), [portal](const std::string& val) { portal->chunkB = val; });
-        f32 portalExt[3] = { portal->halfExtents.x, portal->halfExtents.y, portal->halfExtents.z };
-        if (InspectorUndo::DragFloat3(m_UndoRedo, "Half Extents", portalExt,
-                [portal](f32 x, f32 y, f32 z) { portal->halfExtents = Math::Vector3(x, y, z); },
-                0.1f, 0.0f, 100.0f)) {
-            portal->halfExtents = Math::Vector3(portalExt[0], portalExt[1], portalExt[2]);
-        }
-        InspectorUndo::Checkbox(m_UndoRedo, "Bidirectional", &portal->bidirectional);
-
-        if (ImGui::BeginPopupContextItem("StreamingPortalCtx")) {
-            if (ImGui::MenuItem("Remove Component")) {
-                RemoveComponentWithUndo<Scene::StreamingPortalComponent>(entity, "streamingPortal", "Streaming Portal");
-            }
-            ImGui::EndPopup();
-        }
-    }
-}
-
 void EditorLayer::DrawCineComponent(ECS::Entity entity) {
     std::string hdr = std::string(GetComponentIcon("Camera")) + "Virtual Cinematography (CINE)";
     if (UI::SectionHeader(hdr.c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
