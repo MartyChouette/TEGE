@@ -256,9 +256,55 @@ void ProcessPickup(ECS::World* world, ECS::Entity entityA,
 // Box2D v3's sensor system doesn't reliably detect overlaps between
 // stationary kinematic sensors and moving kinematic visitors. This
 // manual check runs every frame and catches what sensors miss.
+namespace {
+
+// The per-frame hazard checks below see a target inside a hazard on every
+// frame it stands there. With damageOnce off that used to be a hit every
+// frame -- 60 a second, limited only by the target's invulnerability -- and
+// damageInterval, the field that says how often, was read by nothing (SD-16).
+//
+// A target is hit on the frame it enters. After that, with an interval it is
+// hit again each time the interval runs out while it stays; with none it is
+// not hit again until it leaves and comes back.
+void BeginHazardFrame(ECS::World* world) {
+    for (auto e : world->GetEntitiesWithComponent<ECS::DamageComponent>()) {
+        if (auto* d = world->GetComponent<ECS::DamageComponent>(e)) {
+            for (auto& c : d->hazardContacts) c.seen = false;
+        }
+    }
+}
+
+void EndHazardFrame(ECS::World* world) {
+    for (auto e : world->GetEntitiesWithComponent<ECS::DamageComponent>()) {
+        if (auto* d = world->GetComponent<ECS::DamageComponent>(e)) {
+            auto& v = d->hazardContacts;
+            v.erase(std::remove_if(v.begin(), v.end(),
+                                   [](const ECS::DamageComponent::HazardContact& c) { return !c.seen; }),
+                    v.end());
+        }
+    }
+}
+
+bool HazardShouldHit(ECS::DamageComponent& dmg, ECS::Entity target, f32 dt) {
+    for (auto& c : dmg.hazardContacts) {
+        if (c.target != target) continue;
+        c.seen = true;
+        if (dmg.damageInterval <= 0.0f) return false;
+        c.untilNext -= dt;
+        if (c.untilNext > 0.0f) return false;
+        c.untilNext += dmg.damageInterval;
+        return true;
+    }
+    dmg.hazardContacts.push_back({target, dmg.damageInterval, true});
+    return true;
+}
+
+} // namespace
+
 void CheckHazardOverlaps(ECS::World* world, f32 deltaTime,
                           std::vector<ECS::Entity>& deferredDestroys) {
     if (!world) return;
+    BeginHazardFrame(world);
 
     // Find all player entities (entities with a controller + health)
     // Check both Platformer2D and TopDown2D controllers against hazards
@@ -266,7 +312,9 @@ void CheckHazardOverlaps(ECS::World* world, f32 deltaTime,
         auto* playerT = world->GetComponent<ECS::TransformComponent>(player);
         auto* playerHp = world->GetComponent<ECS::HealthComponent>(player);
         if (!playerT || !playerHp || playerHp->isDead) return;
-        if (playerHp->isInvulnerable || playerHp->invulnerabilityTimer > 0.0f) return;
+        // Invulnerability is not a reason to skip: the hazard still has to
+        // know the player is standing in it, or its interval restarts, and
+        // ApplyDamage refuses the hit itself.
 
         auto* playerCtrl = world->GetComponent<ECS::Platformer2DController>(player);
         f32 pr = playerCtrl ? playerCtrl->collisionRadius : 0.4f;
@@ -312,6 +360,8 @@ void CheckHazardOverlaps(ECS::World* world, f32 deltaTime,
                     }
                     if (alreadyHit) continue;
                     hazardDmg->damagedEntities.push_back(player);
+                } else if (!HazardShouldHit(*hazardDmg, player, deltaTime)) {
+                    continue;
                 }
 
                 if (!ApplyDamage(world, player, hazardDmg->damage, hazard, hazardDmg)) continue;
@@ -324,6 +374,7 @@ void CheckHazardOverlaps(ECS::World* world, f32 deltaTime,
     };
     for (auto e : world->GetEntitiesWithComponent<ECS::Platformer2DController>()) { if (world->IsValid(e)) processHazardsForPlayer(e); }
     for (auto e : world->GetEntitiesWithComponent<ECS::TopDown2DController>()) { if (world->IsValid(e)) processHazardsForPlayer(e); }
+    EndHazardFrame(world);
 }
 
 // 2D enemy contact damage — Box2D kinematic-kinematic sensor events unreliable.
@@ -427,9 +478,10 @@ void CheckPickupOverlaps3D(ECS::World* world,
     for (auto e : world->GetEntitiesWithComponent<ECS::TopDown3DController>()) checkPlayer(e);
 }
 
-void CheckHazardOverlaps3D(ECS::World* world,
+void CheckHazardOverlaps3D(ECS::World* world, f32 deltaTime,
                             std::vector<ECS::Entity>& deferredDestroys) {
     if (!world) return;
+    BeginHazardFrame(world);
 
     // Small forgiveness margin so a graze counts, and so a hazard that ended up
     // as a solid body (collider without a trigger flag holds the character a hair
@@ -471,6 +523,9 @@ void CheckHazardOverlaps3D(ECS::World* world,
                 Math::Abs(d.y) < ph + hh.y + kMargin &&
                 Math::Abs(d.z) < pr + hh.z + kMargin) {
                 // Shared damage path: respects damageOnce, i-frames, shields, death.
+                // A continuous hazard is paced first (SD-16).
+                auto* hd = world->GetComponent<ECS::DamageComponent>(hazard);
+                if (hd && !hd->damageOnce && !HazardShouldHit(*hd, player, deltaTime)) continue;
                 ProcessContactDamage(world, hazard, player, deferredDestroys);
             }
         }
@@ -479,6 +534,7 @@ void CheckHazardOverlaps3D(ECS::World* world,
     for (auto e : world->GetEntitiesWithComponent<ECS::ThirdPersonController>()) checkPlayer(e);
     for (auto e : world->GetEntitiesWithComponent<ECS::FirstPersonController>()) checkPlayer(e);
     for (auto e : world->GetEntitiesWithComponent<ECS::TopDown3DController>()) checkPlayer(e);
+    EndHazardFrame(world);
 }
 
 // Bob, spin and magnet: the "Visual feedback" and magnet fields on

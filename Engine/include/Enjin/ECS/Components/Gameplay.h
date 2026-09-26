@@ -69,7 +69,10 @@ struct DamageComponent {
     f32 knockbackUpScale = 0.5f;
     bool destroyOnHit = true;      // Destroy this entity after dealing damage
     bool damageOnce = true;        // Only damage once per entity
-    f32 damageInterval = 0.0f;     // For continuous damage (lava, poison)
+    // With damageOnce off, how often a target standing in this hazard is hit
+    // again (lava, poison), in seconds. 0 = once each time it enters. It was
+    // read by nothing, so an unticked damageOnce hit every frame (SD-16).
+    f32 damageInterval = 0.0f;
 
     // Damage type for resistances/weaknesses
     enum class DamageType : u8 {
@@ -84,6 +87,11 @@ struct DamageComponent {
 
     // Tracking for damageOnce
     std::vector<Entity> damagedEntities;
+
+    // Runtime, not saved: who is standing in this hazard and how long until
+    // they are hit again (GameplayLoop's per-frame hazard checks).
+    struct HazardContact { Entity target = 0; f32 untilNext = 0.0f; bool seen = false; };
+    std::vector<HazardContact> hazardContacts;
 };
 
 // ============================================================================

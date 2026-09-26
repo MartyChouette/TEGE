@@ -86,6 +86,7 @@ ENJIN_TEST(FlagshipCoinRush, HazardDrainsHealthToDefeat) {
     auto& dmg = world.AddComponent<DamageComponent>(spike);
     dmg.damage = 25.0f;
     dmg.damageOnce = false;
+    dmg.damageInterval = 0.5f;   // a continuous hazard says how often (SD-16)
     dmg.destroyOnHit = false;
 
     // Game rules: defeat on player death.
@@ -96,12 +97,12 @@ ENJIN_TEST(FlagshipCoinRush, HazardDrainsHealthToDefeat) {
     std::vector<Entity> deferred;
 
     // First touch: 50 -> 25.
-    Gameplay::GameplayLoop::CheckHazardOverlaps3D(&world, deferred);
+    Gameplay::GameplayLoop::CheckHazardOverlaps3D(&world, 0.016f, deferred);
     ENJIN_EXPECT_TRUE(world.GetComponent<HealthComponent>(player)->currentHealth == 25.0f);
     ENJIN_EXPECT_TRUE(!world.GetComponent<HealthComponent>(player)->isDead);
 
-    // Second touch: 25 -> 0, dead.
-    Gameplay::GameplayLoop::CheckHazardOverlaps3D(&world, deferred);
+    // Still standing in it when the interval runs out: 25 -> 0, dead.
+    Gameplay::GameplayLoop::CheckHazardOverlaps3D(&world, 0.6f, deferred);
     ENJIN_EXPECT_TRUE(world.GetComponent<HealthComponent>(player)->isDead);
 
     // Game over resolves to DEFEAT (triggered, not won).
@@ -312,6 +313,59 @@ ENJIN_TEST(FlagshipCoinRush, TopDown3DPlayerDeathTriggersDefeat) {
     auto* go = world.GetComponent<GameOverComponent>(rules);
     ENJIN_EXPECT_TRUE(go->triggered);
     ENJIN_EXPECT_TRUE(!go->won);
+}
+
+// SD-16: with damageOnce off, a hazard hit on every frame a player stood in
+// it, and damageInterval was read by nothing. Standing in one is now a hit on
+// entry and then one per interval; with no interval, one per entry.
+static Entity MakeSpike(World& world, f32 interval) {
+    Entity spike = world.CreateEntity();
+    auto& st = world.AddComponent<TransformComponent>(spike);
+    st.position = Math::Vector3(0, 0.5f, 0);
+    auto& box = world.AddComponent<BoxColliderComponent>(spike);
+    box.size = Math::Vector3(1, 1, 1);
+    box.isTrigger = true;
+    auto& dmg = world.AddComponent<DamageComponent>(spike);
+    dmg.damage = 1.0f;
+    dmg.damageOnce = false;
+    dmg.damageInterval = interval;
+    dmg.destroyOnHit = false;
+    return spike;
+}
+
+ENJIN_TEST(FlagshipCoinRush, AContinuousHazardHitsOncePerInterval) {
+    // Arrange: a player standing in a hazard that hits every half second.
+    World world;
+    Entity player = MakePlayer(world, Math::Vector3(0.5f, 0.8f, 0.0f), 100.0f, 0.0f);
+    MakeSpike(world, 0.5f);
+    std::vector<Entity> deferred;
+
+    // Act: one second of frames.
+    for (int i = 0; i < 60; ++i) Gameplay::GameplayLoop::CheckHazardOverlaps3D(&world, 1.0f / 60.0f, deferred);
+
+    // Assert: hit on entry, at 0.5 s and at 1.0 s -- not sixty times.
+    const f32 hp = world.GetComponent<HealthComponent>(player)->currentHealth;
+    ENJIN_EXPECT_TRUE(hp >= 97.0f && hp <= 98.0f);
+}
+
+ENJIN_TEST(FlagshipCoinRush, AHazardWithNoIntervalHitsOncePerEntry) {
+    // Arrange
+    World world;
+    Entity player = MakePlayer(world, Math::Vector3(0.5f, 0.8f, 0.0f), 100.0f, 0.0f);
+    MakeSpike(world, 0.0f);
+    std::vector<Entity> deferred;
+    auto hp = [&] { return world.GetComponent<HealthComponent>(player)->currentHealth; };
+
+    // Act / Assert: a second standing in it is one hit.
+    for (int i = 0; i < 60; ++i) Gameplay::GameplayLoop::CheckHazardOverlaps3D(&world, 1.0f / 60.0f, deferred);
+    ENJIN_EXPECT_FLOAT_EQ(hp(), 99.0f);
+
+    // Step out for a frame and back in: a second hit.
+    world.GetComponent<TransformComponent>(player)->position = Math::Vector3(10.0f, 0.8f, 0.0f);
+    Gameplay::GameplayLoop::CheckHazardOverlaps3D(&world, 1.0f / 60.0f, deferred);
+    world.GetComponent<TransformComponent>(player)->position = Math::Vector3(0.5f, 0.8f, 0.0f);
+    Gameplay::GameplayLoop::CheckHazardOverlaps3D(&world, 1.0f / 60.0f, deferred);
+    ENJIN_EXPECT_FLOAT_EQ(hp(), 98.0f);
 }
 
 ENJIN_TEST_MAIN()

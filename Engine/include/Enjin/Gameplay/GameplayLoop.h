@@ -78,7 +78,7 @@ namespace GameplayLoop {
     // each frame: any 3D player overlapping a DamageComponent-without-HealthComponent
     // entity takes contact damage (respects i-frames / damageOnce). Without this a
     // 3D game has no working lose condition.
-    ENJIN_API void CheckHazardOverlaps3D(ECS::World* world,
+    ENJIN_API void CheckHazardOverlaps3D(ECS::World* world, f32 deltaTime,
                                           std::vector<ECS::Entity>& deferredDestroys);
 
     // 2D pickup AABB overlap check. Box2D v3 kinematic-kinematic sensor events

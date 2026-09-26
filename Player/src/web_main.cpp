@@ -1901,7 +1901,7 @@ public:
             }
             Enjin::Accessibility::ApplyTextScale(m_AccessibilitySettings, &m_UISystem, &m_SubtitleSystem, &m_Announcer);
             Enjin::Gameplay::GameplayLoop::CheckHazardOverlaps(m_World.get(), deltaTime, deferred);
-            Enjin::Gameplay::GameplayLoop::CheckHazardOverlaps3D(m_World.get(), deferred);
+            Enjin::Gameplay::GameplayLoop::CheckHazardOverlaps3D(m_World.get(), deltaTime, deferred);
             Enjin::Gameplay::GameplayLoop::CheckEnemyOverlaps2D(m_World.get(), deltaTime, deferred);
             Enjin::Gameplay::GameplayLoop::UpdatePickupMotion(m_World.get(), deltaTime);
             Enjin::Gameplay::GameplayLoop::CheckPickupOverlaps3D(m_World.get(), deferred);
