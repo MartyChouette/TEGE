@@ -420,6 +420,25 @@ struct LipSyncComponent {
     };
     std::vector<VisemeKey> visemeData;
 
+    // The key in effect at `time` into the sound: the latest key at or before
+    // it (keys need not be sorted). Silent at weight 0 before the first key.
+    // AudioReactiveSystem drives currentViseme from this while the sound plays;
+    // nothing read visemeData before, so an authored track never moved a mouth
+    // (SD-24).
+    static void SampleTrack(const std::vector<VisemeKey>& keys, f32 time,
+                            Viseme& viseme, f32& weight) {
+        viseme = Viseme::Silent;
+        weight = 0.0f;
+        f32 best = -1.0f;
+        for (const auto& k : keys) {
+            if (k.time <= time && k.time >= best) {
+                best = k.time;
+                viseme = k.viseme;
+                weight = k.weight;
+            }
+        }
+    }
+
     f32 blendSpeed = 10.0f;          // Interpolation speed between visemes
     bool autoFromAmplitude = true;   // Fallback: amplitude-based mouth open/close
 

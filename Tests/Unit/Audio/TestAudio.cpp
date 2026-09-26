@@ -1,5 +1,6 @@
 #include "EnjinTest.h"
 #include "Enjin/Audio/AudioEngine.h"
+#include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/Audio/AudioBus.h"
 #include "Enjin/Input/MIDIInput.h"
 #include "Enjin/Editor/AudioEventGraph.h"
@@ -125,6 +126,30 @@ ENJIN_TEST(AudioCaptions, TheAuthoredDescriptionIsTheCaption) {
     // No description: the file name, without its folders, as before.
     ENJIN_EXPECT_STR_EQ(AudioEngine::SoundCaption("", "assets/sfx/door_03.wav").c_str(), "door_03.wav");
     ENJIN_EXPECT_STR_EQ(AudioEngine::SoundCaption("", "C:\\game\\bell.ogg").c_str(), "bell.ogg");
+}
+
+// SD-24: an authored viseme track was saved and shown and read by nothing,
+// so it never moved a mouth. The key in effect at the sound's playback time is
+// what drives the current viseme now.
+ENJIN_TEST(LipSync, TheTrackGivesTheKeyInEffectAtATime) {
+    using LS = Enjin::ECS::LipSyncComponent;
+    using V = Enjin::ECS::Viseme;
+    // Arrange: out of order on purpose.
+    std::vector<LS::VisemeKey> keys(3);
+    keys[0].time = 0.50f; keys[0].viseme = V::OH; keys[0].weight = 0.8f;
+    keys[1].time = 0.10f; keys[1].viseme = V::AA; keys[1].weight = 1.0f;
+    keys[2].time = 0.90f; keys[2].viseme = V::Silent; keys[2].weight = 0.0f;
+    V v; Enjin::f32 w;
+
+    // Act / Assert
+    LS::SampleTrack(keys, 0.05f, v, w);   // before the first key
+    ENJIN_EXPECT_TRUE(v == V::Silent && w == 0.0f);
+    LS::SampleTrack(keys, 0.30f, v, w);
+    ENJIN_EXPECT_TRUE(v == V::AA && w == 1.0f);
+    LS::SampleTrack(keys, 0.50f, v, w);   // exactly on a key
+    ENJIN_EXPECT_TRUE(v == V::OH && w == 0.8f);
+    LS::SampleTrack(keys, 2.00f, v, w);   // after the last key
+    ENJIN_EXPECT_TRUE(v == V::Silent);
 }
 
 ENJIN_TEST_MAIN()

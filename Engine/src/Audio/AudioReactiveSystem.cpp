@@ -1032,6 +1032,23 @@ void AudioReactiveSystem::UpdateLipSync(f32 deltaTime) {
         auto* morph = m_World->GetComponent<ECS::MorphTargetComponent>(entity);
         if (!morph) continue;
 
+        // An authored viseme track plays against its sound: the linked audio
+        // source, or this entity's own when none is linked. While that sound
+        // plays, the key at its playback time is the current viseme; when it
+        // is not playing the mouth is silent (SD-24).
+        if (!lip->visemeData.empty()) {
+            const ECS::Entity srcEntity = (lip->linkedAudioSource != 0) ? lip->linkedAudioSource : entity;
+            const auto* src = m_World->IsValid(srcEntity)
+                ? m_World->GetComponent<ECS::AudioSourceComponent>(srcEntity) : nullptr;
+            if (m_Audio && src && src->isPlaying && src->soundHandle != INVALID_SOUND) {
+                ECS::LipSyncComponent::SampleTrack(lip->visemeData, m_Audio->GetPlaybackTime(src->soundHandle),
+                                                   lip->currentViseme, lip->currentWeight);
+            } else {
+                lip->currentViseme = ECS::Viseme::Silent;
+                lip->currentWeight = 0.0f;
+            }
+        }
+
         // Auto-map visemes to morph targets on first use
         if (lip->autoMapVisemes && !lip->autoMapped) {
             lip->autoMapped = true;
