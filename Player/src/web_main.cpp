@@ -2796,13 +2796,30 @@ private:
         InitWebSceneRuntime();
     }
 
+    // The project's defaults ride inside the pak; the player's choices persist
+    // in /saves. Both are applied, pak first (AccessibilityJsonLayers). Web
+    // used to read only /saves, so the project's authored defaults never
+    // reached a browser player at all (the mirror of desktop's IN-20).
     void LoadWebAccessibilitySettings() {
-        std::ifstream f("/saves/accessibility.json");
-        if (!f.is_open()) return;
-        std::stringstream ss;
-        ss << f.rdbuf();
+        std::string packJson, playerJson;
+        if (m_HasPack) {
+            auto packData = m_AssetReader.ReadFile("accessibility.json");
+            packJson.assign(packData.begin(), packData.end());
+        }
+        if (std::ifstream f("/saves/accessibility.json"); f.is_open()) {
+            std::stringstream ss;
+            ss << f.rdbuf();
+            playerJson = ss.str();
+        }
+        for (const std::string& layer : Enjin::Accessibility::AccessibilityJsonLayers(packJson, playerJson)) {
+            ApplyWebAccessibilityJson(layer);
+        }
+    }
+
+    // One accessibility.json layer; only the keys it has change.
+    void ApplyWebAccessibilityJson(const std::string& json) {
         try {
-            auto j = nlohmann::json::parse(ss.str());
+            auto j = nlohmann::json::parse(json);
             auto& s = m_AccessibilitySettings;
             if (j.contains("colorblindMode")) {
                 Enjin::u32 v = j["colorblindMode"].get<Enjin::u32>();
@@ -2841,9 +2858,9 @@ private:
             if (j.contains("subtitleBgOpacity")) s.subtitleBgOpacity = j["subtitleBgOpacity"].get<Enjin::f32>();
             if (j.contains("subtitleSpeakerNames")) s.subtitleSpeakerNames = j["subtitleSpeakerNames"].get<bool>();
             if (j.contains("subtitleDirectionIndicators")) s.subtitleDirectionIndicators = j["subtitleDirectionIndicators"].get<bool>();
-            ENJIN_LOG_INFO(Player, "Loaded accessibility settings from /saves/accessibility.json");
+            ENJIN_LOG_INFO(Player, "Applied an accessibility settings layer");
         } catch (const std::exception& e) {
-            ENJIN_LOG_WARN(Player, "Failed to parse /saves/accessibility.json: %s", e.what());
+            ENJIN_LOG_WARN(Player, "Failed to parse an accessibility.json layer: %s", e.what());
         }
     }
 
