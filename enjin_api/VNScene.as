@@ -273,7 +273,7 @@ class VNScene : TegeBehavior {
             Set(prompt, "1 / 2 / 3 to answer");
         } else {
             mode = 1;
-            Set(prompt, "space to continue");
+            Set(prompt, ContinuePrompt());
         }
     }
 
@@ -331,7 +331,7 @@ class VNScene : TegeBehavior {
         pendingReply = opt < int(replies.length()) ? replies[opt] : "";
 
         HideOptions();
-        Set(prompt, "space to continue");
+        Set(prompt, ContinuePrompt());
         mode = 1;
         if (autoBeat > 0.0f) autoT = 0.0f;
     }
@@ -447,10 +447,16 @@ class VNScene : TegeBehavior {
         Events_Send("portrait_speak", d);
     }
 
+    // The Advance Dialogue action, so a rebind moves it and a pad's A works.
+    // It read Space, Enter and the left button directly (IN-40).
     bool Advanced() {
         if (autoBeat > 0.0f) return false;
-        return Input_GetKeyDown(Key::Space) || Input_GetKeyDown(Key::Enter)
-            || Input_GetMouseButtonDown(0);
+        return InputAction_IsPressed(GameAction::DialogueAdvance);
+    }
+
+    // "Space to continue", with whatever Advance Dialogue is bound to now.
+    string ContinuePrompt() {
+        return InputAction_GetBindingName(GameAction::DialogueAdvance) + " to continue";
     }
 
     void Set(uint64 e, const string &in s) {

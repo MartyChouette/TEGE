@@ -4683,7 +4683,10 @@ private:
                 Enjin::f32 bounce = std::sin(static_cast<Enjin::f32>(ImGui::GetTime()) * 4.0f) * 0.3f + 0.7f;
                 ImGui::SetCursorPosY(boxH - padding - ImGui::GetTextLineHeight());
                 ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.6f, 0.8f, bounce));
-                ImGui::Text("[Space]");
+                // The Advance Dialogue action's binding, which is what advancing
+                // reads; it said "[Space]" whatever that was bound to (IN-40).
+                ImGui::Text("[%s]", m_InputMap.GetBindingDisplayName(
+                    static_cast<Enjin::i32>(Enjin::InputSystem::GameAction::DialogueAdvance)));
                 ImGui::PopStyleColor();
             }
         }
