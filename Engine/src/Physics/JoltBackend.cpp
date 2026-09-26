@@ -1550,6 +1550,31 @@ void JoltBackend::ProcessContactEvents() {
         }
     }
 
+    // Jolt reports contacts only for ACTIVE bodies: when a body goes to sleep
+    // every contact it has is reported removed, and nothing more is heard
+    // until it wakes. Rebuilding the set from this step's reports therefore
+    // read "the box fell asleep on the floor" as "the box left the floor", and
+    // every resting object sent a false Exit about a second after landing,
+    // then a fresh Enter when something woke it.
+    //
+    // A pair that went quiet is kept while NEITHER body is active. Separating
+    // takes motion, so a real exit always has an active body in it; a static
+    // floor is never active and a sleeping box is not either. A body that was
+    // destroyed is no longer in the map and still exits.
+    {
+        auto& bodies = m_PhysicsSystem->GetBodyInterface();
+        auto quietBody = [&](ECS::Entity e) {
+            auto it = m_EntityToBody.find(e);
+            return it != m_EntityToBody.end() && !bodies.IsActive(it->second);
+        };
+        for (const CollisionPair& prevPair : m_PreviousCollisionPairs) {
+            if (m_CurrentCollisionPairs.count(prevPair)) continue;
+            if (quietBody(prevPair.first) && quietBody(prevPair.second)) {
+                m_CurrentCollisionPairs.insert(prevPair);
+            }
+        }
+    }
+
     // Detect exits: pairs that were in previous frame but not current.
     // Exit events report the pair smaller handle first, which may differ from
     // the enter event's order. Consumers must not rely on entityA/entityB order.

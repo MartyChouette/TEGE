@@ -708,4 +708,67 @@ ENJIN_TEST(PhysicsSim3D, ExitNamesTheEntityOnAReusedSlot) {
     ENJIN_EXPECT_TRUE(exitNamesBoth);
 }
 
+ENJIN_TEST(PhysicsSim3D, AResting3DContactDoesNotExitWhenItFallsAsleep) {
+    // Arrange: a box dropped a little onto a static floor. Jolt stops
+    // reporting contacts for a body the moment it sleeps, which is not the
+    // same thing as the contact ending (SD-11).
+    ECS::World world;
+    ECS::Entity floor = world.CreateEntity();
+    {
+        ECS::TransformComponent t;
+        world.AddComponent<ECS::TransformComponent>(floor, t);
+        ECS::BoxColliderComponent bc;
+        bc.size = Math::Vector3(50.0f, 1.0f, 50.0f);
+        world.AddComponent<ECS::BoxColliderComponent>(floor, bc);
+    }
+    ECS::Entity box = world.CreateEntity();
+    {
+        ECS::TransformComponent t;
+        t.position = Math::Vector3(0.0f, 1.2f, 0.0f);
+        world.AddComponent<ECS::TransformComponent>(box, t);
+        ECS::BoxColliderComponent bc;
+        bc.size = Math::Vector3(1.0f, 1.0f, 1.0f);
+        world.AddComponent<ECS::BoxColliderComponent>(box, bc);
+        ECS::RigidbodyComponent rb;
+        rb.bodyType = ECS::RigidbodyComponent::BodyType::Dynamic;
+        rb.mass = 1.0f;
+        world.AddComponent<ECS::RigidbodyComponent>(box, rb);
+    }
+    auto backend = Physics::CreatePhysicsBackend(Physics::PhysicsBackendType::Auto);
+    ENJIN_ASSERT_NOT_NULL(backend.get());
+    backend->SetWorld(&world);
+    backend->SetGravity(Math::Vector3(0.0f, -9.81f, 0.0f));
+
+    // Act: run until the box has been asleep for a second (capped at 10 s).
+    int enters = 0, exits = 0, asleepFrames = 0;
+    for (int i = 0; i < 600 && asleepFrames < 60; ++i) {
+        backend->Update(1.0f / 60.0f);
+        for (const auto& e : backend->GetPendingCollisionEvents()) {
+            if (e.type == Physics::CollisionEvent::Type::Enter) ++enters;
+            else ++exits;
+        }
+        backend->ClearPendingCollisionEvents();
+        const auto* rb = world.GetComponent<ECS::RigidbodyComponent>(box);
+        if (rb && rb->isSleeping) ++asleepFrames;
+    }
+
+    // Assert: it went to sleep on the floor, entered once, and never left.
+    ENJIN_ASSERT_TRUE(asleepFrames >= 60);
+    ENJIN_EXPECT_EQ(enters, 1);
+    ENJIN_EXPECT_EQ(exits, 0);
+
+    // And a real departure still exits: wake it ten metres up in the air.
+    backend->ForceSetBodyState(box, Math::Vector3(0.0f, 10.0f, 0.0f), Math::Quaternion::Identity(),
+                               Math::Vector3(0.0f, 0.0f, 0.0f), Math::Vector3(0.0f, 0.0f, 0.0f));
+    int laterExits = 0;
+    for (int i = 0; i < 5; ++i) {
+        backend->Update(1.0f / 60.0f);
+        for (const auto& e : backend->GetPendingCollisionEvents()) {
+            if (e.type == Physics::CollisionEvent::Type::Exit) ++laterExits;
+        }
+        backend->ClearPendingCollisionEvents();
+    }
+    ENJIN_EXPECT_EQ(laterExits, 1);
+}
+
 ENJIN_TEST_MAIN()
