@@ -849,15 +849,22 @@ void GameMenuSystem::RenderControls(f32 w, f32 h) {
         return;
     }
 
+    // Anything below that changes the map is saved when it happens, not when
+    // the menu is left by Back: Escape, including during key capture, closed
+    // it without saving and the rebind was gone on the next launch (IN-14).
+    bool changed = false;
+
     // Mouse sensitivity
     f32 sensitivity = m_InputMap->GetMouseSensitivity();
     if (ImGui::SliderFloat("Mouse Sensitivity", &sensitivity, 0.05f, 5.0f, "%.2f")) {
         m_InputMap->SetMouseSensitivity(sensitivity);
     }
+    if (ImGui::IsItemDeactivatedAfterEdit()) changed = true;   // once per drag, not per frame
 
     bool invertY = m_InputMap->GetInvertY();
     if (ImGui::Checkbox("Invert Look Y", &invertY)) {
         m_InputMap->SetInvertY(invertY);
+        changed = true;
     }
 
     // Sprint / Crouch mode
@@ -866,11 +873,13 @@ void GameMenuSystem::RenderControls(f32 w, f32 h) {
     i32 sprintMode = m_InputMap->IsSprintToggle() ? 1 : 0;
     if (ImGui::Combo("Sprint Mode", &sprintMode, toggleModes, 2)) {
         m_InputMap->SetSprintToggle(sprintMode == 1);
+        changed = true;
     }
 
     i32 crouchMode = m_InputMap->IsCrouchToggle() ? 1 : 0;
     if (ImGui::Combo("Crouch Mode", &crouchMode, toggleModes, 2)) {
         m_InputMap->SetCrouchToggle(crouchMode == 1);
+        changed = true;
     }
 
     ImGui::Separator();
@@ -890,6 +899,7 @@ void GameMenuSystem::RenderControls(f32 w, f32 h) {
         if (pressedKey >= 0) {
             m_InputMap->RebindAction(m_RebindingAction, pressedKey);
             m_RebindingAction = -1;
+            changed = true;
         }
     }
 
@@ -938,17 +948,22 @@ void GameMenuSystem::RenderControls(f32 w, f32 h) {
     if (ImGui::Button("Reset Defaults", ImVec2(130, 28))) {
         m_InputMap->ResetToDefaults();
         m_RebindingAction = -1;
+        changed = true;
     }
     ImGui::SameLine();
     if (ImGui::Button("Left Hand", ImVec2(100, 28))) {
         m_InputMap->ApplyLeftHandOnly();
         m_RebindingAction = -1;
+        changed = true;
     }
     ImGui::SameLine();
     if (ImGui::Button("Right Hand", ImVec2(100, 28))) {
         m_InputMap->ApplyRightHandOnly();
         m_RebindingAction = -1;
+        changed = true;
     }
+
+    if (changed && m_BindingsChanged) m_BindingsChanged();
 }
 
 // ---------------------------------------------------------------------------

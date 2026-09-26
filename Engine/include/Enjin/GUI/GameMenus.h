@@ -133,6 +133,10 @@ private:
 public:
     using AccessibilityChangedCallback = std::function<void()>;
     void SetAccessibilityChangedCallback(AccessibilityChangedCallback cb) { m_AccessibilityChanged = std::move(cb); }
+    // Called the moment the Controls screen changes the input map (a rebind, a
+    // reset or preset, sensitivity, invert, hold-or-toggle), so the runtime can
+    // save it then rather than only when Options is left by Back.
+    void SetBindingsChangedCallback(std::function<void()> cb) { m_BindingsChanged = std::move(cb); }
 
     void ShowScreen(MenuScreen screen);
     void HideAll();
@@ -213,6 +217,7 @@ private:
     SettingsCallback m_SettingsCallback;
     SettingsSyncCallback m_SettingsSyncCallback;
     AccessibilityChangedCallback m_AccessibilityChanged;
+    std::function<void()> m_BindingsChanged;
     std::string m_GameTitle = "My Game";
     i32 m_RebindingAction = -1;
     // Where Back goes from Options / How to Play. Defaults to None, NOT

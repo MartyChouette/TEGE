@@ -514,6 +514,8 @@ public:
         // Live preview split: hovering a visual setting shows the screen half
         // without / half with the effect.
         m_GameMenu.SetPostProcessing(m_PostProcessing.get());
+        // Controls-screen changes are saved as they happen (IN-14).
+        m_GameMenu.SetBindingsChangedCallback([this]() { SaveInputBindings(); });
         m_GameMenu.SetAccessibilityChangedCallback([this]() {
             ApplyAccessibilitySettings();
             SaveAccessibilitySettings();
@@ -4097,6 +4099,13 @@ private:
         try {
             std::ofstream file(path);
             file << m_InputMap.ToJson();
+            file.close();
+            // An ofstream that could not open (a read-only install folder)
+            // throws nothing; it used to log "Saved" regardless.
+            if (!file) {
+                ENJIN_LOG_WARN(Player, "Could not write control bindings to %s", path.c_str());
+                return;
+            }
             ENJIN_LOG_INFO(Player, "Saved control bindings to %s", path.c_str());
         } catch (const std::exception& e) {
             ENJIN_LOG_WARN(Player, "Failed to save bindings.json: %s", e.what());
