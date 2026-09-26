@@ -2365,16 +2365,8 @@ public:
         // Touch controls: must draw INSIDE the ImGui frame (before Render), or
         // its foreground-draw-list commands are submitted after the frame is
         // already rendered and never appear (was called after RenderUIOverlay).
-        RenderTouchOverlay();
-
-        // Now that this frame's windows exist, ask the precise question: is the
-        // cursor actually over an ImGui window, or is an ImGui widget being
-        // dragged? io.WantCaptureMouse is a coarser flag and, read before the
-        // windows are submitted, was true when nothing was under the cursor at
-        // all. The only ImGui window here during play is the 44px pause button.
-        // Touch controls: must draw INSIDE the ImGui frame (before Render), or
-        // its foreground-draw-list commands are submitted after the frame is
-        // already rendered and never appear (was called after RenderUIOverlay).
+        // Once: this block was pasted twice, so every frame drew the overlay
+        // and the controls hint on top of themselves (IN-30).
         RenderTouchOverlay();
 
         // Now that this frame's windows exist, ask the precise question: is the
