@@ -81,7 +81,33 @@ InputActionMap::InputActionMap() {
     LoadDefaults();
 }
 
+void InputActionMap::SetProjectDefaults(std::function<void(InputActionMap&)> layer) {
+    m_ProjectDefaults = std::move(layer);
+}
+
 void InputActionMap::LoadDefaults() {
+    // Preferences outlive a reset. They share ActionConfig with the bindings
+    // (sensitivity and invert on the Look actions, hold-or-toggle as the
+    // Sprint/Crouch mode), so they are read before the table overwrites them.
+    const bool keep = m_DefaultsLoaded;
+    const f32 sensitivity = GetMouseSensitivity();
+    const bool invertY = GetInvertY();
+    const bool sprintToggle = IsSprintToggle();
+    const bool crouchToggle = IsCrouchToggle();
+
+    LoadTableDefaults();
+    if (m_ProjectDefaults) m_ProjectDefaults(*this);
+
+    if (keep) {
+        SetMouseSensitivity(sensitivity);
+        SetInvertY(invertY);
+        SetSprintToggle(sprintToggle);
+        SetCrouchToggle(crouchToggle);
+    }
+    m_DefaultsLoaded = true;
+}
+
+void InputActionMap::LoadTableDefaults() {
     const u32 count = static_cast<u32>(GameAction::Count);
     for (u32 i = 0; i < count; ++i) {
         m_Actions[i] = ActionConfig{};

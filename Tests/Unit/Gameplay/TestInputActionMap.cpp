@@ -1,5 +1,6 @@
 #include "EnjinTest.h"
 #include "Enjin/Input/InputAction.h"
+#include "Enjin/Input/InputProjectSettings.h"
 
 using namespace Enjin;
 using namespace Enjin::InputSystem;
@@ -166,6 +167,52 @@ ENJIN_TEST(InputActionMap, FromJsonRoundTrip) {
     ENJIN_EXPECT_TRUE(ok);
     ENJIN_EXPECT_FLOAT_EQ(map2.GetMouseSensitivity(), 3.0f);
     ENJIN_EXPECT_TRUE(map2.IsSprintToggle());
+}
+
+// IN-10: Reset and every one-handed preset called LoadDefaults, which rebuilt
+// the map from the engine table alone. The project's custom actions came out
+// unbound, and the player's sensitivity, invert-Y and toggle choices were
+// reset, and the runtimes saved that. Defaults are the table PLUS the
+// project's layer, and preferences survive.
+static bool HasKey(const InputActionMap& map, GameAction a, KeyCode k) {
+    for (const auto& b : map.GetActionConfig(a).bindings) {
+        if (b.type == BindingType::Key && b.code == static_cast<i32>(k)) return true;
+    }
+    return false;
+}
+
+ENJIN_TEST(InputActionMap, ResetKeepsProjectActionsAndPlayerPreferences) {
+    // Arrange: a project custom action, the player's preferences, and one
+    // engine action rebound away from its default.
+    InputActionMap map;
+    InputProjectSettings project;
+    CustomActionDef dash;
+    dash.slot = 0;
+    dash.name = "Dash";
+    dash.key = static_cast<i32>(KeyCode::X);
+    project.customActions.push_back(dash);
+    project.ApplyTo(map);
+    map.SetMouseSensitivity(2.5f);
+    map.SetInvertY(true);
+    map.SetSprintToggle(true);
+    map.SetCrouchToggle(true);
+    map.RebindAction(static_cast<i32>(GameAction::Jump), static_cast<i32>(KeyCode::J));
+
+    // Act / Assert: Reset.
+    map.ResetToDefaults();
+    ENJIN_EXPECT_TRUE(HasKey(map, GameAction::Custom0, KeyCode::X));
+    ENJIN_EXPECT_TRUE(map.IsActionListed(static_cast<i32>(GameAction::Custom0)));
+    ENJIN_EXPECT_FALSE(HasKey(map, GameAction::Jump, KeyCode::J));   // the rebind is undone
+    ENJIN_EXPECT_FLOAT_NEAR(map.GetMouseSensitivity(), 2.5f, 1e-6f);
+    ENJIN_EXPECT_TRUE(map.GetInvertY());
+    ENJIN_EXPECT_TRUE(map.IsSprintToggle());
+    ENJIN_EXPECT_TRUE(map.IsCrouchToggle());
+
+    // And a preset, which starts from the same defaults.
+    map.ApplyLeftHandOnly();
+    ENJIN_EXPECT_TRUE(HasKey(map, GameAction::Custom0, KeyCode::X));
+    ENJIN_EXPECT_FLOAT_NEAR(map.GetMouseSensitivity(), 2.5f, 1e-6f);
+    ENJIN_EXPECT_TRUE(map.GetInvertY());
 }
 
 ENJIN_TEST_MAIN()

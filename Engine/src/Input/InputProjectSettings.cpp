@@ -9,18 +9,17 @@ using json = nlohmann::json;
 namespace Enjin {
 namespace InputSystem {
 
-void InputProjectSettings::ApplyTo(InputActionMap& map) const {
-    // Every runtime calls ApplyTo with the project block, so pushing the
-    // hint switch here is what makes the editor, the desktop player and the
-    // web player agree without three separate wirings.
-    SetControlsHintEnabled(showControlsHint);
+namespace {
 
+// The project's custom actions onto a map: name each slot, and give each named
+// slot its authored bindings and mode. Unnamed slots stay hidden and unbound.
+void ApplyCustomActions(InputActionMap& map, const std::vector<CustomActionDef>& customActions) {
     for (const auto& def : customActions) {
         if (def.slot < 0 || def.slot >= static_cast<i32>(kCustomActionCount)) continue;
         GameAction action = static_cast<GameAction>(
             static_cast<i32>(GameAction::Custom0) + def.slot);
         map.SetCustomActionName(action, def.name);
-        if (def.name.empty()) continue;   // unnamed slots stay hidden and unbound
+        if (def.name.empty()) continue;
 
         map.ClearBindings(action);
         if (def.key >= 0) {
@@ -43,6 +42,20 @@ void InputProjectSettings::ApplyTo(InputActionMap& map) const {
         }
         map.SetActionMode(action, static_cast<ActionMode>(def.mode <= 3 ? def.mode : 2));
     }
+}
+
+} // namespace
+
+void InputProjectSettings::ApplyTo(InputActionMap& map) const {
+    // Every runtime calls ApplyTo with the project block, so pushing the
+    // hint switch here is what makes the editor, the desktop player and the
+    // web player agree without three separate wirings.
+    SetControlsHintEnabled(showControlsHint);
+
+    ApplyCustomActions(map, customActions);
+    // And again on every reset or preset, which start from the engine table:
+    // these ARE the game's defaults for its custom actions (IN-10).
+    map.SetProjectDefaults([defs = customActions](InputActionMap& m) { ApplyCustomActions(m, defs); });
 }
 
 std::string InputProjectSettings::ToJson() const {

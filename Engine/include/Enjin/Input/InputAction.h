@@ -3,6 +3,7 @@
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Platform/Input.h"
 #include "Enjin/Math/Vector.h"
+#include <functional>
 #include <vector>
 #include <string>
 
@@ -135,8 +136,19 @@ public:
     InputActionMap();
     ~InputActionMap() = default;
 
-    // Load default bindings from the ActionInfo table
+    // Load default bindings: the ActionInfo table, then the project's own
+    // layer (SetProjectDefaults) on top. The player's preferences -- mouse
+    // sensitivity, invert-Y, sprint and crouch hold-or-toggle -- are kept: a
+    // reset or a one-handed preset is about which input does what, not how
+    // looking feels.
     void LoadDefaults();
+
+    // The project's defaults on top of the engine table, re-applied by every
+    // LoadDefaults: custom action names and bindings from Project Settings.
+    // InputProjectSettings::ApplyTo installs it. Without it, Reset and every
+    // one-handed preset unbound the game's own custom actions, and the runtimes
+    // saved that, so they were gone for good (IN-10).
+    void SetProjectDefaults(std::function<void(InputActionMap&)> layer);
 
     // Per-frame update: manages toggle state, reads hardware input
     void Update(f32 dt);
@@ -233,12 +245,15 @@ public:
     bool FromJson(const std::string& jsonStr);
 
 private:
+    void LoadTableDefaults();   // the ActionInfo table alone
     bool IsBindingActive(const InputBinding& binding) const;
     bool IsBindingPressed(const InputBinding& binding) const;
     bool IsBindingReleased(const InputBinding& binding) const;
 
     ActionConfig m_Actions[static_cast<u32>(GameAction::Count)];
     std::string m_CustomNames[kCustomActionCount];
+    std::function<void(InputActionMap&)> m_ProjectDefaults;
+    bool m_DefaultsLoaded = false;   // the first load has no preferences to keep
 
     // Toggle state tracking
     bool m_ToggleState[static_cast<u32>(GameAction::Count)] = {};
