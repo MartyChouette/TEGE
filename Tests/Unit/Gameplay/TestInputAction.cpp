@@ -120,7 +120,10 @@ ENJIN_TEST(Config, ResetToDefaults) {
     map.SetSprintToggle(true);
     map.ResetToDefaults();
     ENJIN_EXPECT_FLOAT_EQ(map.GetActionConfig(GameAction::Attack).sensitivity, 1.0f);
-    ENJIN_EXPECT_FALSE(map.IsSprintToggle());
+    // Hold-or-toggle is the player's preference and survives a reset (IN-10);
+    // this test used to expect it cleared, which is the behaviour that lost a
+    // player's settings every time they pressed Reset.
+    ENJIN_EXPECT_TRUE(map.IsSprintToggle());
 }
 
 // ===========================================================================
