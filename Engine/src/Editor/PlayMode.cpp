@@ -519,7 +519,7 @@ void PlayMode::Play() {
 
     // Wire 2D physics collision callbacks to visual script system and gameplay processing
     Gameplay::GameplayLoop::Wire2DCollisionCallbacks(
-        m_Physics2D.get(), m_World, &m_VisualScriptSystem, m_DeferredDestroys);
+        m_Physics2D.get(), m_World, &m_VisualScriptSystem, m_DeferredDestroys, &m_ScriptSystem);
 
     // Wire announcer to UISystem for screen reader support (Task #36)
     // The UICanvas game-over screen (spawned by GameplayLoop, one UI source on all
@@ -1169,7 +1169,7 @@ void PlayMode::Update(f32 deltaTime) {
 
         // Dispatch 3D collision events to visual scripts and gameplay systems
         Gameplay::GameplayLoop::DispatchCollisionEvents3D(
-            m_World, m_Physics.get(), &m_VisualScriptSystem, deltaTime, m_DeferredDestroys);
+            m_World, m_Physics.get(), &m_VisualScriptSystem, deltaTime, m_DeferredDestroys, &m_ScriptSystem);
 
         auto t1 = std::chrono::high_resolution_clock::now();
 

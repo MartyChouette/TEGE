@@ -1872,7 +1872,7 @@ public:
             std::vector<Enjin::ECS::Entity> deferred;
             if (m_Physics) {
                 Enjin::Gameplay::GameplayLoop::DispatchCollisionEvents3D(
-                    m_World.get(), m_Physics.get(), &m_VisualScriptSystem, deltaTime, deferred);
+                    m_World.get(), m_Physics.get(), &m_VisualScriptSystem, deltaTime, deferred, &m_ScriptSystem);
             }
             m_FootstepSystem.Update(m_World.get(), deltaTime);
             m_SubtitleSystem.Update(deltaTime);
@@ -2684,7 +2684,7 @@ private:
         // gameplay on web — 2D triggers/hazards were silently dead here.
         if (m_Physics2D) {
             Enjin::Gameplay::GameplayLoop::Wire2DCollisionCallbacks(
-                m_Physics2D.get(), m_World.get(), &m_VisualScriptSystem, m_DeferredDestroys);
+                m_Physics2D.get(), m_World.get(), &m_VisualScriptSystem, m_DeferredDestroys, &m_ScriptSystem);
         }
 
         // Procedural generation (desktop: main.cpp:2835-2841). All four ran on

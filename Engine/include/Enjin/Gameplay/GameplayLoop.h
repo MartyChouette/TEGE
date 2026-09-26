@@ -8,7 +8,7 @@
 
 namespace Enjin {
 namespace Physics { class IPhysicsBackend; class IPhysicsBackend2D; }
-namespace Scripting { class ScriptEngine; }
+namespace Scripting { class ScriptEngine; class ScriptSystem; }
 namespace ECS { class VisualScriptSystem; }
 
 namespace Gameplay {
@@ -106,22 +106,28 @@ namespace GameplayLoop {
     ENJIN_API void FlushDeferredDestroys(ECS::World* world,
                                           std::vector<ECS::Entity>& deferredDestroys);
 
-    // Dispatch 3D collision events from physics to visual scripts and gameplay systems.
-    // Calls OnCollisionEnter/Exit and OnTriggerEnter/Exit on the VisualScriptSystem,
-    // and processes contact damage and pickups.
+    // Dispatch 3D collision events from physics to scripts and gameplay systems.
+    // Calls OnCollisionEnter/Exit and OnTriggerEnter/Exit on the VisualScriptSystem
+    // AND on the AngelScript ScriptSystem, both directions, and processes contact
+    // damage and pickups. `scriptSystem` was missing until 2026-09-26: ScriptSystem
+    // had the handlers and nothing called them, so a TegeBehavior overriding
+    // OnCollisionEnter never fired in any runtime while visual scripts did.
     ENJIN_API void DispatchCollisionEvents3D(ECS::World* world,
                                               Physics::IPhysicsBackend* physics,
                                               ECS::VisualScriptSystem* vsSystem,
                                               f32 deltaTime,
-                                              std::vector<ECS::Entity>& deferredDestroys);
+                                              std::vector<ECS::Entity>& deferredDestroys,
+                                              Scripting::ScriptSystem* scriptSystem = nullptr);
 
-    // Wire 2D physics collision callbacks to visual script system and gameplay processing.
+    // Wire 2D physics collision callbacks to scripts and gameplay processing.
     // Sets up OnCollisionEnter/Exit and OnSensorEnter/Exit callbacks on the 2D physics backend.
-    // The callbacks capture world, vsSystem, and deferredDestroys by pointer/reference.
+    // The callbacks capture world, vsSystem, scriptSystem and deferredDestroys by
+    // pointer/reference, so all of them must outlive the backend's callbacks.
     ENJIN_API void Wire2DCollisionCallbacks(Physics::IPhysicsBackend2D* physics2D,
                                              ECS::World* world,
                                              ECS::VisualScriptSystem* vsSystem,
-                                             std::vector<ECS::Entity>& deferredDestroys);
+                                             std::vector<ECS::Entity>& deferredDestroys,
+                                             Scripting::ScriptSystem* scriptSystem = nullptr);
 
     // Populate every TriggerZoneComponent's entitiesInside list by AABB/sphere
     // overlap against player-controlled entities (2D + 3D controllers), and fire

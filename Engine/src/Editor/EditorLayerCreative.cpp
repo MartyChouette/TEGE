@@ -21,6 +21,7 @@
 #include "Enjin/ECS/Components/WaterVolume.h"
 #include "Enjin/ECS/Components/BoundaryPolygon.h"
 #include "Enjin/ECS/Components/WallPath.h"
+#include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/ECS/Components/Light.h"
 #include "Enjin/Renderer/MeshFactory.h"
 #include "Enjin/ECS/Components/TreeVolume.h"
@@ -2511,6 +2512,34 @@ private:
     Apply m_Apply;
 };
 
+// Shape handles live in the entity's own space, the space its brushes and
+// outline are stored in, and go through its whole world transform to reach the
+// screen. They used to add only the entity's position, so on a rotated,
+// scaled or parented wall they sat off the geometry and a drag landed wrong.
+//
+// Dirtied up the parent chain first: that cache is cleared by the renderer's
+// frame tick, which the editor never runs, so a parent moved with the gizmo
+// could leave it stale. A few multiplies a frame for one selected entity.
+Math::Matrix4 FreshWorldMatrix(ECS::World* world, ECS::Entity e) {
+    ECS::Entity cur = e;
+    for (u32 d = 0; d < ECS::kMaxHierarchyDepth && cur != ECS::INVALID_ENTITY; ++d) {
+        if (auto* t = world->GetComponent<ECS::TransformComponent>(cur)) t->worldMatrixDirty = true;
+        const auto* pc = world->GetComponent<ECS::ParentComponent>(cur);
+        cur = pc ? pc->parent : ECS::INVALID_ENTITY;
+    }
+    return ECS::ComputeWorldMatrix(world, e);
+}
+
+Math::Vector3 XformPoint(const Math::Matrix4& m, const Math::Vector3& p) {
+    const Math::Vector4 v = m * Math::Vector4(p.x, p.y, p.z, 1.0f);
+    return Math::Vector3(v.x, v.y, v.z);
+}
+
+Math::Vector3 XformDir(const Math::Matrix4& m, const Math::Vector3& d) {
+    const Math::Vector4 v = m * Math::Vector4(d.x, d.y, d.z, 0.0f);
+    return Math::Vector3(v.x, v.y, v.z);
+}
+
 } // namespace
 
 bool EditorLayer::EntityHasShapeHandles(ECS::Entity e) const {
@@ -2528,8 +2557,8 @@ bool EditorLayer::EntityHasShapeHandles(ECS::Entity e) const {
 
 void EditorLayer::CollectCreativeShapeHandles(ECS::Entity e, std::vector<ShapeHandle>& out) const {
     if (!EntityHasShapeHandles(e)) return;
-    const auto* xf = m_World->GetComponent<ECS::TransformComponent>(e);
-    const Math::Vector3 origin = xf ? xf->position : Math::Vector3(0.0f, 0.0f, 0.0f);
+    // Entity-local: the caller takes them to the world (FreshWorldMatrix).
+    const Math::Vector3 origin(0.0f, 0.0f, 0.0f);
     if (const auto* wp = m_World->GetComponent<ECS::WallPathComponent>(e)) {
         WallPathHandles(*wp, origin, out);
     } else if (const auto* solid = m_World->GetComponent<ECS::BrushSolidComponent>(e);
@@ -2626,23 +2655,31 @@ bool EditorLayer::HandleCreativeShapeHandles(f32 localX, f32 localY, f32 viewW, 
 
         // The cursor meets the plane the handle sits on, not the y = 0 build
         // plane: a pond's shore is at its surface height, and on the build plane
-        // the handle would slide away from the cursor as the camera tilted.
+        // the handle would slide away from the cursor as the camera tilted. The
+        // plane is the entity's own floor through the handle, so on a tilted
+        // entity it tilts with it. The snapped world point is then taken back
+        // into the entity's space, where the shape is stored.
+        const Math::Matrix4 toWorld = FreshWorldMatrix(m_World, m_ShapeEntity);
+        const Math::Matrix4 toLocal = toWorld.Inverse();
         const Ray ray = ScenePicker::ScreenToRay(m_Camera, localX, localY, viewW, viewH);
-        const f32 planeY = m_ShapeHandle.position.y;
+        const Math::Vector3 planePoint = XformPoint(toWorld, m_ShapeHandle.position);
+        Math::Vector3 planeNormal = XformDir(toWorld, Math::Vector3(0.0f, 1.0f, 0.0f));
+        const f32 nLen = planeNormal.Length();
         bool hit = false;
-        Math::Vector3 point;
-        if (std::fabs(ray.direction.y) > 1e-6f) {
-            const f32 t = (planeY - ray.origin.y) / ray.direction.y;
+        Math::Vector3 point;   // entity-local, on the handle's plane
+        const f32 denom = (nLen > 1e-6f) ? ray.direction.Dot(planeNormal) / nLen : 0.0f;
+        if (std::fabs(denom) > 1e-6f) {
+            planeNormal = planeNormal * (1.0f / nLen);
+            const f32 t = (planePoint - ray.origin).Dot(planeNormal) / denom;
             if (t > 0.0f) {
-                point = m_Creative.SnapToGrid(ray.origin + ray.direction * t);
-                point.y = planeY;
+                point = XformPoint(toLocal, m_Creative.SnapToGrid(ray.origin + ray.direction * t));
+                point.y = m_ShapeHandle.position.y;
                 hit = true;
             }
         }
 
         if (hit) {
-            const auto* xf = m_World->GetComponent<ECS::TransformComponent>(m_ShapeEntity);
-            const Math::Vector3 origin = xf ? xf->position : Math::Vector3(0.0f, 0.0f, 0.0f);
+            const Math::Vector3 origin(0.0f, 0.0f, 0.0f);
             switch (m_ShapeHandle.kind) {
                 case ShapeHandleKind::WallPoint:
                 case ShapeHandleKind::WallBow: {
@@ -2678,15 +2715,17 @@ bool EditorLayer::HandleCreativeShapeHandles(f32 localX, f32 localY, f32 viewW, 
                     // the grab point is snapped too, or a straight pull sideways
                     // also nudged the edge along itself by the rounding.
                     ShapeHandle grabbed = m_ShapeHandle;
-                    grabbed.position = m_Creative.SnapToGrid(grabbed.position);
+                    grabbed.position = XformPoint(
+                        toLocal, m_Creative.SnapToGrid(XformPoint(toWorld, grabbed.position)));
+                    grabbed.position.y = m_ShapeHandle.position.y;
                     DragOutlineHandle(*o, start, grabbed, origin, point);
                     break;
                 }
                 case ShapeHandleKind::BoxGrip: {
                     auto* solid = m_World->GetComponent<ECS::BrushSolidComponent>(m_ShapeEntity);
                     if (!solid || m_ShapeStart.brushes.size() != 1 || solid->brushes.size() != 1) break;
-                    // Grips are drawn at the brush's centre height; the drag
-                    // plane is that height, so convert back to entity-local.
+                    // Grips are drawn at the brush's centre height, and the
+                    // drag plane is that height in the entity's space.
                     ECS::BrushSolidComponent::Brush b = m_ShapeStart.brushes[0];
                     if (ResizeBrushByGrip(b, static_cast<BrushGrip>(m_ShapeHandle.index), point - origin) &&
                         b != solid->brushes[0]) {
@@ -2777,12 +2816,14 @@ bool EditorLayer::HandleCreativeShapeHandles(f32 localX, f32 localY, f32 viewW, 
                (h.index == 0 || h.index == lastWallPoint);
     };
 
+    const Math::Matrix4 toWorld = FreshWorldMatrix(m_World, target);
     i32 hovered = -1;
     f32 best = grab * grab * 2.0f;
     std::vector<ImVec2> screen(handles.size());
     std::vector<bool> visible(handles.size(), false);
     for (usize i = 0; i < handles.size(); ++i) {
-        if (!ProjectToViewport(m_Camera, handles[i].position, imgMin, viewW, viewH, screen[i])) continue;
+        if (!ProjectToViewport(m_Camera, XformPoint(toWorld, handles[i].position), imgMin, viewW, viewH,
+                               screen[i])) continue;
         visible[i] = true;
         if (yieldsToBuild(handles[i])) continue;
         const f32 dx = mouse.x - screen[i].x, dy = mouse.y - screen[i].y;

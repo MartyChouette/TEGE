@@ -1447,7 +1447,7 @@ public:
 
         // Dispatch 3D collision events to visual scripts and gameplay systems
         Enjin::Gameplay::GameplayLoop::DispatchCollisionEvents3D(
-            m_World.get(), m_Physics.get(), &m_VisualScriptSystem, deltaTime, m_DeferredDestroys);
+            m_World.get(), m_Physics.get(), &m_VisualScriptSystem, deltaTime, m_DeferredDestroys, &m_ScriptSystem);
 
         // --- Controllers & vegetation ---
         // Fixed-timestep projects tick controllers inside the SimClock loop
@@ -2048,7 +2048,7 @@ public:
         if (m_RenderSystem) m_RenderSystem->SetSurfaceQuery(&m_SurfaceQuery);
         m_ControllerSystem.SetPhysics2D(m_Physics2D.get());
         Enjin::Gameplay::GameplayLoop::Wire2DCollisionCallbacks(
-            m_Physics2D.get(), m_World.get(), &m_VisualScriptSystem, m_DeferredDestroys);
+            m_Physics2D.get(), m_World.get(), &m_VisualScriptSystem, m_DeferredDestroys, &m_ScriptSystem);
         if (!m_StartScene.empty()) {
             if (LoadSceneFromPack(m_StartScene)) {
                 // Bring the new scene fully live, exactly as the first scene and
@@ -2861,7 +2861,7 @@ public:
         m_SurfaceQuery.SetBackend(m_Physics.get());
         if (m_RenderSystem) m_RenderSystem->SetSurfaceQuery(&m_SurfaceQuery);
                 m_ControllerSystem.SetPhysics2D(m_Physics2D.get());
-                Enjin::Gameplay::GameplayLoop::Wire2DCollisionCallbacks(m_Physics2D.get(), m_World.get(), &m_VisualScriptSystem, m_DeferredDestroys);
+                Enjin::Gameplay::GameplayLoop::Wire2DCollisionCallbacks(m_Physics2D.get(), m_World.get(), &m_VisualScriptSystem, m_DeferredDestroys, &m_ScriptSystem);
                 LoadSceneFromPack(m_StartScene);
                 m_ConsoleLog.push_back("Level restarted");
             }
@@ -3588,7 +3588,7 @@ private:
 
         // Wire 2D physics collision callbacks to visual script system and gameplay processing
         Enjin::Gameplay::GameplayLoop::Wire2DCollisionCallbacks(
-            m_Physics2D.get(), m_World.get(), &m_VisualScriptSystem, m_DeferredDestroys);
+            m_Physics2D.get(), m_World.get(), &m_VisualScriptSystem, m_DeferredDestroys, &m_ScriptSystem);
 
         // Initialize visual scripts and behavior trees
         m_VisualScriptSystem.SetPhysics(m_Physics.get());

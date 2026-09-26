@@ -71,6 +71,11 @@ struct ENJIN_API BoundaryPolygonComponent {
     // furthest from any edge, which is what the centroid used to carry.
     //
     // Returns false for fewer than three points or a ring with no area.
+    //
+    // The water surface asks for kSurfaceMaxEdge: fine enough that the foam
+    // fades over a couple of metres, coarse enough that a pond stays a few
+    // hundred triangles.
+    static constexpr f32 kSurfaceMaxEdge = 2.0f;
     static bool BuildSurface(const std::vector<Math::Vector2>& ring, f32 maxEdge,
                              std::vector<Math::Vector2>& positions,
                              std::vector<f32>& shore,

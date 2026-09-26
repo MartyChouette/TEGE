@@ -24446,7 +24446,8 @@ void RenderSystem::EnsureWaterMeshes() {
             std::vector<Math::Vector2> pos;
             std::vector<f32> shoreDist;
             std::vector<u32> tri;
-            if (!BoundaryPolygonComponent::BuildSurface(boundary->points, 2.0f, pos, shoreDist, tri)) {
+            if (!BoundaryPolygonComponent::BuildSurface(boundary->points, BoundaryPolygonComponent::kSurfaceMaxEdge,
+                                                         pos, shoreDist, tri)) {
                 // An outline with no area (every point on one line, or piled on
                 // one spot) encloses no water. Building from it would retire the
                 // old buffers and hand the draw an empty mesh, so the pond

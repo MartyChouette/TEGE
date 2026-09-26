@@ -6,6 +6,7 @@
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include "Enjin/ECS/Components/Skeleton.h"
 #include "Enjin/ECS/Systems/VisualScriptSystem.h"
+#include "Enjin/Scripting/ScriptSystem.h"
 #include "Enjin/Physics/IPhysicsBackend.h"
 #include "Enjin/Physics/IPhysicsBackend2D.h"
 #include "Enjin/GUI/UITemplates.h"
@@ -725,39 +726,58 @@ void DispatchCollisionEvents3D(ECS::World* world,
                                Physics::IPhysicsBackend* physics,
                                ECS::VisualScriptSystem* vsSystem,
                                f32 deltaTime,
-                               std::vector<ECS::Entity>& deferredDestroys) {
+                               std::vector<ECS::Entity>& deferredDestroys,
+                               Scripting::ScriptSystem* scriptSystem) {
     if (!physics) return;
 
+    // Each event goes to both entities, each seeing the other as `other`.
     const auto& collisionEvents = physics->GetPendingCollisionEvents();
     for (const auto& evt : collisionEvents) {
+        const bool enter = evt.type == Physics::CollisionEvent::Type::Enter;
         if (evt.isTrigger) {
-            if (evt.type == Physics::CollisionEvent::Type::Enter) {
+            if (enter) {
                 if (vsSystem) {
                     vsSystem->OnTriggerEnter(evt.entityA, evt.entityB, deltaTime);
                     vsSystem->OnTriggerEnter(evt.entityB, evt.entityA, deltaTime);
                 }
-                ProcessContactDamage(world, evt.entityA, evt.entityB, deferredDestroys);
-                ProcessPickup(world, evt.entityA, evt.entityB, deferredDestroys);
+                if (scriptSystem) {
+                    scriptSystem->OnTriggerEnter(evt.entityA, evt.entityB);
+                    scriptSystem->OnTriggerEnter(evt.entityB, evt.entityA);
+                }
             } else {
                 if (vsSystem) {
                     vsSystem->OnTriggerExit(evt.entityA, evt.entityB, deltaTime);
                     vsSystem->OnTriggerExit(evt.entityB, evt.entityA, deltaTime);
                 }
+                if (scriptSystem) {
+                    scriptSystem->OnTriggerExit(evt.entityA, evt.entityB);
+                    scriptSystem->OnTriggerExit(evt.entityB, evt.entityA);
+                }
             }
         } else {
-            if (evt.type == Physics::CollisionEvent::Type::Enter) {
+            if (enter) {
                 if (vsSystem) {
                     vsSystem->OnCollisionEnter(evt.entityA, evt.entityB, deltaTime);
                     vsSystem->OnCollisionEnter(evt.entityB, evt.entityA, deltaTime);
                 }
-                ProcessContactDamage(world, evt.entityA, evt.entityB, deferredDestroys);
-                ProcessPickup(world, evt.entityA, evt.entityB, deferredDestroys);
+                if (scriptSystem) {
+                    scriptSystem->OnCollisionEnter(evt.entityA, evt.entityB);
+                    scriptSystem->OnCollisionEnter(evt.entityB, evt.entityA);
+                }
             } else {
                 if (vsSystem) {
                     vsSystem->OnCollisionExit(evt.entityA, evt.entityB, deltaTime);
                     vsSystem->OnCollisionExit(evt.entityB, evt.entityA, deltaTime);
                 }
+                if (scriptSystem) {
+                    scriptSystem->OnCollisionExit(evt.entityA, evt.entityB);
+                    scriptSystem->OnCollisionExit(evt.entityB, evt.entityA);
+                }
             }
+        }
+        if (enter) {
+            ProcessContactDamage(world, evt.entityA, evt.entityB, deferredDestroys);
+            ProcessPickup(world, evt.entityA, evt.entityB, deferredDestroys);
         }
     }
     physics->ClearPendingCollisionEvents();
@@ -766,35 +786,53 @@ void DispatchCollisionEvents3D(ECS::World* world,
 void Wire2DCollisionCallbacks(Physics::IPhysicsBackend2D* physics2D,
                               ECS::World* world,
                               ECS::VisualScriptSystem* vsSystem,
-                              std::vector<ECS::Entity>& deferredDestroys) {
+                              std::vector<ECS::Entity>& deferredDestroys,
+                              Scripting::ScriptSystem* scriptSystem) {
     if (!physics2D) return;
 
-    physics2D->SetOnCollisionEnter([world, vsSystem, &deferredDestroys](const Physics::Contact2D& c) {
+    // Box2D fires these synchronously inside ProcessEvents, on the main thread.
+    physics2D->SetOnCollisionEnter([world, vsSystem, scriptSystem, &deferredDestroys](const Physics::Contact2D& c) {
         if (vsSystem) {
             vsSystem->OnCollisionEnter(c.entityA, c.entityB, 0.0f);
             vsSystem->OnCollisionEnter(c.entityB, c.entityA, 0.0f);
         }
+        if (scriptSystem) {
+            scriptSystem->OnCollisionEnter(c.entityA, c.entityB);
+            scriptSystem->OnCollisionEnter(c.entityB, c.entityA);
+        }
         ProcessContactDamage(world, c.entityA, c.entityB, deferredDestroys);
         ProcessPickup(world, c.entityA, c.entityB, deferredDestroys);
     });
-    physics2D->SetOnCollisionExit([vsSystem](const Physics::Contact2D& c) {
+    physics2D->SetOnCollisionExit([vsSystem, scriptSystem](const Physics::Contact2D& c) {
         if (vsSystem) {
             vsSystem->OnCollisionExit(c.entityA, c.entityB, 0.0f);
             vsSystem->OnCollisionExit(c.entityB, c.entityA, 0.0f);
         }
+        if (scriptSystem) {
+            scriptSystem->OnCollisionExit(c.entityA, c.entityB);
+            scriptSystem->OnCollisionExit(c.entityB, c.entityA);
+        }
     });
-    physics2D->SetOnSensorEnter([world, vsSystem, &deferredDestroys](const Physics::Contact2D& c) {
+    physics2D->SetOnSensorEnter([world, vsSystem, scriptSystem, &deferredDestroys](const Physics::Contact2D& c) {
         if (vsSystem) {
             vsSystem->OnTriggerEnter(c.entityA, c.entityB, 0.0f);
             vsSystem->OnTriggerEnter(c.entityB, c.entityA, 0.0f);
         }
+        if (scriptSystem) {
+            scriptSystem->OnTriggerEnter(c.entityA, c.entityB);
+            scriptSystem->OnTriggerEnter(c.entityB, c.entityA);
+        }
         ProcessContactDamage(world, c.entityA, c.entityB, deferredDestroys);
         ProcessPickup(world, c.entityA, c.entityB, deferredDestroys);
     });
-    physics2D->SetOnSensorExit([vsSystem](const Physics::Contact2D& c) {
+    physics2D->SetOnSensorExit([vsSystem, scriptSystem](const Physics::Contact2D& c) {
         if (vsSystem) {
             vsSystem->OnTriggerExit(c.entityA, c.entityB, 0.0f);
             vsSystem->OnTriggerExit(c.entityB, c.entityA, 0.0f);
+        }
+        if (scriptSystem) {
+            scriptSystem->OnTriggerExit(c.entityA, c.entityB);
+            scriptSystem->OnTriggerExit(c.entityB, c.entityA);
         }
     });
 }
