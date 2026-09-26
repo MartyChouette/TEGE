@@ -4,6 +4,7 @@
 
 #include "Enjin/Physics/IPhysicsBackend2D.h"
 #include "Enjin/Physics/PhysicsTypes2D.h"
+#include "Enjin/Physics/CollisionPair.h"
 #include <unordered_map>
 #include <unordered_set>
 
@@ -78,13 +79,6 @@ private:
     void CreateJointForEntity(ECS::Entity entity);
     void DestroyJointForEntity(ECS::Entity entity);
 
-    // Collision pair key encoding
-    // WARNING: Truncates entity IDs to 32 bits. Assumes entity IDs fit in u32.
-    // If entity IDs exceed 2^32, this will produce collisions. Changing the key
-    // type requires broader refactoring of all collision pair tracking.
-    static u64 MakeCollisionPairKey(ECS::Entity a, ECS::Entity b) {
-        return (static_cast<u64>(std::min(a, b)) << 32) | static_cast<u64>(std::max(a, b));
-    }
 
     // State
     ECS::World* m_World = nullptr;
@@ -105,8 +99,8 @@ private:
     std::unordered_map<ECS::Entity, b2JointId> m_EntityToJoint;
 
     // Contact tracking for enter/exit
-    std::unordered_set<u64> m_ActiveContacts;
-    std::unordered_set<u64> m_ActiveSensorContacts;
+    CollisionPairSet m_ActiveContacts;
+    CollisionPairSet m_ActiveSensorContacts;
 
     // Begin-touch contacts this frame (pollable companion to m_OnCollisionEnter)
     std::vector<Contact2D> m_FrameBeginContacts;
@@ -121,8 +115,8 @@ private:
     std::vector<ECS::Entity> m_ToRemoveCache;
     std::vector<ECS::Entity> m_JointToRemoveCache;
     std::unordered_set<ECS::Entity> m_CurrentEntitiesCache;
-    std::unordered_set<u64> m_NewContactsCache;
-    std::unordered_set<u64> m_NewSensorContactsCache;
+    CollisionPairSet m_NewContactsCache;
+    CollisionPairSet m_NewSensorContactsCache;
 };
 
 } // namespace Physics

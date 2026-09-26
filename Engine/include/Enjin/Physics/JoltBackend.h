@@ -4,6 +4,7 @@
 
 #include "Enjin/Physics/IPhysicsBackend.h"
 #include "Enjin/Physics/PhysicsTypes.h"  // AABB, Ray, RaycastHit, CollisionResult, CollisionEvent, ColliderInfo
+#include "Enjin/Physics/CollisionPair.h"
 #include <memory>
 #include <unordered_map>
 #include <unordered_set>
@@ -105,13 +106,6 @@ private:
     void CreateJointForEntity(ECS::Entity entity, u8 jointType);
     void DestroyJointForEntity(ECS::Entity entity);
 
-    // Collision pair key (same encoding as SimplePhysics)
-    // WARNING: Truncates entity IDs to 32 bits. Assumes entity IDs fit in u32.
-    // If entity IDs exceed 2^32, this will produce collisions. Changing the key
-    // type requires broader refactoring of all collision pair tracking.
-    static u64 MakeCollisionPairKey(ECS::Entity a, ECS::Entity b) {
-        return (static_cast<u64>(std::min(a, b)) << 32) | static_cast<u64>(std::max(a, b));
-    }
 
     // State
     ECS::World* m_World = nullptr;
@@ -149,8 +143,8 @@ private:
     std::unordered_map<ECS::Entity, JPH::CharacterVirtual*> m_CharacterControllers;
 
     // Collision event tracking
-    std::unordered_set<u64> m_PreviousCollisionPairs;
-    std::unordered_set<u64> m_CurrentCollisionPairs;
+    CollisionPairSet m_PreviousCollisionPairs;
+    CollisionPairSet m_CurrentCollisionPairs;
     std::vector<CollisionEvent> m_PendingCollisionEvents;
 
     // Track which entities had bodies last frame for reconciliation

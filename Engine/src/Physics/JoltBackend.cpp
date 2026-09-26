@@ -1531,7 +1531,7 @@ void JoltBackend::ProcessContactEvents() {
         if (bodyCheckB == m_EntityToBody.end() || bodyCheckB->second != evt.bodyB) continue;
 
         if (evt.type == JoltContactEvent::Type::Added || evt.type == JoltContactEvent::Type::Persisted) {
-            u64 pairKey = MakeCollisionPairKey(entityA, entityB);
+            const CollisionPair pairKey = CollisionPair::Of(entityA, entityB);
             m_CurrentCollisionPairs.insert(pairKey);
 
             // New collision (enter)
@@ -1550,15 +1550,13 @@ void JoltBackend::ProcessContactEvents() {
         }
     }
 
-    // Detect exits: pairs that were in previous frame but not current
-    // Note: MakeCollisionPairKey stores min(a,b) in upper 32 bits, max(a,b) in lower.
-    // Exit events therefore report entities in canonical (min/max) order, which may
-    // differ from the original enter event ordering. This is by design — consumers
-    // should not rely on entityA/entityB ordering for identity.
-    for (u64 prevPair : m_PreviousCollisionPairs) {
+    // Detect exits: pairs that were in previous frame but not current.
+    // Exit events report the pair smaller handle first, which may differ from
+    // the enter event's order. Consumers must not rely on entityA/entityB order.
+    for (const CollisionPair& prevPair : m_PreviousCollisionPairs) {
         if (m_CurrentCollisionPairs.find(prevPair) == m_CurrentCollisionPairs.end()) {
-            ECS::Entity entityA = static_cast<ECS::Entity>(prevPair >> 32);
-            ECS::Entity entityB = static_cast<ECS::Entity>(prevPair & 0xFFFFFFFF);
+            const ECS::Entity entityA = prevPair.first;
+            const ECS::Entity entityB = prevPair.second;
 
             CollisionEvent exitEvt;
             exitEvt.entityA = entityA;

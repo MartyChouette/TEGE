@@ -426,12 +426,9 @@ void Box2DBackend::DestroyBodyForEntity(ECS::Entity entity) {
     m_EntityToBody.erase(it);
 
     // Clean up stale collision/sensor pairs involving this entity
-    auto purgeEntity = [entity](std::unordered_set<u64>& pairs) {
+    auto purgeEntity = [entity](CollisionPairSet& pairs) {
         for (auto pit = pairs.begin(); pit != pairs.end(); ) {
-            u64 key = *pit;
-            ECS::Entity a = static_cast<ECS::Entity>(key >> 32);
-            ECS::Entity b = static_cast<ECS::Entity>(key & 0xFFFFFFFF);
-            if (a == entity || b == entity)
+            if (pit->Involves(entity))
                 pit = pairs.erase(pit);
             else
                 ++pit;
@@ -514,7 +511,7 @@ void Box2DBackend::ProcessEvents() {
         ECS::Entity entityB = ResolveEntity(evt.shapeIdB);
         if (entityA == 0 || entityB == 0) continue;
 
-        u64 pairKey = MakeCollisionPairKey(entityA, entityB);
+        const CollisionPair pairKey = CollisionPair::Of(entityA, entityB);
         newContacts.insert(pairKey);
 
         if (m_ActiveContacts.find(pairKey) == m_ActiveContacts.end()) {
@@ -542,7 +539,7 @@ void Box2DBackend::ProcessEvents() {
 
     // Merge: carry forward all previous active contacts that haven't ended this frame.
     // This prevents losing contacts that are still active but didn't fire a new beginEvent.
-    for (u64 prevKey : m_ActiveContacts) {
+    for (const CollisionPair& prevKey : m_ActiveContacts) {
         newContacts.insert(prevKey);
     }
 
@@ -556,7 +553,7 @@ void Box2DBackend::ProcessEvents() {
         ECS::Entity entityB = ResolveEntity(evt.shapeIdB);
         if (entityA == 0 || entityB == 0) continue;
 
-        u64 pairKey = MakeCollisionPairKey(entityA, entityB);
+        const CollisionPair pairKey = CollisionPair::Of(entityA, entityB);
 
         if (newContacts.find(pairKey) != newContacts.end()) {
             newContacts.erase(pairKey);
@@ -583,7 +580,7 @@ void Box2DBackend::ProcessEvents() {
         ECS::Entity visitorEntity = ResolveEntity(evt.visitorShapeId);
         if (sensorEntity == 0 || visitorEntity == 0) continue;
 
-        u64 pairKey = MakeCollisionPairKey(sensorEntity, visitorEntity);
+        const CollisionPair pairKey = CollisionPair::Of(sensorEntity, visitorEntity);
         newSensorContacts.insert(pairKey);
 
         if (m_ActiveSensorContacts.find(pairKey) == m_ActiveSensorContacts.end()) {
@@ -596,7 +593,7 @@ void Box2DBackend::ProcessEvents() {
     }
 
     // Carry forward active sensor contacts that haven't ended this frame
-    for (u64 prevKey : m_ActiveSensorContacts) {
+    for (const CollisionPair& prevKey : m_ActiveSensorContacts) {
         newSensorContacts.insert(prevKey);
     }
 
@@ -608,7 +605,7 @@ void Box2DBackend::ProcessEvents() {
         ECS::Entity visitorEntity = ResolveEntity(evt.visitorShapeId);
         if (sensorEntity == 0 || visitorEntity == 0) continue;
 
-        u64 pairKey = MakeCollisionPairKey(sensorEntity, visitorEntity);
+        const CollisionPair pairKey = CollisionPair::Of(sensorEntity, visitorEntity);
 
         if (m_ActiveSensorContacts.find(pairKey) != m_ActiveSensorContacts.end()) {
             Contact2D contact;

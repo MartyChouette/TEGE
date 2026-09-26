@@ -8,6 +8,7 @@
 #include "Enjin/Physics/IPhysicsBackend.h"
 #include "Enjin/Physics/IPhysicsBackend2D.h"
 #include "Enjin/Physics/PhysicsTypes2D.h"
+#include "Enjin/Physics/CollisionPair.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Gameplay.h"
@@ -620,6 +621,91 @@ ENJIN_TEST(PhysicsFactory, ExplicitBox2DFor3DPhysicsStillErrors) {
     Logger::Get().SetLogCallback(nullptr);
     ENJIN_EXPECT_TRUE(backend == nullptr);
     ENJIN_EXPECT_TRUE(g_PhysicsErrorCount >= 1);
+}
+
+// ===========================================================================
+// Collision pairs keep whole entity handles (SD-9)
+// ===========================================================================
+
+ENJIN_TEST(CollisionPairs, HandlesThatDifferOnlyInGenerationAreDifferentPairs) {
+    // Slot 5 on generation 0 and generation 1 are two different entities. The
+    // old packed key, (min << 32) | max, could not tell them apart.
+    const ECS::Entity a0 = ECS::MakeEntity(5, 0), a1 = ECS::MakeEntity(5, 1);
+    const ECS::Entity b = ECS::MakeEntity(9, 0);
+    const Physics::CollisionPair p0 = Physics::CollisionPair::Of(a0, b);
+    const Physics::CollisionPair p1 = Physics::CollisionPair::Of(b, a1);
+
+    ENJIN_EXPECT_FALSE(p0 == p1);
+    ENJIN_EXPECT_TRUE(p1.Involves(a1));
+    ENJIN_EXPECT_FALSE(p1.Involves(a0));
+    ENJIN_EXPECT_TRUE(Physics::CollisionPair::Of(a1, b) == p1);   // order does not matter
+    Physics::CollisionPairSet set{p0, p1};
+    ENJIN_EXPECT_EQ(set.size(), static_cast<usize>(2));
+}
+
+ENJIN_TEST(PhysicsSim3D, ExitNamesTheEntityOnAReusedSlot) {
+    // Arrange: a floor, then a box created on a slot that has been used and
+    // freed once, so its handle carries generation 1. Spawned projectiles and
+    // respawned pickups are exactly this.
+    ECS::World world;
+    ECS::Entity floor = world.CreateEntity();
+    {
+        ECS::TransformComponent t;
+        world.AddComponent<ECS::TransformComponent>(floor, t);
+        ECS::BoxColliderComponent bc;
+        bc.size = Math::Vector3(50.0f, 1.0f, 50.0f);
+        world.AddComponent<ECS::BoxColliderComponent>(floor, bc);
+    }
+    const ECS::Entity spent = world.CreateEntity();
+    world.DestroyEntity(spent);
+    world.Update(0.0f);   // destruction is deferred to here
+    const ECS::Entity box = world.CreateEntity();
+    ENJIN_ASSERT_TRUE(ECS::EntityGeneration(box) > 0);   // the case under test
+    {
+        ECS::TransformComponent t;
+        t.position = Math::Vector3(0.0f, 1.2f, 0.0f);   // just above the floor top (0.5)
+        world.AddComponent<ECS::TransformComponent>(box, t);
+        ECS::BoxColliderComponent bc;
+        bc.size = Math::Vector3(1.0f, 1.0f, 1.0f);
+        world.AddComponent<ECS::BoxColliderComponent>(box, bc);
+        ECS::RigidbodyComponent rb;
+        rb.bodyType = ECS::RigidbodyComponent::BodyType::Dynamic;
+        rb.mass = 1.0f;
+        world.AddComponent<ECS::RigidbodyComponent>(box, rb);
+    }
+    auto backend = Physics::CreatePhysicsBackend(Physics::PhysicsBackendType::Auto);
+    ENJIN_ASSERT_NOT_NULL(backend.get());
+    backend->SetWorld(&world);
+    backend->SetGravity(Math::Vector3(0.0f, -9.81f, 0.0f));
+
+    auto names = [&](const Physics::CollisionEvent& e) {
+        return (e.entityA == floor && e.entityB == box) || (e.entityA == box && e.entityB == floor);
+    };
+    bool entered = false;
+    for (int i = 0; i < 60 && !entered; ++i) {
+        backend->Update(1.0f / 60.0f);
+        for (const auto& e : backend->GetPendingCollisionEvents()) {
+            if (e.type == Physics::CollisionEvent::Type::Enter && names(e)) entered = true;
+        }
+        backend->ClearPendingCollisionEvents();
+    }
+    ENJIN_ASSERT_TRUE(entered);
+
+    // Act: take the box's collider away, which removes its body.
+    world.RemoveComponent<ECS::BoxColliderComponent>(box);
+    backend->Update(1.0f / 60.0f);
+
+    // Assert: one Exit, and it names the floor and the box by their full
+    // handles. Decoded from the old key it named neither.
+    int exits = 0;
+    bool exitNamesBoth = false;
+    for (const auto& e : backend->GetPendingCollisionEvents()) {
+        if (e.type != Physics::CollisionEvent::Type::Exit) continue;
+        ++exits;
+        exitNamesBoth = names(e);
+    }
+    ENJIN_EXPECT_EQ(exits, 1);
+    ENJIN_EXPECT_TRUE(exitNamesBoth);
 }
 
 ENJIN_TEST_MAIN()
