@@ -46,7 +46,7 @@ private:
     // Phase 2: Parse each scene JSON, collect asset refs, validate existence
     bool ValidateAssets();
     // Phase 3: Pack everything into .enjpak
-    bool PackAssets(const std::string& outputDir, const std::string& key);
+    bool PackAssets(const std::string& outputDir, const std::string& key, bool obfuscate = true);
     // Phase 3 (alt): Copy loose files to output directory (no packing)
     // Claims an output directory as build output before anything scans the
     // project, so a build that fails partway still leaves it recognisable to the

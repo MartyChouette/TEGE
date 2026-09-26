@@ -16,7 +16,7 @@ enum class BuildTargetPlatform : u8 {
 // How assets are packaged in the build output
 enum class PackagingMode : u8 {
     Packed,      // .enjpak with XOR obfuscation (default, most secure)
-    PackedOpen,  // .enjpak without obfuscation (moddable, assets readable)
+    PackedOpen,  // .enjpak without obfuscation: flag bit off, no XOR (moddable; entries still compressed)
     LooseFiles   // No pak file, raw files copied to output directory
 };
 

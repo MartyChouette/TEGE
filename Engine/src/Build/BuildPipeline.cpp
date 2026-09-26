@@ -88,12 +88,10 @@ BuildResult BuildPipeline::Execute(const BuildConfig& config) {
             return m_Result;
         }
     } else {
-        // Packed or PackedOpen — PackedOpen forces empty key
-        std::string effectiveKey = config.buildKey;
-        if (config.packagingMode == PackagingMode::PackedOpen) {
-            effectiveKey = "";
-        }
-        if (!PackAssets(config.outputDir, effectiveKey)) {
+        // Packed or PackedOpen. PackedOpen writes an unobfuscated pak; its key
+        // is irrelevant, since the reader goes by the pak's own flag bit.
+        const bool open = config.packagingMode == PackagingMode::PackedOpen;
+        if (!PackAssets(config.outputDir, open ? std::string() : config.buildKey, !open)) {
             m_Result.success = false;
             AddMessage(MessageSeverity::Error, "Build failed: packing failed");
             return m_Result;
@@ -558,7 +556,7 @@ bool BuildPipeline::ValidateAssets() {
     return allValid;
 }
 
-bool BuildPipeline::PackAssets(const std::string& outputDir, const std::string& key) {
+bool BuildPipeline::PackAssets(const std::string& outputDir, const std::string& key, bool obfuscate) {
     // Create output directory
     try {
         fs::create_directories(outputDir);
@@ -570,7 +568,7 @@ bool BuildPipeline::PackAssets(const std::string& outputDir, const std::string& 
     std::string pakPath = (fs::path(outputDir) / "game.enjpak").string();
 
     AssetPacker packer;
-    if (!packer.Begin(pakPath, key)) {
+    if (!packer.Begin(pakPath, key, obfuscate)) {
         AddMessage(MessageSeverity::Error, "Failed to begin packing");
         return false;
     }

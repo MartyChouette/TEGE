@@ -32,13 +32,17 @@ AssetPacker::~AssetPacker() {
     }
 }
 
-bool AssetPacker::Begin(const std::string& outputPath, const std::string& key) {
+bool AssetPacker::Begin(const std::string& outputPath, const std::string& key, bool obfuscate) {
     InitCRC32Table();
 
-    if (key.empty()) {
+    // An open pak used to pass an empty key, which this replaced with the
+    // default one, so "open" paks were obfuscated like every other (SD-6).
+    // Obfuscation is its own switch now; an empty key here still means the
+    // default key, and XorObfuscate does nothing when m_Key is empty.
+    if (obfuscate && key.empty()) {
         ENJIN_LOG_WARN(Build, "No encryption key provided — using default obfuscation key");
     }
-    m_Key = key.empty() ? "enjin_default_pack_key_2025" : key;
+    m_Key = !obfuscate ? std::string() : (key.empty() ? "enjin_default_pack_key_2025" : key);
     m_Entries.clear();
     m_TotalOriginalSize = 0;
     m_TotalPackedSize = 0;
@@ -52,8 +56,8 @@ bool AssetPacker::Begin(const std::string& outputPath, const std::string& key) {
     // Write header
     // Magic (8 bytes)
     m_File.write(ENJPAK_MAGIC, 8);
-    // Flags (4 bytes) - obfuscated
-    u32 flags = ENJPAK_FLAG_OBFUSCATED;
+    // Flags (4 bytes): the reader undoes the XOR only when this bit is set
+    u32 flags = obfuscate ? ENJPAK_FLAG_OBFUSCATED : 0u;
     m_File.write(reinterpret_cast<const char*>(&flags), sizeof(flags));
     // Format version (2 bytes)
     u16 version = ENJPAK_FORMAT_VERSION;

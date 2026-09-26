@@ -27,7 +27,10 @@ public:
     AssetPacker() = default;
     ~AssetPacker();
 
-    bool Begin(const std::string& outputPath, const std::string& key);
+    // `obfuscate = false` writes an open pak: the flag bit is off and nothing
+    // is XORed, so any reader can take its entries apart (they are still
+    // compressed). That is what PackagingMode::PackedOpen promises.
+    bool Begin(const std::string& outputPath, const std::string& key, bool obfuscate = true);
     bool AddFile(const std::string& virtualPath, const std::string& diskPath);
     bool AddData(const std::string& virtualPath, const void* data, usize size);
     bool Finalize();  // writes index + footer, closes file

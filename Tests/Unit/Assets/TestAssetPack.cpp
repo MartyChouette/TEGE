@@ -4,6 +4,8 @@
 #include "Enjin/Build/AssetReader.h"
 #include <cstring>
 #include <filesystem>
+#include <fstream>
+#include <vector>
 
 using namespace Enjin;
 using namespace Enjin::Build;
@@ -173,6 +175,53 @@ ENJIN_TEST(AssetPack, WrongKeyFailsToRead) {
             reader.Close();
         }
     }
+
+    std::filesystem::remove(pakPath);
+}
+
+// SD-6: PackagingMode::PackedOpen promised a pak "without obfuscation" and
+// passed an empty key, which the packer swapped for the default key, so every
+// open pak was XORed like any other and its flag bit said so.
+static u32 ReadPakFlags(const std::string& pakPath) {
+    std::ifstream f(pakPath, std::ios::binary);
+    char magic[8];
+    f.read(magic, 8);
+    u32 flags = 0xFFFFFFFFu;
+    f.read(reinterpret_cast<char*>(&flags), sizeof(flags));
+    return flags;
+}
+
+ENJIN_TEST(AssetPack, AnOpenPakIsNotObfuscated) {
+    // Arrange / Act: the same file packed open and packed normally.
+    const std::string pakPath = GetTempPakPath();
+    const char* content = "Readable by anyone who wants to mod this game.";
+    {
+        AssetPacker packer;
+        ENJIN_ASSERT_TRUE(packer.Begin(pakPath, "", /*obfuscate=*/false));
+        ENJIN_ASSERT_TRUE(packer.AddData("mod/readme.txt", content, strlen(content)));
+        ENJIN_ASSERT_TRUE(packer.Finalize());
+    }
+
+    // Assert: the flag bit is off, and ANY key reads it, because nothing was
+    // XORed. The obfuscated pak's wrong-key read garbles (WrongKeyFailsToRead).
+    ENJIN_EXPECT_EQ(ReadPakFlags(pakPath) & ENJPAK_FLAG_OBFUSCATED, 0u);
+    {
+        AssetReader reader;
+        ENJIN_ASSERT_TRUE(reader.Open(pakPath, "not_the_key_at_all"));
+        ENJIN_EXPECT_TRUE(reader.VerifyIntegrity());
+        const std::vector<u8> data = reader.ReadFile("mod/readme.txt");
+        ENJIN_ASSERT_EQ(data.size(), strlen(content));
+        ENJIN_EXPECT_TRUE(std::memcmp(data.data(), content, data.size()) == 0);
+    }
+
+    // A normal pak is unchanged: the bit is set.
+    {
+        AssetPacker packer;
+        ENJIN_ASSERT_TRUE(packer.Begin(pakPath, "some_key"));
+        ENJIN_ASSERT_TRUE(packer.AddData("mod/readme.txt", content, strlen(content)));
+        ENJIN_ASSERT_TRUE(packer.Finalize());
+    }
+    ENJIN_EXPECT_EQ(ReadPakFlags(pakPath) & ENJPAK_FLAG_OBFUSCATED, ENJPAK_FLAG_OBFUSCATED);
 
     std::filesystem::remove(pakPath);
 }

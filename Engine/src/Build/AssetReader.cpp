@@ -38,9 +38,11 @@ bool AssetReader::Open(const std::string& pakPath, const std::string& key) {
         return false;
     }
 
-    // Read flags
+    // Read flags. An open pak (PackedOpen) has the obfuscation bit off and was
+    // never XORed, so there is nothing to undo, whatever key the caller holds.
     u32 flags = 0;
     file.read(reinterpret_cast<char*>(&flags), sizeof(flags));
+    if ((flags & ENJPAK_FLAG_OBFUSCATED) == 0) m_Key.clear();
 
     // Read and validate format version
     u16 formatVersion = 0;
