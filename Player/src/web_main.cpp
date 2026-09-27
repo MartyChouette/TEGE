@@ -1975,6 +1975,10 @@ public:
                 Enjin::Math::Vector3 fwd = xf->rotation.GetForward();
                 Enjin::Math::Vector3 up = xf->rotation.GetUp();
                 m_Camera->SetLookAt(pos, pos + fwd, up);
+                // The listener follows the camera, as on desktop. Web never
+                // called this, so every positional sound panned and faded from
+                // the world origin however far the player walked (WP-1).
+                m_AudioEngine.SetListenerPosition(pos, fwd, up);
                 const Enjin::f32 aspect = static_cast<Enjin::f32>(m_Renderer->GetSwapChainWidth()) /
                              static_cast<Enjin::f32>(std::max(m_Renderer->GetSwapChainHeight(), 1u));
                 // An ORTHOGRAPHIC camera was rendered in perspective here, always.
