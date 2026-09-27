@@ -900,7 +900,11 @@ struct InteractableComponent {
     bool highlightOnHover = true;
     Math::Vector3 highlightColor = Math::Vector3(1, 1, 0);
 
-    // Events
+    // Events (Gameplay::InteractionSystem). The event is sent on Interact with
+    // this entity as sender and onInteractNotify as target; rename it per
+    // interactable so a visual script, which hears events by name only, can
+    // tell them apart. Empty sends nothing.
+    std::string interactEvent = "Interacted";
     Entity onInteractNotify = 0;
 };
 

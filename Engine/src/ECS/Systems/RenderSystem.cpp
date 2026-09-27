@@ -5868,6 +5868,7 @@ void RenderSystem::Update(f32 deltaTime) {
                     if (h && h->enabled && h->hovered) { anyHovered = true; break; }
                 }
             }
+            if (m_InteractFocus != INVALID_ENTITY && m_World->IsValid(m_InteractFocus)) anyHovered = true;
 
             if (m_GeometryOutlinesEnabled || anyHovered) {
                 // ObjectData for the outlined subset, in draw order. It is the
@@ -5915,6 +5916,9 @@ void RenderSystem::Update(f32 deltaTime) {
                                 if (t > 0.5f) outlineWidth = 0.0f;
                             }
                         }
+                    } else if (cmd.entity == m_InteractFocus) {
+                        outlineColor = m_InteractFocusColor;   // the interactable in reach
+                        outlineWidth = kInteractionHighlightWidth;
                     } else if (!m_GeometryOutlinesEnabled) {
                         continue;   // outlines off globally, and this one is not lit up
                     }
@@ -17355,6 +17359,7 @@ void RenderSystem::RenderOutlinePass() {
             if (h && h->enabled && h->hovered) { anyHovered = true; break; }
         }
     }
+    if (m_InteractFocus != INVALID_ENTITY && m_World->IsValid(m_InteractFocus)) anyHovered = true;
     if (!m_GeometryOutlinesEnabled && !anyHovered) return;
 
     VkCommandBuffer commandBuffer = m_VulkanRenderer->GetCurrentCommandBuffer();
@@ -17427,6 +17432,10 @@ void RenderSystem::RenderOutlinePass() {
                     if (t > 0.5f) outlineWidth = 0.0f;
                 }
             }
+        } else if (entity == m_InteractFocus) {
+            // The interactable the player can use right now
+            outlineColor = m_InteractFocusColor;
+            outlineWidth = kInteractionHighlightWidth;
         } else if (!m_GeometryOutlinesEnabled) {
             // Outlines are off globally and this entity is not highlighted, so
             // it has no business drawing one just because the pass is running.

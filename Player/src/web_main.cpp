@@ -7,6 +7,7 @@
 #include "Enjin/ECS/Timers.h"
 #include "Enjin/Animation/Timeline.h"
 #include "Enjin/Renderer/CameraLens.h"
+#include "Enjin/Gameplay/InteractionSystem.h"
 #include "Enjin/ECS/PostProcessVolumeBlend.h"
 #include <filesystem>
 #include <set>
@@ -510,9 +511,12 @@ public:
         m_SavePointSystem.SetWorld(m_World.get());
         m_SavePointSystem.SetSaveSystem(&m_TieredSaveSystem);
         m_SavePointSystem.SetInputActionMap(&m_InputMap);
+        m_InteractionSystem.SetInputActionMap(&m_InputMap);
         m_SaveIndicator.SetWorld(m_World.get());
+        m_InteractionSystem.SetWorld(m_World.get());
         m_SavePointSystem.SetIndicator(&m_SaveIndicator);
         m_SavePointSystem.SetAnnouncer(&m_Announcer);
+        m_InteractionSystem.SetAnnouncer(&m_Announcer);
         m_AISystem.SetEnabled(true);
         m_StateMachineSystem.SetScriptEngine(&m_ScriptEngine);
         m_CinematicSystem.SetEnabled(true);
@@ -641,6 +645,7 @@ public:
         // Engine events (ActionTrigger, dialogue, water, timers) reach scripts and visual scripts
         Enjin::ECS::ForwardEntityEventsToScripts(m_EntityEventBus, &m_ScriptEventBus, &m_VisualScriptSystem);
         m_TimelineSystem.SetEventBus(&m_EntityEventBus);
+        m_InteractionSystem.SetEventBus(&m_EntityEventBus);
 
         // Touches that land on interactive UI become real pointers (press,
         // drag, release). Without this the move stick owns the left half of the
@@ -1730,6 +1735,8 @@ public:
         m_ActionTriggerSystem.Update(m_World.get(), deltaTime);
         Enjin::ECS::UpdateTimers(m_World.get(), deltaTime, &m_EntityEventBus);
         m_TimelineSystem.Update(m_World.get(), deltaTime);
+        m_InteractionSystem.SetRenderSystem(m_RenderSystem);   // it can be recreated
+        m_InteractionSystem.Update(deltaTime);
         m_GameplaySystem.Update(m_World.get(), deltaTime);
         // The active camera's ArtStyleComponent drives the scene-wide half of its
         // style (grain, CRT, VHS, palettes, outlines, stipple). Around twenty-five
@@ -2362,6 +2369,7 @@ public:
         // Subtitle overlay (accessibility) -- same draw code as desktop
         m_SubtitleSystem.RenderOverlay(0.0f, 0.0f, w, h);
         m_SaveIndicator.RenderOverlay(0.0f, 0.0f, w, h);
+        m_InteractionSystem.RenderOverlay(0.0f, 0.0f, w, h);
         // Save / load menu -- same draw as desktop. It had no caller on EITHER
         // runtime, because the component it took was a second declaration of
         // SaveLoadMenuComponent living in Enjin::Gameplay while every entity
@@ -3210,6 +3218,7 @@ private:
     Enjin::Gameplay::FaceCardSystem m_FaceCardSystem;
     Enjin::Gameplay::SavePointSystem m_SavePointSystem;
     Enjin::Gameplay::SaveIndicator m_SaveIndicator;
+    Enjin::Gameplay::InteractionSystem m_InteractionSystem;
     Enjin::ECS::StateMachineSystem m_StateMachineSystem;
     Enjin::ECS::AISystem m_AISystem;
     Enjin::ECS::DialogueSystem m_DialogueSystem;

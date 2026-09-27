@@ -4,6 +4,9 @@
 #include "Enjin/ECS/Timers.h"
 #include "Enjin/ECS/FollowTarget.h"
 #include "Enjin/ECS/CameraZones.h"
+#include "Enjin/Gameplay/InteractionSystem.h"
+#include "Enjin/ECS/Systems/RenderSystem.h"
+#include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include "Enjin/ECS/Components/Camera.h"
 #include "Enjin/ECS/EntityEventBus.h"
 #include "Enjin/ECS/World.h"
@@ -683,6 +686,85 @@ ENJIN_TEST(CameraBlend, ZeroBlendTimeCuts) {
     BlendGameCamera(&w, st, a, 0.0f, 0.016f, p);
     BlendGameCamera(&w, st, b, 0.0f, 0.016f, p);
     ENJIN_EXPECT_TRUE(Near3(p.position, Math::Vector3(10.0f, 0.0f, 0.0f)));
+}
+
+// ===========================================================================
+// Interactable: there was no interaction system at all (SD-27)
+// ===========================================================================
+
+namespace {
+struct InteractRig {
+    World w;
+    EntityEventBus bus;
+    RenderSystem rs{&w, nullptr};
+    Gameplay::InteractionSystem sys;
+    Entity player, camera;
+    std::vector<EntityEvent> heard;
+    InteractRig() {
+        player = w.CreateEntity();
+        w.AddComponent<TransformComponent>(player);
+        w.AddComponent<ThirdPersonController>(player);
+        camera = AddCam(w, Math::Vector3(0.0f, 0.0f, 0.0f), 60.0f);   // looks down -Z
+        bus.SetForwarder([this](const std::string&, const EntityEvent& ev) { heard.push_back(ev); });
+        sys.SetWorld(&w);
+        sys.SetEventBus(&bus);
+        sys.SetRenderSystem(&rs);
+    }
+    Entity Add(const Math::Vector3& at, f32 range = 2.0f) {
+        Entity e = w.CreateEntity();
+        w.AddComponent<TransformComponent>(e).position = at;
+        InteractableComponent ic;
+        ic.interactionRange = range;
+        ic.promptText = "Open";
+        w.AddComponent<InteractableComponent>(e, ic);
+        return e;
+    }
+};
+}
+
+ENJIN_TEST(Interaction, TheNearestOneInReachAndInViewGetsFocus) {
+    InteractRig r;
+    Entity behind = r.Add(Math::Vector3(0.0f, 0.0f, 1.0f));     // in range, behind the camera
+    Entity distant = r.Add(Math::Vector3(0.0f, 0.0f, -5.0f));   // in view, out of range
+    Entity ahead = r.Add(Math::Vector3(0.0f, 0.0f, -1.5f));     // in view and range
+    (void)behind; (void)distant;
+    r.sys.Update(0.016f, false);
+    ENJIN_EXPECT_EQ(r.sys.GetFocused(), ahead);
+    ENJIN_EXPECT_EQ(r.sys.GetPrompt(), std::string("Open"));
+    ENJIN_EXPECT_EQ(r.rs.GetInteractionFocus(), ahead);         // highlighted
+}
+
+ENJIN_TEST(Interaction, InteractSendsTheEventAndSpendsASingleUse) {
+    InteractRig r;
+    Entity chest = r.Add(Math::Vector3(0.0f, 0.0f, -1.0f));
+    Entity lid = r.w.CreateEntity();
+    auto* ic = r.w.GetComponent<InteractableComponent>(chest);
+    ic->singleUse = true;
+    ic->interactEvent = "chest_open";
+    ic->onInteractNotify = lid;
+    r.sys.Update(0.016f, false);
+    ENJIN_EXPECT_TRUE(r.heard.empty());
+    r.sys.Update(0.016f, true);
+    ENJIN_ASSERT_EQ(r.heard.size(), size_t(1));
+    ENJIN_EXPECT_EQ(r.heard[0].name, std::string("chest_open"));
+    ENJIN_EXPECT_EQ(r.heard[0].sender, chest);
+    ENJIN_EXPECT_EQ(r.heard[0].target, lid);
+    ENJIN_EXPECT_EQ(r.heard[0].entities.at("interactor"), r.player);
+    // Spent: no longer offered, nothing more sent
+    r.sys.Update(0.016f, true);
+    ENJIN_EXPECT_EQ(r.sys.GetFocused(), INVALID_ENTITY);
+    ENJIN_EXPECT_EQ(r.heard.size(), size_t(1));
+    ENJIN_EXPECT_EQ(r.rs.GetInteractionFocus(), INVALID_ENTITY);
+}
+
+ENJIN_TEST(Interaction, NoLookRequirementAndResetClearsTheHighlight) {
+    InteractRig r;
+    Entity lever = r.Add(Math::Vector3(0.0f, 0.0f, 1.0f));      // behind
+    r.w.GetComponent<InteractableComponent>(lever)->requiresLookAt = false;
+    r.sys.Update(0.016f, false);
+    ENJIN_EXPECT_EQ(r.sys.GetFocused(), lever);
+    r.sys.Reset();
+    ENJIN_EXPECT_EQ(r.rs.GetInteractionFocus(), INVALID_ENTITY);
 }
 
 ENJIN_TEST_MAIN()

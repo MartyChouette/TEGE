@@ -5158,6 +5158,7 @@ json SerializeInteractableComponent(const ECS::InteractableComponent& ic) {
     j["singleUse"] = RF(ic.singleUse);
     j["highlightOnHover"] = RF(ic.highlightOnHover);
     j["highlightColor"] = SerializeVector3(ic.highlightColor);
+    j["interactEvent"] = ic.interactEvent;
     return j;
 }
 
@@ -5172,6 +5173,7 @@ ECS::InteractableComponent DeserializeInteractableComponent(const json& j) {
     if (j.contains("singleUse")) ic.singleUse = JB(j["singleUse"]);
     if (j.contains("highlightOnHover")) ic.highlightOnHover = JB(j["highlightOnHover"]);
     if (j.contains("highlightColor")) ic.highlightColor = DeserializeVector3(j["highlightColor"]);
+    if (j.contains("interactEvent")) ic.interactEvent = SafeStr(j["interactEvent"]);
     return ic;
 }
 
@@ -11055,6 +11057,7 @@ void SceneSerializer::DeserializeEntities(const json& sceneJson, Deserialization
         if (auto* go = m_World->GetComponent<ECS::GameOverComponent>(entity)) remap(go->victoryTriggerEntity);
         if (auto* wp = m_World->GetComponent<ECS::WaypointComponent>(entity)) remap(wp->nextWaypoint);
         if (auto* aic = m_World->GetComponent<ECS::AIControllerComponent>(entity)) remap(aic->patrolRoute);
+        if (auto* ic = m_World->GetComponent<ECS::InteractableComponent>(entity)) remap(ic->onInteractNotify);
         if (auto* cb = m_World->GetComponent<ECS::Camera2DBoundsComponent>(entity)) remap(cb->followTarget);
         if (auto* dd = m_World->GetComponent<ECS::DynamicDifficultyComponent>(entity)) remap(dd->playerEntity);
         if (auto* rg = m_World->GetComponent<ECS::RagdollComponent>(entity)) {

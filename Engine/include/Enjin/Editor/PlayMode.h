@@ -60,6 +60,7 @@
 #include "Enjin/Input/InputAction.h"
 #include "Enjin/Input/MIDIInput.h"
 #include "Enjin/Animation/Timeline.h"
+#include "Enjin/Gameplay/InteractionSystem.h"
 #include <atomic>
 #include <string>
 #include <unordered_map>
@@ -140,6 +141,7 @@ public:
     // is authored.
     const Gameplay::SavePointSystem& GetSavePointSystem() const { return m_SavePointSystem; }
     Gameplay::SaveIndicator& GetSaveIndicator() { return m_SaveIndicator; }
+    Gameplay::InteractionSystem& GetInteractionSystem() { return m_InteractionSystem; }
     ECS::TweenSystem* GetTweenSystem() { return &m_TweenSystem; }
     ECS::StateMachineSystem* GetStateMachineSystem() { return &m_StateMachineSystem; }
     ECS::DialogueSystem* GetDialogueSystem() { return &m_DialogueSystem; }
@@ -274,6 +276,7 @@ private:
     ECS::TweenSystem m_TweenSystem;
     ECS::ActionTriggerSystem m_ActionTriggerSystem;
     Animation::TimelineSystem m_TimelineSystem;
+    Gameplay::InteractionSystem m_InteractionSystem;
     ECS::GameplaySystem m_GameplaySystem;
 
     // Swarm system (data-oriented crowd proxies)

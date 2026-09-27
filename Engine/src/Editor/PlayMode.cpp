@@ -154,7 +154,9 @@ void PlayMode::Initialize(ECS::World* world, Renderer::Camera* camera,
         m_SavePointSystem.SetWorld(world);
         m_SavePointSystem.SetSaveSystem(&m_TieredSaveSystem);
         m_SavePointSystem.SetInputActionMap(m_InputMap);
+        m_InteractionSystem.SetInputActionMap(m_InputMap);
         m_SaveIndicator.SetWorld(world);
+        m_InteractionSystem.SetWorld(world);
         m_SavePointSystem.SetIndicator(&m_SaveIndicator);
 
         // Initialize network system
@@ -582,6 +584,7 @@ void PlayMode::Play() {
     // Same place, same pointers: these are injected by the editor and are not
     // set yet where the save point system is otherwise configured.
     m_SavePointSystem.SetAnnouncer(m_Announcer);
+    m_InteractionSystem.SetAnnouncer(m_Announcer);
     // ActionTrigger components: input actions wired to scene effects with no
     // script, so the editor previews exactly what the exported game runs.
     m_ActionTriggerSystem.SetInputActionMap(m_InputMap);
@@ -602,6 +605,7 @@ void PlayMode::Play() {
     // Engine events (ActionTrigger, dialogue, water, timers) reach scripts and visual scripts
     ECS::ForwardEntityEventsToScripts(m_EntityEventBus, &m_EventBus, &m_VisualScriptSystem);
     m_TimelineSystem.SetEventBus(&m_EntityEventBus);
+    m_InteractionSystem.SetEventBus(&m_EntityEventBus);
     m_DialogueSystem.SetQuestSystem(&m_QuestSystem);
     m_DialogueSystem.SetCinematicSystem(&m_CinematicSystem);
     m_DialogueSystem.SetTieredSaveSystem(&m_TieredSaveSystem);
@@ -838,6 +842,7 @@ void PlayMode::Stop() {
     // The mixer is the editor's and outlives play; a snapshot a trigger pushed
     // would keep the editor ducked
     m_AudioReactiveSystem.ReleaseSnapshotTriggers();
+    m_InteractionSystem.Reset();   // or the editor keeps the last highlight
 
     // Shutdown owned runtime systems
     m_AudioGraphRuntime.Shutdown();
@@ -1277,6 +1282,8 @@ void PlayMode::Update(f32 deltaTime) {
         m_ActionTriggerSystem.Update(m_World, deltaTime);
         ECS::UpdateTimers(m_World, deltaTime, &m_EntityEventBus);
         m_TimelineSystem.Update(m_World, deltaTime);
+        m_InteractionSystem.SetRenderSystem(m_RenderSystem);
+        m_InteractionSystem.Update(deltaTime);
         m_GameplaySystem.Update(m_World, deltaTime);
         // The active camera's ArtStyleComponent drives the scene-wide half of its
         // style (grain, CRT, VHS, palettes, outlines, stipple). Around twenty-five

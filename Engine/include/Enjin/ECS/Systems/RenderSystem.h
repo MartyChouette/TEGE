@@ -3330,6 +3330,18 @@ public:
     // calls this; see RenderSystem.cpp.
     void ApplyPoseEdits(Entity entity, AnimatorComponent* animComp, f32 deltaTime);
     bool AllowIKFor(Entity entity) const;
+    // The interactable the player is focused on (Gameplay::InteractionSystem),
+    // drawn with the hover-highlight outline in its own colour. INVALID_ENTITY
+    // clears it.
+    void SetInteractionFocus(Entity entity, const Math::Vector3& color) {
+        m_InteractFocus = entity;
+        m_InteractFocusColor = color;
+    }
+    Entity GetInteractionFocus() const { return m_InteractFocus; }
+    Entity m_InteractFocus = INVALID_ENTITY;
+    Math::Vector3 m_InteractFocusColor = Math::Vector3(1.0f, 1.0f, 0.0f);
+    static constexpr f32 kInteractionHighlightWidth = 0.04f;   // world units, the hover highlight's default
+
     // Shared per-frame animation steps; every runtime calls them (see RenderSystem.cpp)
     void TickAnimatedSprites(f32 deltaTime);
     void UpdateBoneAttachments();

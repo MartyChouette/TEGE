@@ -6571,6 +6571,7 @@ void EditorLayer::DrawInteractableComponent(ECS::Entity entity) {
         if (InspectorUndo::InputText(m_UndoRedo, "Prompt Text", promptBuffer, sizeof(promptBuffer), [inter](const std::string& val) { inter->promptText = val; })) {
             inter->promptText = promptBuffer;
         }
+        ImGui::SetItemTooltip("Shown while the player can use this. {Interact} becomes the key or button bound to Interact.");
 
         InspectorUndo::DragFloat(m_UndoRedo, "Interaction Range", &inter->interactionRange, 0.1f, 0.1f, 50.0f);
         InspectorUndo::Checkbox(m_UndoRedo, "Requires Look At", &inter->requiresLookAt);
@@ -6592,6 +6593,20 @@ void EditorLayer::DrawInteractableComponent(ECS::Entity entity) {
                 inter->highlightColor = Math::Vector3(col[0], col[1], col[2]);
             }
         }
+
+        {
+            char evBuf[128];
+            strncpy(evBuf, inter->interactEvent.c_str(), sizeof(evBuf) - 1);
+            evBuf[sizeof(evBuf) - 1] = 0;
+            ECS::World* world = m_World;
+            InspectorUndo::InputText(m_UndoRedo, "Interact Event", evBuf, sizeof(evBuf),
+                [world, entity](const std::string& val) {
+                    if (auto* ic = world->GetComponent<ECS::InteractableComponent>(entity)) ic->interactEvent = val;
+                });
+            ImGui::SetItemTooltip("Sent when the player uses this. Scripts hear it with Events_Listen, visual scripts with a Custom Event node of the same name. Empty sends nothing.");
+        }
+        InspectorUndo::EntityField<ECS::InteractableComponent>(m_UndoRedo, "Notify", m_World, entity,
+                                                               &ECS::InteractableComponent::onInteractNotify);
 
         if (ImGui::BeginPopupContextItem("InteractableContext")) {
             if (ImGui::MenuItem("Remove Component")) {

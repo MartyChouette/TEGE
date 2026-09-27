@@ -6202,6 +6202,8 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         // prompt is visible where it is authored and not only where it ships.
         m_PlayMode.GetSaveIndicator().RenderOverlay(ovX, ovY,
                                                     static_cast<u32>(ovW), static_cast<u32>(ovH));
+        m_PlayMode.GetInteractionSystem().RenderOverlay(ovX, ovY,
+                                                        static_cast<u32>(ovW), static_cast<u32>(ovH));
     }
 
     // Render audio visual indicators (accessibility)

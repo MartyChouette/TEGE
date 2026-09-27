@@ -3,6 +3,7 @@
 #include "Enjin/ECS/Timers.h"
 #include "Enjin/Animation/Timeline.h"
 #include "Enjin/Renderer/CameraLens.h"
+#include "Enjin/Gameplay/InteractionSystem.h"
 #include "Enjin/ECS/PostProcessVolumeBlend.h"
 #include <cstdio>
 #include "Enjin/Scripting/ScriptChecker.h"
@@ -680,9 +681,12 @@ public:
         m_SavePointSystem.SetWorld(m_World.get());
         m_SavePointSystem.SetSaveSystem(&m_TieredSaveSystem);
         m_SavePointSystem.SetInputActionMap(&m_InputMap);
+        m_InteractionSystem.SetInputActionMap(&m_InputMap);
         m_SaveIndicator.SetWorld(m_World.get());
         m_SavePointSystem.SetIndicator(&m_SaveIndicator);
+        m_InteractionSystem.SetWorld(m_World.get());
         m_SavePointSystem.SetAnnouncer(&m_Announcer);
+        m_InteractionSystem.SetAnnouncer(&m_Announcer);
         m_StreamingManager.SetWorld(m_World.get());
         m_SceneManager.SetWorld(m_World.get());
         if (!m_LooseFilesMode) {
@@ -1514,6 +1518,8 @@ public:
         m_ActionTriggerSystem.Update(m_World.get(), deltaTime);
         Enjin::ECS::UpdateTimers(m_World.get(), deltaTime, &m_EntityEventBus);
         m_TimelineSystem.Update(m_World.get(), deltaTime);
+        m_InteractionSystem.SetRenderSystem(m_RenderSystem);   // it can be recreated
+        m_InteractionSystem.Update(deltaTime);
         m_GameplaySystem.Update(m_World.get(), deltaTime);
         // The active camera's ArtStyleComponent drives the scene-wide half of its
         // style (grain, CRT, VHS, palettes, outlines, stipple). Around twenty-five
@@ -2533,6 +2539,7 @@ public:
                     m_AlternativeInput.RenderOverlay();
                     m_AudioIndicators.RenderOverlay(0.0f, 0.0f, extent.width, extent.height);
                     m_SaveIndicator.RenderOverlay(0.0f, 0.0f, extent.width, extent.height);
+                    m_InteractionSystem.RenderOverlay(0.0f, 0.0f, extent.width, extent.height);
                     m_Announcer.RenderStatusBar();
                 }
             }
@@ -3414,6 +3421,7 @@ private:
         // Engine events (ActionTrigger, dialogue, water, timers) reach scripts and visual scripts
         Enjin::ECS::ForwardEntityEventsToScripts(m_EntityEventBus, &m_ScriptEventBus, &m_VisualScriptSystem);
         m_TimelineSystem.SetEventBus(&m_EntityEventBus);
+        m_InteractionSystem.SetEventBus(&m_EntityEventBus);
 
         // Touches that land on interactive UI become real pointers (press,
         // drag, release) instead of being claimed by the move stick.
@@ -4470,6 +4478,7 @@ private:
     Enjin::Gameplay::FaceCardSystem m_FaceCardSystem;
     Enjin::Gameplay::SavePointSystem m_SavePointSystem;
     Enjin::Gameplay::SaveIndicator m_SaveIndicator;
+    Enjin::Gameplay::InteractionSystem m_InteractionSystem;
     Enjin::ECS::StateMachineSystem m_StateMachineSystem;
     Enjin::ECS::VisualScriptSystem m_VisualScriptSystem;
     Enjin::ECS::BehaviorTreeSystem m_BehaviorTreeSystem;
