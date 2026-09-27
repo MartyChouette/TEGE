@@ -379,6 +379,7 @@ enjin_add_test(TestDoorLock        Unit/Gameplay/TestDoorLock.cpp)
 enjin_add_test(TestDestructibleDrops Unit/Gameplay/TestDestructibleDrops.cpp)
 enjin_add_test(TestRigidbodyVelocityClamp Unit/Physics/TestRigidbodyVelocityClamp.cpp)
 enjin_add_test(TestBuoyancyFootprint  Unit/Physics/TestBuoyancyFootprint.cpp)
+enjin_add_test(TestTeleportDynamicBody Unit/Physics/TestTeleportDynamicBody.cpp)
 
 # --- Geometry ---
 enjin_add_test(TestCSG                Unit/Geometry/TestCSG.cpp)
