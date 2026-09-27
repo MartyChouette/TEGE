@@ -12,6 +12,7 @@
 #include "Enjin/ECS/Components/LOD.h"        // ChooseLOD, shared above the backend #if
 #include "Enjin/Renderer/GPUBuffer.h"      // IGPUBufferManager, for the shared buffer drop
 #include "Enjin/ECS/Components/Camera.h"   // CameraManager, for the shared splitscreen detector
+#include "Enjin/ECS/Billboards.h"
 #include "Enjin/ECS/Components/Hierarchy.h"   // ComputeWorldMatrix, used by the shared
                                              // frame helpers hoisted above the backend #if
 #include "Enjin/Assets/MeshAssetCache.h"   // reload/free CPU mesh data after upload (task #3)
@@ -3272,6 +3273,10 @@ void RenderSystem::Update(f32 deltaTime) {
 
     // Shared, above the backend #if. See BeginFrameTransformCaches.
     BeginFrameTransformCaches();
+
+    // Billboards turn toward the camera this frame renders through, before
+    // anything reads a world matrix (SD-27). The editor calls this per viewport.
+    if (m_World && m_Camera) FaceBillboards(m_World, m_Camera->GetPosition());
 
     // Index animators by shared skeleton so ResolveAnimator can match follower
     // meshes to their leader's clock (animators themselves tick in web_main)
@@ -8593,6 +8598,10 @@ void RenderSystem::Update(f32 deltaTime) {
 
     // Shared, above the backend #if. See BeginFrameTransformCaches.
     BeginFrameTransformCaches();
+
+    // Billboards turn toward the camera this frame renders through, before
+    // anything reads a world matrix (SD-27). The editor calls this per viewport.
+    if (m_World && m_Camera) FaceBillboards(m_World, m_Camera->GetPosition());
 
     // Reset per-frame stats
     ResetFrameCounters();

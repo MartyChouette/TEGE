@@ -1,6 +1,7 @@
 #include "Enjin/Editor/EditorLayer.h"
 #include "Enjin/ECS/Components/Water3D.h"
 #include "Enjin/ECS/CameraZones.h"
+#include "Enjin/ECS/Billboards.h"
 #include "Enjin/Renderer/CaptureWrite.h"
 #include "Enjin/Networking/NetworkSystem.h"   // the editor pumps the socket for collab
 #include "Enjin/Editor/EditorShortcuts.h"
@@ -3631,6 +3632,11 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
             (void)wantShadows;
         }
 
+        // Billboards face the camera of the view being drawn, before its
+        // shadows: this one first, then the game camera before the game view
+        // (SD-27).
+        if (m_World && m_Camera) ECS::FaceBillboards(m_World, m_Camera->GetPosition());
+
         // Shadow pass for editor camera (only in shadow modes)
         if (m_Camera && m_RenderSystem &&
             (m_SceneViewMode == SceneViewMode::LitShadows || m_SceneViewMode == SceneViewMode::Full)) {
@@ -3965,6 +3971,7 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
         }
     }
 
+    ECS::FaceBillboards(m_World, gameCamera.GetPosition());   // before its shadows; see the scene view call
     m_RenderSystem->RenderShadowPassForCamera(&gameCamera);
 
     // Record the RT chain (TLAS + dispatch) for the game view. Update() never

@@ -1,5 +1,10 @@
 #include "EnjinTest.h"
 #include "Enjin/ECS/Components/Gameplay.h"
+#include "Enjin/ECS/Billboards.h"
+#include "Enjin/ECS/World.h"
+#include "Enjin/ECS/Components/Hierarchy.h"
+#include "Enjin/ECS/Components/Transform.h"
+#include <cmath>
 
 using namespace Enjin;
 using namespace Enjin::ECS;
@@ -348,6 +353,96 @@ ENJIN_TEST(AIController, NavigationDefaults) {
     ENJIN_EXPECT_FLOAT_EQ(ai.repathInterval, 0.5f);
     ENJIN_EXPECT_FLOAT_EQ(ai.arrivalRadius, 0.5f);
     ENJIN_EXPECT_FALSE(ai.is2D);
+}
+
+// ===========================================================================
+// Billboard: the component had no reader, so nothing ever turned (SD-27)
+// ===========================================================================
+
+namespace {
+// Where the billboard's front (+Z, the side a Quad faces) points in the world.
+Math::Vector3 BillboardFront(World& w, Entity e) {
+    Math::Vector3 pos; Math::Quaternion rot;
+    GetWorldTransform(&w, e, pos, rot);
+    return rot.Rotate(Math::Vector3(0.0f, 0.0f, 1.0f));
+}
+bool Near3(const Math::Vector3& a, const Math::Vector3& b, f32 eps = 1e-3f) {
+    return std::abs(a.x - b.x) < eps && std::abs(a.y - b.y) < eps && std::abs(a.z - b.z) < eps;
+}
+}
+
+ENJIN_TEST(Billboard, TurnsItsFrontToTheCamera) {
+    World w;
+    Entity e = w.CreateEntity();
+    w.AddComponent<TransformComponent>(e);
+    auto& bb = w.AddComponent<BillboardComponent>(e);
+    bb.lockY = false;
+    ENJIN_EXPECT_EQ(FaceBillboards(&w, Math::Vector3(10.0f, 0.0f, 0.0f)), 1u);
+    ENJIN_EXPECT_TRUE(Near3(BillboardFront(w, e), Math::Vector3(1.0f, 0.0f, 0.0f)));
+    // Fully facing tilts up toward a camera above it
+    FaceBillboards(&w, Math::Vector3(0.0f, 10.0f, 10.0f));
+    const f32 h = std::sqrt(0.5f);
+    ENJIN_EXPECT_TRUE(Near3(BillboardFront(w, e), Math::Vector3(0.0f, h, h)));
+}
+
+ENJIN_TEST(Billboard, LockYStaysUpright) {
+    World w;
+    Entity e = w.CreateEntity();
+    w.AddComponent<TransformComponent>(e);
+    w.AddComponent<BillboardComponent>(e);   // lockY defaults on
+    FaceBillboards(&w, Math::Vector3(0.0f, 50.0f, -10.0f));
+    ENJIN_EXPECT_TRUE(Near3(BillboardFront(w, e), Math::Vector3(0.0f, 0.0f, -1.0f)));
+    // Straight overhead there is no direction to turn to: unchanged, not NaN
+    ENJIN_EXPECT_EQ(FaceBillboards(&w, Math::Vector3(0.0f, 50.0f, 0.0f)), 0u);
+    ENJIN_EXPECT_TRUE(Near3(BillboardFront(w, e), Math::Vector3(0.0f, 0.0f, -1.0f)));
+}
+
+ENJIN_TEST(Billboard, RotationOffsetTurnsAboutItsOwnY) {
+    World w;
+    Entity e = w.CreateEntity();
+    w.AddComponent<TransformComponent>(e);
+    w.AddComponent<BillboardComponent>(e).rotationOffset = 90.0f;
+    FaceBillboards(&w, Math::Vector3(0.0f, 0.0f, 10.0f));
+    // Facing +Z, then 90 degrees about Y: the front ends up along +X
+    ENJIN_EXPECT_TRUE(Near3(BillboardFront(w, e), Math::Vector3(1.0f, 0.0f, 0.0f)));
+}
+
+ENJIN_TEST(Billboard, FaceCameraOffLeavesItAlone) {
+    World w;
+    Entity e = w.CreateEntity();
+    auto& t = w.AddComponent<TransformComponent>(e);
+    const Math::Quaternion authored = Math::Quaternion::FromEuler(Math::Vector3(0.3f, 0.2f, 0.1f));
+    t.rotation = authored;
+    w.AddComponent<BillboardComponent>(e).faceCamera = false;
+    ENJIN_EXPECT_EQ(FaceBillboards(&w, Math::Vector3(10.0f, 0.0f, 0.0f)), 0u);
+    ENJIN_EXPECT_FLOAT_EQ(w.GetComponent<TransformComponent>(e)->rotation.w, authored.w);
+}
+
+ENJIN_TEST(Billboard, ParentedFacesInWorldAndDirtiesChildren) {
+    World w;
+    Entity parent = w.CreateEntity();
+    auto& pt = w.AddComponent<TransformComponent>(parent);
+    pt.position = Math::Vector3(5.0f, 0.0f, 0.0f);
+    pt.rotation = Math::Quaternion::FromEuler(Math::Vector3(0.0f, 1.2f, 0.0f));
+    Entity bbe = w.CreateEntity();
+    w.AddComponent<TransformComponent>(bbe);
+    w.AddComponent<BillboardComponent>(bbe);
+    SetParent(&w, bbe, parent);
+    Entity child = w.CreateEntity();
+    w.AddComponent<TransformComponent>(child).position = Math::Vector3(0.0f, 0.0f, 1.0f);
+    SetParent(&w, child, bbe);
+
+    // Warm the caches, as a frame that already drew would have
+    ComputeWorldMatrix(&w, child);
+    ENJIN_EXPECT_FALSE(w.GetComponent<TransformComponent>(child)->worldMatrixDirty);
+
+    // Camera straight down -Z from the billboard's world position (5,0,0)
+    FaceBillboards(&w, Math::Vector3(5.0f, 0.0f, -10.0f));
+    ENJIN_EXPECT_TRUE(Near3(BillboardFront(w, bbe), Math::Vector3(0.0f, 0.0f, -1.0f)));
+    // The child sits one unit in front of the billboard, so it must be
+    // re-placed rather than served last frame's matrix
+    const Math::Matrix4 cm = ComputeWorldMatrix(&w, child);
+    ENJIN_EXPECT_TRUE(Near3(Math::Vector3(cm.m[12], cm.m[13], cm.m[14]), Math::Vector3(5.0f, 0.0f, -1.0f)));
 }
 
 ENJIN_TEST_MAIN()
