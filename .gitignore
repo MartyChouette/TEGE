@@ -241,3 +241,6 @@ dist/
 # they appear whenever an editor session is running and are overwritten
 # on a timer, so committing one races the editor that wrote it.
 *.enjin.autosave
+
+# The editor's own control bindings per project (a player's bindings.json, for the editor)
+**/.tege/editor_bindings.json

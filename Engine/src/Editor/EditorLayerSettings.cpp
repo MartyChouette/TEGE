@@ -1164,13 +1164,13 @@ void EditorLayer::DrawSettingsSection_Accessibility() {
 
             ImGui::Separator();
             ImGui::TextDisabled("Input Presets");
-            if (ImGui::Button("Default")) m_InputMap.ResetToDefaults();
+            if (ImGui::Button("Default")) { m_InputMap.ResetToDefaults(); SaveEditorBindings(); }
             ImGui::SameLine();
-            if (ImGui::Button("Left Hand Only")) m_InputMap.TogglePreset(InputSystem::BindingPreset::LeftHand);
+            if (ImGui::Button("Left Hand Only")) { m_InputMap.TogglePreset(InputSystem::BindingPreset::LeftHand); SaveEditorBindings(); }
             ImGui::SameLine();
-            if (ImGui::Button("Right Hand Only")) m_InputMap.TogglePreset(InputSystem::BindingPreset::RightHand);
+            if (ImGui::Button("Right Hand Only")) { m_InputMap.TogglePreset(InputSystem::BindingPreset::RightHand); SaveEditorBindings(); }
             ImGui::SameLine();
-            if (ImGui::Button("Gamepad Only")) m_InputMap.TogglePreset(InputSystem::BindingPreset::GamepadOnly);
+            if (ImGui::Button("Gamepad Only")) { m_InputMap.TogglePreset(InputSystem::BindingPreset::GamepadOnly); SaveEditorBindings(); }
             ImGui::SameLine();
             ImGui::TextDisabled("(%s)", InputSystem::GetBindingPresetName(m_InputMap.GetPreset()));
 
@@ -2569,6 +2569,52 @@ void EditorLayer::DrawSettingsSection_AccessibilityDefaults() {
     }
 }
 
+namespace {
+    std::filesystem::path EditorBindingsPath(const std::string& manifest) {
+        return std::filesystem::path(manifest).parent_path() / ".tege" / "editor_bindings.json";
+    }
+}
+
+void EditorLayer::SyncProjectInput() {
+    const std::string& project = m_SceneManager.GetProjectPath();
+    if (project == m_InputAppliedProject) return;
+    // Leaving a project keeps its bindings for next time
+    if (!m_InputAppliedProject.empty()) SaveEditorBindings();
+    m_InputAppliedProject = project;
+
+    // The new project's layer replaces the old one's: its actions, its
+    // defaults, no preset until its own file says so. Opening a second project
+    // used to keep the first one's custom actions in the map.
+    m_InputMap.ClearActionUsage();
+    m_InputMap.SetPreset(InputSystem::BindingPreset::None);
+    auto& settings = m_SceneManager.GetInputSettings();
+    settings.ApplyTo(m_InputMap);
+    InputSystem::SetTouchProjectSettings(&settings);
+
+    if (project.empty()) return;
+    std::ifstream in(EditorBindingsPath(project));
+    if (!in) return;
+    std::stringstream ss;
+    ss << in.rdbuf();
+    if (!m_InputMap.FromJson(ss.str())) {
+        ENJIN_LOG_WARN(Editor, "Could not read %s; using the project's defaults",
+                       EditorBindingsPath(project).string().c_str());
+    }
+}
+
+void EditorLayer::SaveEditorBindings() {
+    if (m_InputAppliedProject.empty()) return;
+    const auto path = EditorBindingsPath(m_InputAppliedProject);
+    std::error_code ec;
+    std::filesystem::create_directories(path.parent_path(), ec);
+    std::ofstream out(path, std::ios::trunc);
+    if (!out) {
+        ENJIN_LOG_WARN(Editor, "Could not write %s", path.string().c_str());
+        return;
+    }
+    out << m_InputMap.ToJson();
+}
+
 void EditorLayer::DrawSettingsSection_InputTouch() {
     if (!UI::SectionHeader("Input & Touch")) return;
 
@@ -2788,7 +2834,11 @@ void EditorLayer::DrawSettingsSection_InputTouch() {
     if (changed) {
         // Take effect in the editor immediately, then persist. Resetting the
         // touch fingerprint forces the overlay to rebuild with the new layout.
+        // The project layer changed under the editor's own bindings: keep them
+        // (ApplyTo rebuilds from the layers) by saving first and reading back
+        SaveEditorBindings();
         settings.ApplyTo(m_InputMap);   // the editor's ONE map; PlayMode borrows it
+        m_InputAppliedProject.clear();  // SyncProjectInput re-reads the saved file next frame
         InputSystem::SetTouchProjectSettings(&settings);
         m_SceneManager.SaveProject();
     }

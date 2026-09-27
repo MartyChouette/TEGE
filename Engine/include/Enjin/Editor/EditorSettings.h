@@ -135,8 +135,8 @@ struct EditorSettings {
     u32 idleFrameRate = 30;
 
     // NOTE: sprint/crouch mode, mouse sensitivity and the control preset are
-    // NOT here. They live on the editor's InputActionMap (persisted in the
-    // editor's bindings.json), which is the same map play mode uses, so the
+    // NOT here. They live on the editor's InputActionMap (persisted per project
+    // in .tege/editor_bindings.json), which is the same map play mode uses, so the
     // editor previews the controls a player would actually get.
     bool rawMouseInput = true;
     f32 mouseSmoothing = 0.0f; // 0.0 = none, 1.0 = heavy

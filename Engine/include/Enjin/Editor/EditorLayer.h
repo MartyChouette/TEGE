@@ -674,6 +674,12 @@ private:
     void DrawSettingsSection_BuildScenes();
     void DrawSettingsSection_StartupFlow();
     void DrawSettingsSection_InputTouch();
+    // The editor's own player layer (IN-13): what a player's bindings.json is to
+    // an exported game, kept per project in .tege/editor_bindings.json. When the
+    // open project changes, its input block is applied and its file loaded.
+    void SyncProjectInput();
+    void SaveEditorBindings();
+    std::string m_InputAppliedProject;
     void DrawSettingsSection_AccessibilityDefaults();
     void DrawSettingsSection_RenderQuality();
     void DrawSettingsSection_ScenePalette();

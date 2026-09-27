@@ -351,6 +351,8 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
         m_ControlsScreen.Open();
     });
     m_ControlsScreen.onBack = [this]() { m_GameMenu.ShowScreen(GUI::MenuScreen::Options); };
+    m_ControlsScreen.onSave = [this]() { SaveEditorBindings(); };
+    m_GameMenu.SetBindingsChangedCallback([this]() { SaveEditorBindings(); });
     // Touches (View > Simulate Touch Controls) that land on interactive UI
     // become real pointers instead of being claimed by the move stick.
     InputSystem::SetUIHitTestSystem(&m_UISystem);
@@ -923,6 +925,9 @@ void EditorLayer::Shutdown() {
 }
 
 void EditorLayer::Update(f32 deltaTime) {
+    // A different project was opened (by any of the paths that load one):
+    // apply its input block and the editor's saved bindings for it
+    SyncProjectInput();
 
     // NOTE: the editor deliberately does NOT push project quality tiers into
     // RenderSystem, even though it owns them through SceneManager.
