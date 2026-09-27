@@ -1,4 +1,5 @@
 #include "Enjin/ECS/Components/PreRenderedBackground.h"
+#include "Enjin/Editor/EntityPicker.h"
 #include "Enjin/Renderer/CameraLens.h"
 #include "Enjin/Editor/EditorTheme.h"
 #include "Enjin/Editor/EditorLayer.h"
@@ -6926,12 +6927,23 @@ void EditorLayer::DrawFollowTargetComponent(ECS::Entity entity) {
         if (!follow) return;
         DrawComponentHelp("followTarget", m_World, entity);
 
-        ImGui::Text("Target Entity: %llu", (unsigned long long)follow->target);
+        {
+            ECS::World* world = m_World;
+            InspectorUndo::EntityPicker(m_UndoRedo, "Target##follow", m_World, entity, follow->target,
+                [world, entity](ECS::Entity t) {
+                    if (auto* f = world->GetComponent<ECS::FollowTargetComponent>(entity)) f->target = t;
+                });
+        }
         InspectorUndo::DragFloat(m_UndoRedo, "Follow Distance", &follow->followDistance, 0.1f, 0.0f, 100.0f);
+        ImGui::SetItemTooltip("Holds this far short of the target (plus Offset). 0 sits on the offset point, like a camera rig.");
         InspectorUndo::DragFloat(m_UndoRedo, "Min Distance", &follow->minDistance, 0.1f, 0.0f, follow->followDistance);
+        ImGui::SetItemTooltip("Closer than this, it stops instead of backing away.");
         InspectorUndo::DragFloat(m_UndoRedo, "Max Distance", &follow->maxDistance, 0.5f, follow->followDistance, 1000.0f);
+        ImGui::SetItemTooltip("Farther than this, it gives up and waits for the target to come back. 0 never gives up.");
         InspectorUndo::DragFloat(m_UndoRedo, "Move Speed", &follow->moveSpeed, 0.1f, 0.0f, 50.0f);
+        ImGui::SetItemTooltip("Top speed in units per second. 0 = no limit.");
         InspectorUndo::DragFloat(m_UndoRedo, "Smooth Time", &follow->smoothTime, 0.01f, 0.0f, 5.0f);
+        ImGui::SetItemTooltip("About how long it takes to catch up, in seconds. 0 snaps.");
 
         InspectorUndo::Checkbox(m_UndoRedo, "Match Target Rotation", &follow->matchTargetRotation);
         if (follow->matchTargetRotation) {
@@ -6943,6 +6955,7 @@ void EditorLayer::DrawFollowTargetComponent(ECS::Entity entity) {
             follow->offset = Math::Vector3(offset[0], offset[1], offset[2]);
         }
         InspectorUndo::Checkbox(m_UndoRedo, "Use Local Offset", &follow->useLocalOffset);
+        ImGui::SetItemTooltip("Turn the offset with the target, so 'behind' stays behind as it turns.");
 
         if (ImGui::BeginPopupContextItem("FollowTargetContext")) {
             if (ImGui::MenuItem("Remove Component")) {
@@ -6966,7 +6979,11 @@ void EditorLayer::DrawLookAtTargetComponent(ECS::Entity entity) {
                 lookAt->worldTarget = Math::Vector3(target[0], target[1], target[2]);
             }
         } else {
-            ImGui::Text("Target Entity: %llu", (unsigned long long)lookAt->target);
+            ECS::World* world = m_World;
+            InspectorUndo::EntityPicker(m_UndoRedo, "Target##lookat", m_World, entity, lookAt->target,
+                [world, entity](ECS::Entity t) {
+                    if (auto* l = world->GetComponent<ECS::LookAtTargetComponent>(entity)) l->target = t;
+                });
         }
 
         InspectorUndo::DragFloat(m_UndoRedo, "Rotation Speed", &lookAt->rotationSpeed, 5.0f, 0.0f, 720.0f);

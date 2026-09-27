@@ -2,6 +2,7 @@
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Billboards.h"
 #include "Enjin/ECS/Timers.h"
+#include "Enjin/ECS/FollowTarget.h"
 #include "Enjin/ECS/EntityEventBus.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Hierarchy.h"
@@ -548,6 +549,85 @@ ENJIN_TEST(Timer, EventNameAndTargetComeFromTheTimer) {
     ENJIN_ASSERT_EQ(r.heard.size(), size_t(1));
     ENJIN_EXPECT_EQ(r.heard[0].name, std::string("door_close"));
     ENJIN_EXPECT_EQ(r.heard[0].target, door);
+}
+
+// ===========================================================================
+// FollowTarget: only target, offset and speed were ever read (SD-27)
+// ===========================================================================
+
+namespace {
+struct FollowRig {
+    World w;
+    Entity target, follower;
+    FollowRig(const FollowTargetComponent& f, const Math::Vector3& followerAt) {
+        target = w.CreateEntity();
+        w.AddComponent<TransformComponent>(target);
+        follower = w.CreateEntity();
+        w.AddComponent<TransformComponent>(follower).position = followerAt;
+        FollowTargetComponent c = f;
+        c.target = target;
+        w.AddComponent<FollowTargetComponent>(follower, c);
+    }
+    Math::Vector3 Pos() { return w.GetComponent<TransformComponent>(follower)->position; }
+    void Run(f32 seconds) { for (f32 t = 0; t < seconds; t += 1.0f / 60.0f) UpdateFollowTargets(&w, 1.0f / 60.0f); }
+};
+}
+
+ENJIN_TEST(FollowTarget, HoldsAtFollowDistance) {
+    FollowTargetComponent f;
+    f.followDistance = 3.0f;
+    f.smoothTime = 0.1f;
+    f.moveSpeed = 0.0f;
+    FollowRig r(f, Math::Vector3(10.0f, 0.0f, 0.0f));
+    r.Run(3.0f);
+    ENJIN_EXPECT_TRUE(std::abs(r.Pos().x - 3.0f) < 0.05f);   // stopped 3 short, not on top
+}
+
+ENJIN_TEST(FollowTarget, ZeroDistanceSitsOnTheOffsetAndLocalOffsetTurns) {
+    FollowTargetComponent f;
+    f.followDistance = 0.0f;
+    f.minDistance = 0.0f;
+    f.smoothTime = 0.0f;
+    f.offset = Math::Vector3(0.0f, 2.0f, -5.0f);
+    f.useLocalOffset = true;
+    FollowRig r(f, Math::Vector3(0.0f));
+    // Target turned 90 degrees about Y: "behind" (-Z local) is now -X world
+    r.w.GetComponent<TransformComponent>(r.target)->rotation =
+        Math::Quaternion::FromEuler(Math::Vector3(0.0f, Math::Radians(90.0f), 0.0f));
+    UpdateFollowTargets(&r.w, 1.0f / 60.0f);
+    ENJIN_EXPECT_TRUE(Near3(r.Pos(), Math::Vector3(-5.0f, 2.0f, 0.0f)));
+}
+
+ENJIN_TEST(FollowTarget, GivesUpBeyondMaxAndStopsInsideMin) {
+    FollowTargetComponent f;
+    f.maxDistance = 20.0f;
+    f.smoothTime = 0.0f;
+    FollowRig distant(f, Math::Vector3(50.0f, 0.0f, 0.0f));
+    UpdateFollowTargets(&distant.w, 1.0f / 60.0f);
+    ENJIN_EXPECT_TRUE(Near3(distant.Pos(), Math::Vector3(50.0f, 0.0f, 0.0f)));
+
+    FollowRig close(f, Math::Vector3(0.5f, 0.0f, 0.0f));   // inside minDistance 1
+    UpdateFollowTargets(&close.w, 1.0f / 60.0f);
+    ENJIN_EXPECT_TRUE(Near3(close.Pos(), Math::Vector3(0.5f, 0.0f, 0.0f)));
+}
+
+ENJIN_TEST(FollowTarget, MoveSpeedCapsAndRotationFollows) {
+    FollowTargetComponent f;
+    f.followDistance = 0.0f;
+    f.minDistance = 0.0f;
+    f.smoothTime = 0.05f;
+    f.moveSpeed = 2.0f;
+    f.matchTargetRotation = true;
+    f.rotationSpeed = 90.0f;
+    FollowRig r(f, Math::Vector3(10.0f, 0.0f, 0.0f));
+    r.w.GetComponent<TransformComponent>(r.target)->rotation =
+        Math::Quaternion::FromEuler(Math::Vector3(0.0f, Math::Radians(180.0f), 0.0f));
+    r.Run(1.0f);
+    // Two units a second: after one second it has come about 2 of the 10
+    ENJIN_EXPECT_TRUE(r.Pos().x > 7.5f && r.Pos().x < 8.5f);
+    // Ninety degrees a second: halfway round the 180 turn
+    Math::Vector3 fwd = r.w.GetComponent<TransformComponent>(r.follower)->rotation.Rotate(Math::Vector3(0, 0, 1));
+    ENJIN_EXPECT_TRUE(std::abs(fwd.z) < 0.1f);
 }
 
 ENJIN_TEST_MAIN()

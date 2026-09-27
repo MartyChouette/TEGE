@@ -1,4 +1,5 @@
 #include "Enjin/ECS/Systems/ControllerSystem.h"
+#include "Enjin/ECS/FollowTarget.h"
 #include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/ECS/Components/Ladder.h"
 #include "Enjin/ECS/Components/WaterVolume.h"
@@ -346,25 +347,8 @@ void ControllerSystem::UpdatePresentation(f32 deltaTime) {
     // Called once per RENDERED frame by every runtime: outside the step loop,
     // and outside the bullet-time pass so it never runs twice.
 
-    for (Entity entity : m_World->GetEntitiesWithComponent<FollowTargetComponent>()) {
-        auto* transform = m_World->GetComponent<TransformComponent>(entity);
-        if (!transform) continue;
-        auto* follow = m_World->GetComponent<FollowTargetComponent>(entity);
-        if (follow->target == INVALID_ENTITY) continue;
-
-        auto* targetTransform = m_World->GetComponent<TransformComponent>(follow->target);
-        if (!targetTransform) continue;
-
-        Math::Vector3 targetPos = targetTransform->position + follow->offset;
-
-        // Smooth follow via lerp
-        f32 lerpFactor = 1.0f - std::exp(-follow->moveSpeed * deltaTime);
-        transform->position = Math::Vector3(
-            transform->position.x + (targetPos.x - transform->position.x) * lerpFactor,
-            transform->position.y + (targetPos.y - transform->position.y) * lerpFactor,
-            transform->position.z + (targetPos.z - transform->position.z) * lerpFactor
-        );
-    }
+    // Follow targets: distance band, smoothing, rotation, local offset (SD-27)
+    UpdateFollowTargets(m_World, deltaTime);
 
     // Process LookAtTarget components (camera look-at, turret tracking, etc.)
     for (Entity entity : m_World->GetEntitiesWithComponent<LookAtTargetComponent>()) {
