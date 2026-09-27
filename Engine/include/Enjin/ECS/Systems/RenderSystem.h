@@ -1359,7 +1359,43 @@ public:
         f32 exposure = 1.0f;
         f32 whitePoint = 4.0f;
         f32 ppPadC = 0.0f;
-        f32 ppPadD = 0.0f;              // 48 f32 = 192 bytes
+        f32 ppPadD = 0.0f;
+        // The retro stack, as desktop's postprocess.frag runs it (WP-17). Web
+        // had scanlines, an 8-level quantize and one 4x4 dither, and nothing
+        // else from that list.
+        f32 ditherPattern = 0.0f;   // 0 = Bayer 2x2, 1 = 4x4, 2 = 8x8
+        f32 colorBitDepth = 8.0f;   // bits per channel, for the dither step
+        f32 resDownscale = 0.0f;   // 1 = snap to the internal resolution
+        f32 internalW = 320.0f;
+        f32 internalH = 240.0f;
+        f32 scanlineWidth = 1.0f;
+        f32 crtCurvature = 0.0f;
+        f32 phosphor = 0.0f;   // 1 = phosphor mask
+        f32 phosphorMaskType = 0.0f;   // 0 aperture grille, 1 shadow mask, 2 slot mask
+        f32 phosphorPitch = 1.0f;
+        f32 phosphorBloomRadius = 1.5f;
+        f32 phosphorBloomStrength = 0.3f;
+        f32 phosphorBloomSigma = 0.8f;
+        f32 vhs = 0.0f;   // 1 = VHS
+        f32 vhsTrackingIntensity = 0.3f;
+        f32 vhsTrackingSpeed = 1.0f;
+        f32 vhsWobbleIntensity = 0.002f;
+        f32 vhsWobbleSpeed = 2.0f;
+        f32 vhsColorBleed = 0.003f;
+        f32 vhsNoiseIntensity = 0.05f;
+        f32 vhsBlueShift = 0.05f;
+        f32 vhsScreenTear = 0.0f;
+        f32 vhsTearOffset = 0.0f;
+        f32 vhsInterlacing = 0.0f;
+        f32 vhsTapeDropout = 0.0f;
+        f32 palette = 0.0f;   // 1 = palette lock
+        f32 paletteColors = 16.0f;
+        f32 paletteMode = 0.0f;   // 0 per channel, 1 PICO-8, 2 Game Boy, 3 NES, 4 CGA, 5 C64
+        f32 retroPad0 = 0.0f;
+        f32 retroPad1 = 0.0f;
+        f32 retroPad2 = 0.0f;
+        f32 retroPad3 = 0.0f;
+        // 80 f32 = 320 bytes
     };
     // The size is ASSERTED rather than commented. This struct must match
     // PostProcessParams in POSTPROCESS_WGSL byte for byte, and the only thing
@@ -1367,9 +1403,9 @@ public:
     // how the LightingUBO comment came to read 992 while its fields summed to
     // 1008. A mismatch here does not fail loudly: every effect after the
     // first wrong offset reads a neighbouring field's bytes.
-    static_assert(sizeof(WebPPAccessibilityParams) == 192,
-                  "WebPPAccessibilityParams must stay 192 bytes and in lockstep with "
-                  "PostProcessParams in POSTPROCESS_WGSL (48 f32). Update BOTH.");
+    static_assert(sizeof(WebPPAccessibilityParams) == 320,
+                  "WebPPAccessibilityParams must stay 320 bytes and in lockstep with "
+                  "PostProcessParams in POSTPROCESS_WGSL (80 f32). Update BOTH.");
     static_assert(sizeof(WebPPAccessibilityParams) % 16 == 0,
                   "Uniform block must be a 16-byte multiple.");
 
@@ -1412,6 +1448,8 @@ public:
         m_WebPPAccessibility.exposure = exposure;
         m_WebPPAccessibility.whitePoint = whitePoint > 0.01f ? whitePoint : 0.01f;
     }
+    // The retro stack's settings, straight from the blended post settings
+    void SetWebRetro(const Renderer::PostProcessSettings& s);
     void SetWebBloom(bool enabled, f32 threshold, f32 intensity) {
         m_WebBloomEnabled = enabled;
         m_WebBloomThreshold = threshold;

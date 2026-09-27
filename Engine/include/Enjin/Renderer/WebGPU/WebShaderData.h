@@ -1414,7 +1414,39 @@ struct PostProcessParams {
     whitePoint: f32,      // Reinhard Extended
     ppPadC: f32,
     ppPadD: f32,
-                          // 48 f32 = 192 bytes; must match WebPPAccessibilityParams
+    ditherPattern: f32,
+    colorBitDepth: f32,
+    resDownscale: f32,
+    internalW: f32,
+    internalH: f32,
+    scanlineWidth: f32,
+    crtCurvature: f32,
+    phosphor: f32,
+    phosphorMaskType: f32,
+    phosphorPitch: f32,
+    phosphorBloomRadius: f32,
+    phosphorBloomStrength: f32,
+    phosphorBloomSigma: f32,
+    vhs: f32,
+    vhsTrackingIntensity: f32,
+    vhsTrackingSpeed: f32,
+    vhsWobbleIntensity: f32,
+    vhsWobbleSpeed: f32,
+    vhsColorBleed: f32,
+    vhsNoiseIntensity: f32,
+    vhsBlueShift: f32,
+    vhsScreenTear: f32,
+    vhsTearOffset: f32,
+    vhsInterlacing: f32,
+    vhsTapeDropout: f32,
+    palette: f32,
+    paletteColors: f32,
+    paletteMode: f32,
+    retroPad0: f32,
+    retroPad1: f32,
+    retroPad2: f32,
+    retroPad3: f32,
+                          // 80 f32 = 320 bytes; must match WebPPAccessibilityParams
 };
 @group(0) @binding(2) var<uniform> params: PostProcessParams;
 
@@ -1727,6 +1759,153 @@ fn bayer4(p: vec2<i32>) -> f32 {
     return m[y * 4 + x] / 16.0;
 }
 
+// ── Retro stack (WP-17), ported from postprocess.frag ─────────────────────
+fn bayerThreshold(p: vec2<i32>, pattern: i32) -> f32 {
+    let x = ((p.x % 8) + 8) % 8;
+    let y = ((p.y % 8) + 8) % 8;
+    if (pattern == 0) {
+        var b2 = array<f32, 4>(0.0, 2.0, 3.0, 1.0);
+        return b2[(x % 2) + (y % 2) * 2] / 4.0 - 0.5;
+    }
+    if (pattern == 1) { return bayer4(p) - 0.5; }
+    var b8 = array<f32, 64>(
+         0.0, 32.0,  8.0, 40.0,  2.0, 34.0, 10.0, 42.0,
+        48.0, 16.0, 56.0, 24.0, 50.0, 18.0, 58.0, 26.0,
+        12.0, 44.0,  4.0, 36.0, 14.0, 46.0,  6.0, 38.0,
+        60.0, 28.0, 52.0, 20.0, 62.0, 30.0, 54.0, 22.0,
+         3.0, 35.0, 11.0, 43.0,  1.0, 33.0,  9.0, 41.0,
+        51.0, 19.0, 59.0, 27.0, 49.0, 17.0, 57.0, 25.0,
+        15.0, 47.0,  7.0, 39.0, 13.0, 45.0,  5.0, 37.0,
+        63.0, 31.0, 55.0, 23.0, 61.0, 29.0, 53.0, 21.0);
+    return b8[x + y * 8] / 64.0 - 0.5;
+}
+
+fn nearestIn(c: vec3<f32>, pal: array<vec3<f32>, 16>, count: i32) -> vec3<f32> {
+    var best = pal[0];
+    var bestD = 99999.0;
+    for (var i = 0; i < 16; i = i + 1) {
+        if (i >= count) { break; }
+        let d = dot(c - pal[i], c - pal[i]);
+        if (d < bestD) { bestD = d; best = pal[i]; }
+    }
+    return best;
+}
+
+fn applyPaletteLock(c: vec3<f32>) -> vec3<f32> {
+    let mode = i32(params.paletteMode + 0.5);
+    if (mode == 0) {
+        let n = max(params.paletteColors, 2.0);
+        return clamp(floor(c * (n - 1.0) + 0.5) / (n - 1.0), vec3<f32>(0.0), vec3<f32>(1.0));
+    }
+    var pal: array<vec3<f32>, 16>;
+    var count = 16;
+    if (mode == 1) {        // PICO-8
+        pal = array<vec3<f32>, 16>(
+            vec3<f32>(0.000,0.000,0.000), vec3<f32>(0.114,0.169,0.326), vec3<f32>(0.494,0.145,0.326), vec3<f32>(0.000,0.529,0.318),
+            vec3<f32>(0.671,0.322,0.212), vec3<f32>(0.373,0.341,0.310), vec3<f32>(0.761,0.765,0.780), vec3<f32>(1.000,0.945,0.910),
+            vec3<f32>(1.000,0.000,0.302), vec3<f32>(1.000,0.639,0.000), vec3<f32>(1.000,0.925,0.153), vec3<f32>(0.000,0.894,0.212),
+            vec3<f32>(0.161,0.678,1.000), vec3<f32>(0.514,0.463,0.612), vec3<f32>(1.000,0.467,0.659), vec3<f32>(1.000,0.800,0.667));
+    } else if (mode == 2) { // Game Boy
+        pal[0] = vec3<f32>(0.059,0.220,0.059); pal[1] = vec3<f32>(0.188,0.384,0.188);
+        pal[2] = vec3<f32>(0.545,0.674,0.059); pal[3] = vec3<f32>(0.608,0.737,0.059);
+        count = 4;
+    } else if (mode == 3) { // NES
+        pal = array<vec3<f32>, 16>(
+            vec3<f32>(0.000,0.000,0.000), vec3<f32>(0.329,0.329,0.329), vec3<f32>(0.596,0.588,0.596), vec3<f32>(0.925,0.933,0.925),
+            vec3<f32>(0.000,0.118,0.455), vec3<f32>(0.188,0.196,0.925), vec3<f32>(0.298,0.604,0.925), vec3<f32>(0.031,0.486,0.000),
+            vec3<f32>(0.298,0.816,0.125), vec3<f32>(0.596,0.133,0.125), vec3<f32>(0.925,0.416,0.392), vec3<f32>(0.471,0.235,0.000),
+            vec3<f32>(0.925,0.604,0.125), vec3<f32>(0.800,0.831,0.125), vec3<f32>(0.533,0.078,0.690), vec3<f32>(0.925,0.345,0.706));
+    } else if (mode == 4) { // CGA
+        pal[0] = vec3<f32>(0.000,0.000,0.000); pal[1] = vec3<f32>(0.333,1.000,1.000);
+        pal[2] = vec3<f32>(1.000,0.333,1.000); pal[3] = vec3<f32>(1.000,1.000,1.000);
+        count = 4;
+    } else {                // C64
+        pal = array<vec3<f32>, 16>(
+            vec3<f32>(0.000,0.000,0.000), vec3<f32>(1.000,1.000,1.000), vec3<f32>(0.533,0.208,0.173), vec3<f32>(0.400,0.729,0.769),
+            vec3<f32>(0.545,0.231,0.580), vec3<f32>(0.349,0.616,0.263), vec3<f32>(0.208,0.157,0.475), vec3<f32>(0.808,0.808,0.502),
+            vec3<f32>(0.545,0.345,0.106), vec3<f32>(0.349,0.243,0.000), vec3<f32>(0.733,0.427,0.392), vec3<f32>(0.314,0.314,0.314),
+            vec3<f32>(0.471,0.471,0.471), vec3<f32>(0.588,0.859,0.482), vec3<f32>(0.424,0.373,0.694), vec3<f32>(0.627,0.627,0.627));
+    }
+    return nearestIn(c, pal, count);
+}
+
+// VHS: tear, tracking, wobble, colour bleed, line noise, blue shift,
+// interlacing and dropout, sampling the scene (linear) at displaced uvs
+fn vhsSample(uv0: vec2<f32>) -> vec3<f32> {
+    var uv = uv0;
+    let t = params.timeSec;
+    if (params.vhsScreenTear > 0.5) {
+        let tearLine = fract(t * 0.13 + 0.5);
+        if (uv.y < tearLine) { uv.x = uv.x + params.vhsTearOffset * sin(t * 3.7) * 0.02; }
+    }
+    let band = smoothstep(0.8, 1.0, sin(uv.y * 20.0 - t * params.vhsTrackingSpeed * 5.0));
+    uv.x = uv.x + band * params.vhsTrackingIntensity * 0.02;
+    uv.x = uv.x + sin(uv.y * 50.0 + t * params.vhsWobbleSpeed * 10.0) * params.vhsWobbleIntensity;
+    let bleed = params.vhsColorBleed;
+    var c = vec3<f32>(
+        textureSampleLevel(sceneTexture, sceneSampler, vec2<f32>(uv.x + bleed, uv.y), 0.0).r,
+        textureSampleLevel(sceneTexture, sceneSampler, uv, 0.0).g,
+        textureSampleLevel(sceneTexture, sceneSampler, vec2<f32>(uv.x - bleed, uv.y), 0.0).b);
+    var ln = fract(sin(dot(vec2<f32>(uv0.y * 1000.0, t), vec2<f32>(12.9898, 78.233))) * 43758.5453);
+    ln = (ln * 2.0 - 1.0) * params.vhsNoiseIntensity;
+    c = c + vec3<f32>(ln * (1.0 + abs(uv0.x - 0.5) * 2.0));
+    c = c * vec3<f32>(1.0 - params.vhsBlueShift, 1.0, 1.0 + params.vhsBlueShift);
+    if (params.vhsInterlacing > 0.5) {
+        let frame = i32(t * 60.0) % 2;
+        let line = i32(uv0.y * params.screenH);
+        if ((line + frame) % 2 == 0) { c = c * 0.85; }
+    }
+    if (params.vhsTapeDropout > 0.0) {
+        let dropY = uv0.y + t * 0.15;
+        let b1 = fract(sin(floor(dropY * 40.0 + t * 3.0) * 127.1) * 43758.5453);
+        let b2 = fract(sin(floor(dropY * 80.0 + t * 7.0) * 311.7) * 43758.5453);
+        let th = params.vhsTapeDropout * 0.15;
+        if (b1 < th) {
+            let n = fract(sin(dot(uv0 * 500.0, vec2<f32>(12.9898, 78.233)) + t) * 43758.5453);
+            c = mix(c, vec3<f32>(n * 0.8 + 0.2), 0.85);
+        } else if (b2 < th * 0.5) {
+            c = vec3<f32>(dot(c, vec3<f32>(0.299, 0.587, 0.114)));
+        }
+    }
+    return c;
+}
+
+// Phosphor mask and its bloom (a Gaussian of the scene, in display space)
+fn applyPhosphor(c: vec3<f32>, uv: vec2<f32>) -> vec3<f32> {
+    let sp = uv * vec2<f32>(params.screenW, params.screenH);
+    let pitch = max(params.phosphorPitch, 0.5);
+    let px = i32(floor(sp.x / pitch));
+    let py = i32(floor(sp.y / pitch));
+    let maskType = i32(params.phosphorMaskType + 0.5);
+    var col = px % 3;
+    var lo = 0.3;
+    if (maskType == 1) {
+        col = (px % 3 + (py % 2)) % 3;
+        lo = 0.25;
+    } else if (maskType == 2) {
+        if ((py % 4) >= 2) { col = (col + 1) % 3; }
+        lo = 0.2;
+    }
+    var mask = vec3<f32>(lo);
+    if (col == 0) { mask.x = 1.0; } else if (col == 1) { mask.y = 1.0; } else { mask.z = 1.0; }
+    let texel = vec2<f32>(1.0 / params.screenW, 1.0 / params.screenH);
+    let sigma = max(params.phosphorBloomSigma, 0.3);
+    let kr = min(i32(ceil(sigma * 3.0)), 3);
+    var bloom = vec3<f32>(0.0);
+    var wsum = 0.0;
+    for (var dy = -3; dy <= 3; dy = dy + 1) {
+        for (var dx = -3; dx <= 3; dx = dx + 1) {
+            if (abs(dx) > kr || abs(dy) > kr) { continue; }
+            let o = vec2<f32>(f32(dx), f32(dy)) * texel * params.phosphorBloomRadius;
+            let d = length(vec2<f32>(f32(dx), f32(dy)));
+            let w = exp(-d * d / (2.0 * sigma * sigma));
+            bloom = bloom + linearToSrgb(textureSampleLevel(sceneTexture, sceneSampler, uv + o, 0.0).rgb) * w;
+            wsum = wsum + w;
+        }
+    }
+    return mix(c * mask, bloom / wsum, params.phosphorBloomStrength);
+}
+
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let texDim = vec2<f32>(textureDimensions(sceneTexture));
@@ -1735,7 +1914,14 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // Camera lens: barrel (<0) or pincushion (>0), then anamorphic squeeze.
     // Plain arithmetic, no branch, so every sample below stays in uniform
     // control flow. Corners pulled in from outside the frame go black.
-    var lc = in.uv - vec2<f32>(0.5);
+    // Resolution downscale: every sample below reads the snapped uv, so the
+    // frame comes out at the internal resolution (point sampled)
+    var baseUV = in.uv;
+    if (params.resDownscale > 0.5) {
+        let ires = vec2<f32>(max(params.internalW, 1.0), max(params.internalH, 1.0));
+        baseUV = floor(baseUV * ires) / ires + 0.5 / ires;
+    }
+    var lc = baseUV - vec2<f32>(0.5);
     let lr2 = dot(lc * 2.0, lc * 2.0);
     lc = lc * (1.0 - params.lensDistortion * lr2);
     lc.x = lc.x / max(params.lensSqueeze, 0.01);
@@ -1745,7 +1931,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // FXAA used to run unconditionally, so turning anti-aliasing off in the
     // options still paid for the pass and still blurred the image.
     var color: vec3<f32>;
-    if (params.fxaaEnabled > 0.5) {
+    if (params.vhs > 0.5) {
+        color = vhsSample(uv);
+    } else if (params.fxaaEnabled > 0.5) {
         color = fxaa(uv, texelSize);
     } else {
         color = textureSampleLevel(sceneTexture, sceneSampler, uv, 0.0).rgb;
@@ -1891,22 +2079,15 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     color = linearToSrgb(color);
 
-    // Retro color quantization (posterize) on the display-space color.
-    if (params.colorQuantLevels > 0.5) {
-        color = floor(color * params.colorQuantLevels) / params.colorQuantLevels;
-    }
+    // The display-space stack, in postprocess.frag's order: vignette, grain,
+    // dither, quantize, palette, stipple, phosphor, CRT. Web runs it on the
+    // sRGB colour; desktop on the linear one before its sRGB swapchain.
 
     // Vignette: darken toward the frame edges.
     if (params.vignetteIntensity > 0.0) {
         let d = distance(uv, vec2<f32>(0.5));
         let vig = smoothstep(0.75, 0.75 - max(params.vignetteSmoothness, 0.05), d);
         color = color * mix(1.0, vig, clamp(params.vignetteIntensity, 0.0, 1.0));
-    }
-
-    // CRT scanlines: soft horizontal dark bands (uv-based so it's resolution-agnostic).
-    if (params.crtScanline > 0.0) {
-        let line = 0.5 + 0.5 * sin(uv.y * 6.28318 * 240.0);
-        color = color * (1.0 - params.crtScanline * (1.0 - line));
     }
 
     // Film grain: animated hash noise driven by timeSec so it shimmers frame to frame.
@@ -1916,10 +2097,23 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         color = color + (n - 0.5) * params.filmGrain;
     }
 
-    // Ordered dithering: retro banding-reduction / 8-bit look.
+    // Ordered dither on real pixels, with the chosen Bayer pattern, scaled to
+    // the bit depth it is dithering toward
+    let screenPx = vec2<i32>(in.position.xy);
     if (params.dither > 0.0) {
-        let pix = vec2<i32>(uv * vec2<f32>(640.0, 360.0));
-        color = color + (bayer4(pix) - 0.5) * params.dither * 0.08;
+        let th = bayerThreshold(screenPx, i32(params.ditherPattern + 0.5));
+        color = color + th * params.dither / max(params.colorBitDepth, 5.0);
+    }
+
+    // Colour quantization to the bit depth (levels = 2^bits - 1)
+    if (params.colorQuantLevels > 0.5) {
+        color = clamp(floor(color * params.colorQuantLevels + 0.5) / params.colorQuantLevels,
+                      vec3<f32>(0.0), vec3<f32>(1.0));
+    }
+
+    // Palette lock: per-channel levels or a named palette
+    if (params.palette > 0.5) {
+        color = applyPaletteLock(color);
     }
 
     // Stipple / comic threshold: ink on/off vs the Bayer matrix by luminance.
@@ -1933,6 +2127,23 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
             color = mix(vec3<f32>(0.10, 0.12, 0.25), vec3<f32>(0.95, 0.92, 0.80), on);           // duotone
         } else {
             color = color * (0.55 + 0.45 * on);                                                  // full-colour dither
+        }
+    }
+
+    // CRT phosphor mask and glow
+    if (params.phosphor > 0.5) {
+        color = applyPhosphor(color, uv);
+    }
+
+    // CRT scanlines at desktop's spacing (one per screenH / width pixels),
+    // and the tube's curvature blacking out what falls off the glass
+    if (params.crtScanline > 0.0) {
+        let s = sin(uv.y * params.screenH * 3.14159 / max(params.scanlineWidth, 0.01));
+        color = color * (1.0 - s * s * params.crtScanline);
+        if (params.crtCurvature > 0.0) {
+            let cc = uv * 2.0 - 1.0;
+            let dd = cc * (1.0 + dot(cc, cc) * params.crtCurvature);
+            if (abs(dd.x) > 1.0 || abs(dd.y) > 1.0) { color = vec3<f32>(0.0); }
         }
     }
 

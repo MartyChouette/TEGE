@@ -1093,6 +1093,7 @@ public:
         m_RenderSystem->SetWebToneMapMode(s.toneMappingMode);
         m_RenderSystem->SetWebExposure(s.exposure, s.whitePoint);
         m_RenderSystem->SetWebBloom(s.bloomEnabled != 0, s.bloomThreshold, s.bloomIntensity);
+        m_RenderSystem->SetWebRetro(s);
 
         // A Rewind Ability's authored tint and vignette, folded in on top of the
         // scene's grade. Web has no PostProcessing OBJECT -- these go through as
@@ -1114,7 +1115,9 @@ public:
             s.saturation, tintR, tintG, tintB,
             vignette, s.vignetteSmoothness,
             s.chromaticAberrationEnabled ? s.chromaticAberrationIntensity : 0.0f,
-            s.colorQuantEnabled ? 8.0f : 0.0f,
+            // Levels from the bit depth, as desktop (2^bits - 1); it was a
+            // fixed 8 levels whatever depth the scene asked for
+            s.colorQuantEnabled ? static_cast<float>((1u << std::min(s.colorBitDepth, 16u)) - 1u) : 0.0f,
             s.filmGrainEnabled ? s.filmGrainIntensity : 0.0f,
             s.crtEnabled ? s.scanlineIntensity : 0.0f,
             s.ditherEnabled ? s.ditherStrength : 0.0f,

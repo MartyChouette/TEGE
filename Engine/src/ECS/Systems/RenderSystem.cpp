@@ -9,6 +9,7 @@
 // The other include of this sits deep inside the !WEBGPU branch.
 #include "Enjin/Renderer/HaltonSequence.h"   // jitter + ShouldApplyTemporalJitter
 #include "Enjin/Renderer/MeshFactory.h"
+#include "Enjin/Renderer/PostProcessing.h"   // SetWebRetro reads the settings struct
 #include <chrono>
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Debug/Profiler.h"
@@ -45,6 +46,40 @@
 // path applies this to m_WebSkyConfig, the Vulkan path to m_Skybox's config.
 namespace Enjin {
 namespace ECS {
+// The retro stack's settings for the web post pass (WP-17); both backends
+// carry the params block, only web reads it.
+void RenderSystem::SetWebRetro(const Renderer::PostProcessSettings& s) {
+    auto& p = m_WebPPAccessibility;
+    p.ditherPattern = static_cast<f32>(s.ditherPattern);
+    p.colorBitDepth = static_cast<f32>(s.colorBitDepth);
+    p.resDownscale = s.resDownscaleEnabled ? 1.0f : 0.0f;
+    p.internalW = static_cast<f32>(s.internalWidth ? s.internalWidth : 320u);
+    p.internalH = static_cast<f32>(s.internalHeight ? s.internalHeight : 240u);
+    p.scanlineWidth = s.scanlineWidth > 0.01f ? s.scanlineWidth : 1.0f;
+    p.crtCurvature = s.crtCurvature;
+    p.phosphor = s.crtPhosphorEnabled ? 1.0f : 0.0f;
+    p.phosphorMaskType = static_cast<f32>(s.crtMaskType);
+    p.phosphorPitch = s.crtMaskPitch;
+    p.phosphorBloomRadius = s.crtBloomRadius;
+    p.phosphorBloomStrength = s.crtBloomStrength;
+    p.phosphorBloomSigma = s.crtBloomSigma;
+    p.vhs = s.vhsEnabled ? 1.0f : 0.0f;
+    p.vhsTrackingIntensity = s.vhsTrackingIntensity;
+    p.vhsTrackingSpeed = s.vhsTrackingSpeed;
+    p.vhsWobbleIntensity = s.vhsWobbleIntensity;
+    p.vhsWobbleSpeed = s.vhsWobbleSpeed;
+    p.vhsColorBleed = s.vhsColorBleed;
+    p.vhsNoiseIntensity = s.vhsNoiseIntensity;
+    p.vhsBlueShift = s.vhsBlueShift;
+    p.vhsScreenTear = s.vhsScreenTear ? 1.0f : 0.0f;
+    p.vhsTearOffset = s.vhsTearOffset;
+    p.vhsInterlacing = s.vhsInterlacing ? 1.0f : 0.0f;
+    p.vhsTapeDropout = s.vhsTapeDropout;
+    p.palette = s.paletteEnabled ? 1.0f : 0.0f;
+    p.paletteColors = static_cast<f32>(s.paletteColors < 2u ? 2u : s.paletteColors);
+    p.paletteMode = static_cast<f32>(s.paletteMode);
+}
+
 Renderer::SkyboxConfig RenderSystem::WeatherSky(const Renderer::SkyboxConfig& cfg) const {
     if (m_WeatherSkyRain <= 0.001f && m_WeatherSkySnow <= 0.001f) return cfg;
     Renderer::SkyboxConfig out = cfg;
