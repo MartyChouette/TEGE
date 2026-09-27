@@ -18921,6 +18921,11 @@ std::shared_ptr<Renderer::Texture> RenderSystem::GetOrLoadTexture(const std::str
     // texture hot-reload was dead for every texture a project authors. The
     // callback only queues: the swap is GPU-resource work and belongs in
     // FlushPendingChanges, not in the middle of Update().
+    //
+    // Not in a packed game: its textures come from the pak and there is no file
+    // to watch, so every texture logged "file does not exist" (EP-18).
+    if (Platform::AssetFS::IsMounted() && !Platform::AssetFS::ToVirtualPath(canonical).empty())
+        return texture;
     m_TextureWatcher.Watch(canonical, [this, key = canonical](const std::string& changedPath) {
         ENJIN_LOG_INFO(Renderer, "Texture changed on disk, queuing reload: %s", changedPath.c_str());
         if (std::find(m_PendingTextureReloads.begin(), m_PendingTextureReloads.end(), key)
