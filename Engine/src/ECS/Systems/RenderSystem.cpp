@@ -5798,6 +5798,8 @@ void RenderSystem::Update(f32 deltaTime) {
                                 auto bc = WebGetOrLoadTexture(slotMat->baseColorTexturePath);
                                 auto nm = WebGetOrLoadTexture(slotMat->normalTexturePath);
                                 auto mr = WebGetOrLoadTexture(slotMat->metallicRoughnessTexturePath);
+                                auto ht = slotMat->heightTexturePath.empty()
+                                    ? Renderer::GPUTextureHandle{} : WebGetOrLoadTexture(slotMat->heightTexturePath);
 
                                 // Keyed by the textures it binds: sub-meshes sharing
                                 // a material share the group, and it survives across
@@ -5805,7 +5807,8 @@ void RenderSystem::Update(f32 deltaTime) {
                                 // of every multi-material mesh, every frame.
                                 const u64 texKey = (static_cast<u64>(bc.id) * 0x9E3779B97F4A7C15ull)
                                                  ^ (static_cast<u64>(nm.id) * 0xC2B2AE3D27D4EB4Full)
-                                                 ^ (static_cast<u64>(mr.id) * 0x165667B19E3779F9ull);
+                                                 ^ (static_cast<u64>(mr.id) * 0x165667B19E3779F9ull)
+                                                 ^ (static_cast<u64>(ht.id) * 0x27D4EB2F165667C5ull);
                                 auto cached = m_WebSubMeshTexCache.find(texKey);
                                 if (cached != m_WebSubMeshTexCache.end()) {
                                     encoder->SetBindGroup(2, cached->second);
@@ -5829,6 +5832,13 @@ void RenderSystem::Update(f32 deltaTime) {
                                     {7, {}, 0, 0, {}, m_WebDefaultWhiteTex},
                                     {8, {}, 0, 0, m_WebDefaultBlackTex, {}},
                                     {9, {}, 0, 0, {}, m_WebDefaultBlackTex},
+                                    // Height (parallax), black when absent. The
+                                    // layout has twelve entries since the height
+                                    // pair was added, and this list stopped at
+                                    // ten, so every multi-material mesh built an
+                                    // invalid group (WP-14).
+                                    {10, {}, 0, 0, ht.IsValid() ? ht : m_WebDefaultBlackTex, {}},
+                                    {11, {}, 0, 0, {}, ht.IsValid() ? ht : m_WebDefaultBlackTex},
                                 };
                                 subTexBG = bindMgr->CreateBindGroup(texBGD);
                                 if (subTexBG.IsValid()) m_WebSubMeshTexCache[texKey] = subTexBG;
