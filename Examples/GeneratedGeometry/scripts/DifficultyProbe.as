@@ -9,7 +9,18 @@ class DifficultyProbe : TegeBehavior {
     uint64 player = 0;
     float reportTimer = 0.0f;
 
+    // Project actions (Project Settings > Input & Touch), keys 1-3 and R by
+    // default, so they can be rebound and show in the controls screen.
+    int actDeath = -1;
+    int actHit = -1;
+    int actShot = -1;
+    int actReset = -1;
+
     void OnStart() {
+        actDeath = InputAction_Find("Record Death");
+        actHit   = InputAction_Find("Record Hit");
+        actShot  = InputAction_Find("Record Shot");
+        actReset = InputAction_Find("Reset Difficulty");
         self = _entityId;
         player = Scene_FindEntity("Player");
         if (player != 0) Difficulty_SetPlayerEntity(self, player);
@@ -20,19 +31,19 @@ class DifficultyProbe : TegeBehavior {
     }
 
     void OnUpdate(float dt) {
-        if (Input_GetKeyDown(Key::Num1)) {
+        if (InputAction_IsPressed(actDeath)) {
             Difficulty_RecordDeath(self);
             Debug_Log("death recorded");
         }
-        if (Input_GetKeyDown(Key::Num2)) {
+        if (InputAction_IsPressed(actHit)) {
             Difficulty_RecordHit(self);
             Debug_Log("hit recorded");
         }
-        if (Input_GetKeyDown(Key::Num3)) {
+        if (InputAction_IsPressed(actShot)) {
             Difficulty_RecordShot(self);
             Debug_Log("shot recorded");
         }
-        if (Input_GetKeyDown(Key::R)) {
+        if (InputAction_IsPressed(actReset)) {
             Difficulty_Reset(self);
             Debug_Log("metrics reset");
         }

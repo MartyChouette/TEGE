@@ -915,6 +915,13 @@ jobs:
       - name: GPU layout parity (ObjectData + LightingUBO declared once)
         run: python tools/gpu_layout_parity.py --strict
 
+      # Examples and templates are what people copy. A raw key read cannot be
+      # rebound and never shows in the controls hint, How to Play or the
+      # controls screen, so every control in them goes through a named action
+      # (IN-42), and a name that is not declared would quietly read nothing.
+      - name: Example scripts read named actions
+        run: python tools/check_example_input.py
+
       # Same defect class, the other GPU layout that had no guard. triangle.vert
       # and triangle.frag read ONE push-constant flags word and each carried its
       # own hand-written #define list; bit 3 came to mean SKINNED in the vert and

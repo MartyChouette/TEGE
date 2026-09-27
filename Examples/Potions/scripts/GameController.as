@@ -62,8 +62,29 @@ class GameController : TegeBehavior {
 
     bool atCauldron = false, atExit = false, mixing = false;
 
+    // Project actions, declared in Project Settings > Input & Touch: "Choice 1"
+    // to "Choice 7" on the number keys and "Food Menu" on H. A number means a
+    // different thing on each screen (buy, throw, mix), so the actions are named
+    // for the key position and the HUD says what each one does right now.
+    // Looked up once by name, so a player can rebind them.
+    array<int> actChoice;
+    int actFood = -1;
+
+    int ChoiceAction(int n) {
+        return (n >= 1 && n <= int(actChoice.length())) ? actChoice[n - 1] : -1;
+    }
+    bool Choice(int n) { return InputAction_IsPressed(ChoiceAction(n)); }
+
     // ---------------------------------------------------------------- setup
     void OnStart() {
+        // Written out rather than built in a loop, so tools/check_example_input.py
+        // can check each name against the project file.
+        array<int> found = { InputAction_Find("Choice 1"), InputAction_Find("Choice 2"),
+                             InputAction_Find("Choice 3"), InputAction_Find("Choice 4"),
+                             InputAction_Find("Choice 5"), InputAction_Find("Choice 6"),
+                             InputAction_Find("Choice 7") };
+        actChoice = found;
+        actFood = InputAction_Find("Food Menu");
         hud        = Scene_FindEntity("GameHUD");
         fade       = Scene_FindEntity("Fade");
         homeDoor   = Scene_FindEntity("HomeDoor");
@@ -223,43 +244,44 @@ class GameController : TegeBehavior {
     // Each screen publishes its own set, because the same key means different
     // things in the shop, at the cauldron and mid-battle. Labels are capped at
     // 7 characters by the overlay.
-    void TouchAdd(const string &in label, int key) {
+    void TouchAdd(const string &in label, int action) {
         // Slot geometry is chosen by the engine in add order (bottom-right
-        // outward), so callers pick only order and label.
-        Touch_AddButton(label, key, 0.0f, 0.0f, 0.0f);
+        // outward), so callers pick only order and label. The button presses
+        // the action, so it follows a rebind.
+        Touch_AddActionButton(label, action, 0.0f, 0.0f, 0.0f);
     }
 
     void TouchTown() {
         Touch_ClearButtons();
-        TouchAdd("ENTER", Key::E);
+        TouchAdd("ENTER", GameAction::Interact);
     }
 
     void TouchShop() {
         Touch_ClearButtons();
-        TouchAdd("RED",   Key::Num1);
-        TouchAdd("YELLOW", Key::Num2);
-        TouchAdd("BLUE",  Key::Num3);
-        TouchAdd("BERRY", Key::Num4);
-        TouchAdd("SALAD", Key::Num5);
-        TouchAdd("BREAD", Key::Num6);
-        TouchAdd("LEAVE", Key::E);
+        TouchAdd("RED",   ChoiceAction(1));
+        TouchAdd("YELLOW", ChoiceAction(2));
+        TouchAdd("BLUE",  ChoiceAction(3));
+        TouchAdd("BERRY", ChoiceAction(4));
+        TouchAdd("SALAD", ChoiceAction(5));
+        TouchAdd("BREAD", ChoiceAction(6));
+        TouchAdd("LEAVE", GameAction::Interact);
     }
 
     void TouchHome() {
         Touch_ClearButtons();
-        TouchAdd("USE", Key::E);
+        TouchAdd("USE", GameAction::Interact);
     }
 
     void TouchMix() {
         Touch_ClearButtons();
-        TouchAdd("ORANGE", Key::Num1);
-        TouchAdd("GREEN",  Key::Num2);
-        TouchAdd("PURPLE", Key::Num3);
-        TouchAdd("REST",   Key::Num4);
-        TouchAdd("BUY R",  Key::Num5);
-        TouchAdd("BUY Y",  Key::Num6);
-        TouchAdd("BUY B",  Key::Num7);
-        TouchAdd("BACK",   Key::E);
+        TouchAdd("ORANGE", ChoiceAction(1));
+        TouchAdd("GREEN",  ChoiceAction(2));
+        TouchAdd("PURPLE", ChoiceAction(3));
+        TouchAdd("REST",   ChoiceAction(4));
+        TouchAdd("BUY R",  ChoiceAction(5));
+        TouchAdd("BUY Y",  ChoiceAction(6));
+        TouchAdd("BUY B",  ChoiceAction(7));
+        TouchAdd("BACK",   GameAction::Interact);
     }
 
     // The battle throws colour c on Num1 + c, in PotionData's COL_ order, so
@@ -271,26 +293,26 @@ class GameController : TegeBehavior {
     // fixed there: radius 0 now means the engine places the button.)
     void TouchBattle() {
         Touch_ClearButtons();
-        TouchAdd("RED",    Key::Num1);   // COL_RED
-        TouchAdd("ORANGE", Key::Num2);   // COL_ORANGE
-        TouchAdd("YELLOW", Key::Num3);   // COL_YELLOW
-        TouchAdd("GREEN",  Key::Num4);   // COL_GREEN
-        TouchAdd("BLUE",   Key::Num5);   // COL_BLUE
-        TouchAdd("PURPLE", Key::Num6);   // COL_PURPLE
-        TouchAdd("FOOD",   Key::Num7);
+        TouchAdd("RED",    ChoiceAction(1));   // COL_RED
+        TouchAdd("ORANGE", ChoiceAction(2));   // COL_ORANGE
+        TouchAdd("YELLOW", ChoiceAction(3));   // COL_YELLOW
+        TouchAdd("GREEN",  ChoiceAction(4));   // COL_GREEN
+        TouchAdd("BLUE",   ChoiceAction(5));   // COL_BLUE
+        TouchAdd("PURPLE", ChoiceAction(6));   // COL_PURPLE
+        TouchAdd("FOOD",   ChoiceAction(7));
     }
 
     void TouchFood() {
         Touch_ClearButtons();
-        TouchAdd("BERRY", Key::Num1);
-        TouchAdd("SALAD", Key::Num2);
-        TouchAdd("BREAD", Key::Num3);
-        TouchAdd("BACK",  Key::E);
+        TouchAdd("BERRY", ChoiceAction(1));
+        TouchAdd("SALAD", ChoiceAction(2));
+        TouchAdd("BREAD", ChoiceAction(3));
+        TouchAdd("BACK",  GameAction::Interact);
     }
 
     void TouchContinue() {
         Touch_ClearButtons();
-        TouchAdd("OK", Key::E);
+        TouchAdd("OK", GameAction::Interact);
     }
 
     void ApplyMode(int m) {
@@ -356,7 +378,7 @@ class GameController : TegeBehavior {
             } else ShowTown();
         }
 
-        if (Input_GetKeyDown(Key::E)) {
+        if (InputAction_IsPressed(GameAction::Interact)) {
             if (nearNpc != 0) { townReturn = Vector3(me.x, me.y, 0.0f); Begin(MODE_BATTLE, TownIndexOf(nearNpc)); }
             else if (nearHome) { townReturn = Vector3(-8.0f, -2.0f, 0.0f); Begin(MODE_HOME, -1); }
             else if (nearShop) { townReturn = Vector3(1.0f, -2.0f, 0.0f); Begin(MODE_SHOP, -1); }
@@ -402,13 +424,13 @@ class GameController : TegeBehavior {
     }
 
     void UpdateShop(float dt) {
-        if (Input_GetKeyDown(Key::E)) { Begin(MODE_TOWN, -1); return; }
-        if (Input_GetKeyDown(Key::Num1)) BuyShopPotion(COL_RED);
-        else if (Input_GetKeyDown(Key::Num2)) BuyShopPotion(COL_YELLOW);
-        else if (Input_GetKeyDown(Key::Num3)) BuyShopPotion(COL_BLUE);
-        else if (Input_GetKeyDown(Key::Num4)) BuyShopItem(ITEM_BERRIES);
-        else if (Input_GetKeyDown(Key::Num5)) BuyShopItem(ITEM_SALAD);
-        else if (Input_GetKeyDown(Key::Num6)) BuyShopItem(ITEM_BAGUETTE);
+        if (InputAction_IsPressed(GameAction::Interact)) { Begin(MODE_TOWN, -1); return; }
+        if (Choice(1)) BuyShopPotion(COL_RED);
+        else if (Choice(2)) BuyShopPotion(COL_YELLOW);
+        else if (Choice(3)) BuyShopPotion(COL_BLUE);
+        else if (Choice(4)) BuyShopItem(ITEM_BERRIES);
+        else if (Choice(5)) BuyShopItem(ITEM_SALAD);
+        else if (Choice(6)) BuyShopItem(ITEM_BAGUETTE);
     }
 
     void BuyShopPotion(int c) {
@@ -443,7 +465,7 @@ class GameController : TegeBehavior {
 
     void UpdateBattle(float dt) {
         if (bstate == BST_STATS) {
-            if (Input_GetKeyDown(Key::E) || Input_GetKeyDown(Key::Enter)) Begin(MODE_TOWN, -1);
+            if (InputAction_IsPressed(GameAction::Interact) || InputAction_IsPressed(GameAction::UIConfirm)) Begin(MODE_TOWN, -1);
             return;
         }
 
@@ -452,14 +474,14 @@ class GameController : TegeBehavior {
             return;
         }
 
-        if (Input_GetKeyDown(Key::Num7) || Input_GetKeyDown(Key::H)) {
+        if (Choice(7) || InputAction_IsPressed(actFood)) {
             bstate = BST_FOOD;
             ShowFoodMenu("");
             return;
         }
 
         for (int c = 0; c < COL_COUNT; c++) {
-            if (Input_GetKeyDown(int(Key::Num1) + c)) {
+            if (Choice(1 + c)) {
                 int cost = ColorMPCost(c);
                 if (bag[c] <= 0) ShowBattleMenu("No " + ColorName(c) + " potions left! Mix or buy more.");
                 else if (mp < cost) ShowBattleMenu("Not enough MP! " + ColorName(c) + " costs " + cost + " MP (You have " + mp + ").");
@@ -503,10 +525,10 @@ class GameController : TegeBehavior {
     }
 
     void UpdateFoodMenu() {
-        if (Input_GetKeyDown(Key::E)) { bstate = BST_FIGHT; ShowBattleMenu(""); return; }
-        if (Input_GetKeyDown(Key::Num1)) UseFoodInBattle(ITEM_BERRIES);
-        else if (Input_GetKeyDown(Key::Num2)) UseFoodInBattle(ITEM_SALAD);
-        else if (Input_GetKeyDown(Key::Num3)) UseFoodInBattle(ITEM_BAGUETTE);
+        if (InputAction_IsPressed(GameAction::Interact)) { bstate = BST_FIGHT; ShowBattleMenu(""); return; }
+        if (Choice(1)) UseFoodInBattle(ITEM_BERRIES);
+        else if (Choice(2)) UseFoodInBattle(ITEM_SALAD);
+        else if (Choice(3)) UseFoodInBattle(ITEM_BAGUETTE);
     }
 
     void UseFoodInBattle(int it) {
@@ -627,21 +649,21 @@ class GameController : TegeBehavior {
             else ShowHome("");
         }
 
-        if (Input_GetKeyDown(Key::E)) {
+        if (InputAction_IsPressed(GameAction::Interact)) {
             if (atCauldron) { mixing = true; ShowMix(""); }
             else if (atExit) { townReturn = Vector3(-8.0f, -2.0f, 0.0f); Begin(MODE_TOWN, -1); }
         }
     }
 
     void UpdateMix() {
-        if (Input_GetKeyDown(Key::E)) { mixing = false; ShowHome(""); return; }
-        if (Input_GetKeyDown(Key::Num1)) Mix(COL_RED, COL_YELLOW, COL_ORANGE);
-        else if (Input_GetKeyDown(Key::Num2)) Mix(COL_YELLOW, COL_BLUE, COL_GREEN);
-        else if (Input_GetKeyDown(Key::Num3)) Mix(COL_BLUE, COL_RED, COL_PURPLE);
-        else if (Input_GetKeyDown(Key::Num4)) { hp = maxHP; mp = maxMP; ShowMix("Rested at bed! HP and MP fully restored."); }
-        else if (Input_GetKeyDown(Key::Num5)) BuyHome(COL_RED);
-        else if (Input_GetKeyDown(Key::Num6)) BuyHome(COL_YELLOW);
-        else if (Input_GetKeyDown(Key::Num7)) BuyHome(COL_BLUE);
+        if (InputAction_IsPressed(GameAction::Interact)) { mixing = false; ShowHome(""); return; }
+        if (Choice(1)) Mix(COL_RED, COL_YELLOW, COL_ORANGE);
+        else if (Choice(2)) Mix(COL_YELLOW, COL_BLUE, COL_GREEN);
+        else if (Choice(3)) Mix(COL_BLUE, COL_RED, COL_PURPLE);
+        else if (Choice(4)) { hp = maxHP; mp = maxMP; ShowMix("Rested at bed! HP and MP fully restored."); }
+        else if (Choice(5)) BuyHome(COL_RED);
+        else if (Choice(6)) BuyHome(COL_YELLOW);
+        else if (Choice(7)) BuyHome(COL_BLUE);
     }
 
     void Mix(int a, int b, int r) {
@@ -667,7 +689,7 @@ class GameController : TegeBehavior {
     }
 
     void UpdateVictory(float dt) {
-        if (Input_GetKeyDown(Key::E) || Input_GetKeyDown(Key::Enter)) {
+        if (InputAction_IsPressed(GameAction::Interact) || InputAction_IsPressed(GameAction::UIConfirm)) {
             townIndex = 0;
             hp = START_HP; maxHP = START_HP;
             mp = START_MP; maxMP = START_MP;

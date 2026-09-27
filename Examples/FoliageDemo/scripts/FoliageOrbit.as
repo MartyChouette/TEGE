@@ -54,7 +54,7 @@ class FoliageOrbit : TegeBehavior {
         // Only while a pointer is down, so the camera does not chase a hovering
         // mouse. A two-finger pinch must not also spin the view, or zooming
         // yanks the camera sideways.
-        if (Input_GetMouseButton(0) && Input_GetTouchCount() < 2) {
+        if (Input_GetMouseButton(0) && Input_GetTouchCount() < 2) {   // raw-input-ok: pointer drag orbits the camera, a gesture rather than a button
             Vector2 d = Input_GetMouseDelta();
             if (d.x != 0.0f || d.y != 0.0f) {
                 yaw -= d.x * DRAG_SPEED;

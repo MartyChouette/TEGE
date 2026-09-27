@@ -15,7 +15,22 @@ class FixedTimeDemo : TegeBehavior {
     float CYCLE_SECONDS = 4.0f;   // not const: AngelScript forbids const class properties
     float sinceCycle = 0.0f;
 
+    // Project actions, declared in Project Settings > Input & Touch with the
+    // keys 1-4 and R, so a player can rebind them and they show in the controls
+    // screen. Looked up by name once; -1 means the project does not declare it.
+    int actSlowMo = -1;
+    int actHitstop = -1;
+    int actNormal = -1;
+    int actBulletTime = -1;
+    int actReset = -1;
+
     void OnStart() {
+        actSlowMo     = InputAction_Find("Slow Motion");
+        actHitstop    = InputAction_Find("Hitstop");
+        actNormal     = InputAction_Find("Normal Speed");
+        actBulletTime = InputAction_Find("Bullet Time");
+        actReset      = InputAction_Find("Reset");
+
         // Remember every dynamic body's starting pose so R can reset the scene
         // instantly (Scene_Restart needs the SceneManager to own the scene,
         // which is true in exported games but not in editor play).
@@ -49,19 +64,19 @@ class FixedTimeDemo : TegeBehavior {
     }
 
     void OnUpdate(float dt) {
-        if (Input_GetKeyDown(Key::Num1)) {
+        if (InputAction_IsPressed(actSlowMo)) {
             Time_SetScale(0.25f);
             Debug_Log("Time scale 0.25x (slow-mo) - fixed ticks so far: " + fixedTicks);
         }
-        if (Input_GetKeyDown(Key::Num2)) {
+        if (InputAction_IsPressed(actHitstop)) {
             Time_SetScale(0.05f);
             Debug_Log("Time scale 0.05x (hitstop) - fixed ticks so far: " + fixedTicks);
         }
-        if (Input_GetKeyDown(Key::Num3)) {
+        if (InputAction_IsPressed(actNormal)) {
             Time_SetScale(1.0f);
             Debug_Log("Time scale 1.0x (normal) - fixed ticks so far: " + fixedTicks);
         }
-        if (Input_GetKeyDown(Key::Num4)) {
+        if (InputAction_IsPressed(actBulletTime)) {
             // BULLET TIME: world at 0.15x, the player at normal speed.
             uint64 player = Scene_FindEntity("Player");
             bool on = !Controller_GetIgnoreTimeScale(player);
@@ -69,8 +84,8 @@ class FixedTimeDemo : TegeBehavior {
             Time_SetScale(on ? 0.15f : 1.0f);
             Debug_Log(on ? "BULLET TIME: world 0.15x, you 1.0x" : "Bullet time off");
         }
-        if (Input_GetKeyDown(Key::E)) {
-            // Kick every crate toward +Y with some sideways scatter
+        if (InputAction_IsPressed(GameAction::Interact)) {
+            // Kick every crate (Interact, E by default) toward +Y with some sideways scatter
             for (int i = 0; i < 10; i++) {
                 uint64 crate = Scene_FindEntity("Crate" + i);
                 if (crate == 0) continue;
@@ -81,7 +96,7 @@ class FixedTimeDemo : TegeBehavior {
             }
             Debug_Log("Kicked the crates");
         }
-        if (Input_GetKeyDown(Key::R)) {
+        if (InputAction_IsPressed(actReset)) {
             ResetBodies();
         }
 
@@ -99,7 +114,7 @@ class FixedTimeDemo : TegeBehavior {
         // Any key that changes the scene pushes the next cycle back, so the loop
         // never interrupts someone experimenting.
         sinceCycle += dt;
-        if (Input_GetKeyDown(Key::E) || Input_GetKeyDown(Key::R)) sinceCycle = 0.0f;
+        if (InputAction_IsPressed(GameAction::Interact) || InputAction_IsPressed(actReset)) sinceCycle = 0.0f;
         if (sinceCycle >= CYCLE_SECONDS) {
             sinceCycle = 0.0f;
             ResetBodies();

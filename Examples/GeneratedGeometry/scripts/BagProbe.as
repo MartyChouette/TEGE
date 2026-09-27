@@ -10,7 +10,14 @@ class BagProbe : TegeBehavior {
     array<string> labels;
     float autoTimer = 0.0f;
 
+    // Project actions (Project Settings > Input & Touch), D and A by default,
+    // so they can be rebound and show in the controls screen.
+    int actDrawOnce = -1;
+    int actDrawTen = -1;
+
     void OnStart() {
+        actDrawOnce = InputAction_Find("Draw Once");
+        actDrawTen  = InputAction_Find("Draw Ten");
         Add("Bag_Uniform",   "uniform  ");
         Add("Bag_Weighted",  "weighted ");
         Add("Bag_NoReplace", "noReplace");
@@ -39,8 +46,8 @@ class BagProbe : TegeBehavior {
     }
 
     void OnUpdate(float dt) {
-        if (Input_GetKeyDown(Key::D)) DrawAll();
-        if (Input_GetKeyDown(Key::A)) {
+        if (InputAction_IsPressed(actDrawOnce)) DrawAll();
+        if (InputAction_IsPressed(actDrawTen)) {
             for (int i = 0; i < 10; i++) DrawAll();
         }
 

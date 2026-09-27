@@ -3,7 +3,11 @@
 // weather-linked the scripted way: visible only while it rains.
 class WaterFXDemo : TegeBehavior {
     bool raining = false;
+    // "Toggle Rain" is a project action (Project Settings > Input & Touch), R by
+    // default, so it can be rebound and shows in the controls screen.
+    int actRain = -1;
     void OnStart() {
+        actRain = InputAction_Find("Toggle Rain");
         SetRunoff(false);
         Debug_Log("WaterFX: R toggles rain (roof runoff strips)");
     }
@@ -14,7 +18,7 @@ class WaterFXDemo : TegeBehavior {
         }
     }
     void OnUpdate(float dt) {
-        if (Input_GetKeyDown(Key::R)) {
+        if (InputAction_IsPressed(actRain)) {
             raining = !raining;
             Render_SetRainActive(raining);
             Weather_SetRainIntensity(raining ? 0.8f : 0.0f);

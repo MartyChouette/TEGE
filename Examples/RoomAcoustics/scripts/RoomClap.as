@@ -10,6 +10,10 @@
 //   P       projectors on and off
 //   R       say where the listener is
 //
+// These are project actions ("Clap", "Toggle Projectors", "Where Am I"),
+// declared in Project Settings > Input & Touch with those keys, so a player
+// can rebind them and they show in the controls screen.
+//
 // Q rather than SPACE because SPACE is Jump, and a demo where auditioning the
 // room also launches you into the ceiling is a demo you fight. The keys still
 // free with a third-person controller in the scene are Q, R, and P: WASD and the
@@ -34,7 +38,14 @@ class RoomClap : TegeBehavior {
     uint64 hallProjector = 0;
     uint64 basementProjector = 0;
 
+    int actClap = -1;
+    int actProjectors = -1;
+    int actWhere = -1;
+
     void OnStart() {
+        actClap       = InputAction_Find("Clap");
+        actProjectors = InputAction_Find("Toggle Projectors");
+        actWhere      = InputAction_Find("Where Am I");
         player = Scene_FindEntity("Player");
         kitchenProjector = Scene_FindEntity("Projector - tiled kitchen");
         hallProjector = Scene_FindEntity("Projector - wooden hall");
@@ -51,7 +62,7 @@ class RoomClap : TegeBehavior {
 
         // A clap where the listener is, so the room you are standing in is the
         // room that answers.
-        if (Input_GetKeyDown(Key::Q) && sinceClap >= clapCooldown) {
+        if (InputAction_IsPressed(actClap) && sinceClap >= clapCooldown) {
             sinceClap = 0.0f;
             Vector3 here = Vector3(0, 1.6f, 0);
             if (player != 0) here = Entity_GetPosition(player);
@@ -61,7 +72,7 @@ class RoomClap : TegeBehavior {
         // The projectors are the "sits against the back wall" cue, and they are
         // also the thing that makes a tail hard to hear. Being able to shut them
         // up is most of what makes this demo usable.
-        if (Input_GetKeyDown(Key::P)) {
+        if (InputAction_IsPressed(actProjectors)) {
             projectorsOn = !projectorsOn;
             if (projectorsOn) {
                 if (kitchenProjector != 0) Audio_Play(kitchenProjector);
@@ -76,7 +87,7 @@ class RoomClap : TegeBehavior {
             }
         }
 
-        if (Input_GetKeyDown(Key::R)) {
+        if (InputAction_IsPressed(actWhere)) {
             if (player != 0) {
                 Vector3 p = Entity_GetPosition(player);
                 Debug_Log("Listener at " + p.x + ", " + p.y + ", " + p.z);

@@ -9,8 +9,19 @@ class WebDemoInput : TegeBehavior {
     float slideTarget = 1.0f;
     float pulseT = 0.0f;
     bool menuOpen = false;
+    int actMenu = -1;
 
     void OnStart() {
+        // The menu key is a named action so it can be rebound and shows in the
+        // controls screen. A template has no project file to declare it in, so
+        // when the project has not declared "Settings Menu" (Project Settings >
+        // Input & Touch) the script defines it with Tab and the pad's Back button.
+        actMenu = InputAction_Find("Settings Menu");
+        if (actMenu < 0) {
+            actMenu = InputAction_Define("Settings Menu");
+            InputAction_Rebind(actMenu, Key::Tab);
+            InputAction_AddGamepadBinding(actMenu, GamepadBtn::Back);
+        }
         menuCanvas = Scene_FindEntity("Accessibility Menu");
         hintCanvas = Scene_FindEntity("Tab Hint");
         player = Scene_FindEntity("Player");
@@ -20,7 +31,7 @@ class WebDemoInput : TegeBehavior {
     }
 
     void OnUpdate(float dt) {
-        if (Input_GetKeyDown(Key::Tab)) {
+        if (InputAction_IsPressed(actMenu)) {
             menuOpen = !menuOpen;
             slideTarget = menuOpen ? 0.0f : 1.0f;
             Input_SetMouseCaptured(!menuOpen);

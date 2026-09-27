@@ -7,5 +7,17 @@
    "buildIndex": 0,
    "isStartScene": true
   }
- ]
+ ],
+ "input": {
+  "customActions": [
+   {
+    "slot": 3,
+    "name": "Colorblind Mode",
+    "key": 67,
+    "mouse": -1,
+    "gamepad": -1,
+    "mode": 2
+   }
+  ]
+ }
 }

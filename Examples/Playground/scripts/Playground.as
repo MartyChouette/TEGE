@@ -100,7 +100,10 @@ class Playground : TegeBehavior {
         }
 
         // ---- accessibility: C cycles colorblind simulation modes ----
-        if (Input_GetKeyDown(Key::C)) {
+        // "Colorblind Mode" is declared in the project (Project Settings >
+        // Input & Touch) rather than here, so its key can be rebound there.
+        if (actColorblind == -2) actColorblind = InputAction_Find("Colorblind Mode");
+        if (InputAction_IsPressed(actColorblind)) {
             cbMode = (cbMode + 1) % 4;
             Colorblind_SetMode(cbMode);
             string name = "off";
@@ -111,6 +114,8 @@ class Playground : TegeBehavior {
             Announcer_Announce("Colorblind mode " + name);
         }
     }
+
+    int actColorblind = -2;   // -2 = not looked up yet
 
     float min(float a, float b) { return a < b ? a : b; }
 }

@@ -29,10 +29,15 @@ class GeometryTour : TegeBehavior {
 
     bool paused = false;
 
+    // "Pause Blobs" is a project action (Project Settings > Input & Touch),
+    // Space by default, so it can be rebound and shows in the controls screen.
+    int actPause = -2;   // -2 = not looked up yet
+
     void OnUpdate(float dt) {
+        if (actPause == -2) actPause = InputAction_Find("Pause Blobs");
         t += dt;
 
-        if (Input_GetKeyDown(Key::Space)) paused = !paused;
+        if (InputAction_IsPressed(actPause)) paused = !paused;
         if (!paused) {
             // The blobs orbit at slightly different radii so the isosurface
             // pinches and merges instead of holding one steady shape.

@@ -13,5 +13,49 @@
     "vSync": false,
     "fixedTimestep": true,
     "physicsTicksPerSecond": 60
+  },
+  "input": {
+    "customActions": [
+      {
+        "slot": 0,
+        "name": "Slow Motion",
+        "key": 49,
+        "mouse": -1,
+        "gamepad": -1,
+        "mode": 2
+      },
+      {
+        "slot": 1,
+        "name": "Hitstop",
+        "key": 50,
+        "mouse": -1,
+        "gamepad": -1,
+        "mode": 2
+      },
+      {
+        "slot": 2,
+        "name": "Normal Speed",
+        "key": 51,
+        "mouse": -1,
+        "gamepad": -1,
+        "mode": 2
+      },
+      {
+        "slot": 3,
+        "name": "Bullet Time",
+        "key": 52,
+        "mouse": -1,
+        "gamepad": -1,
+        "mode": 2
+      },
+      {
+        "slot": 4,
+        "name": "Reset",
+        "key": 82,
+        "mouse": -1,
+        "gamepad": -1,
+        "mode": 2
+      }
+    ]
   }
 }

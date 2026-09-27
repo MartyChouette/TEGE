@@ -143,11 +143,12 @@ class BiscuitGame : TegeBehavior {
         RefreshHUD();
     }
 
+    // Same inputs as the bird's flap: Jump (Space, pad A) and MoveForward (W,
+    // Up), through the action map so a rebind moves them too.
     bool Tapped() {
-        return Input_GetMouseButtonDown(MouseBtn::Left)
-            || Input_GetKeyDown(Key::Space)
-            || Input_GetKeyDown(Key::W)
-            || Input_GetKeyDown(Key::Up);
+        return Input_GetMouseButtonDown(MouseBtn::Left)   // raw-input-ok: a tap anywhere on screen is the phone control scheme
+            || InputAction_IsPressed(GameAction::Jump)
+            || InputAction_IsPressed(GameAction::MoveForward);
     }
 
     void TrackBird(float dt) {

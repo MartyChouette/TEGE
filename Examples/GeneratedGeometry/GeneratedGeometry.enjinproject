@@ -57,5 +57,65 @@
    "buildIndex": 10,
    "isStartScene": false
   }
- ]
+ ],
+ "input": {
+  "customActions": [
+   {
+    "slot": 0,
+    "name": "Pause Blobs",
+    "key": 32,
+    "mouse": -1,
+    "gamepad": -1,
+    "mode": 2
+   },
+   {
+    "slot": 1,
+    "name": "Draw Once",
+    "key": 68,
+    "mouse": -1,
+    "gamepad": -1,
+    "mode": 2
+   },
+   {
+    "slot": 2,
+    "name": "Draw Ten",
+    "key": 65,
+    "mouse": -1,
+    "gamepad": -1,
+    "mode": 2
+   },
+   {
+    "slot": 3,
+    "name": "Record Death",
+    "key": 49,
+    "mouse": -1,
+    "gamepad": -1,
+    "mode": 2
+   },
+   {
+    "slot": 4,
+    "name": "Record Hit",
+    "key": 50,
+    "mouse": -1,
+    "gamepad": -1,
+    "mode": 2
+   },
+   {
+    "slot": 5,
+    "name": "Record Shot",
+    "key": 51,
+    "mouse": -1,
+    "gamepad": -1,
+    "mode": 2
+   },
+   {
+    "slot": 6,
+    "name": "Reset Difficulty",
+    "key": 82,
+    "mouse": -1,
+    "gamepad": -1,
+    "mode": 2
+   }
+  ]
+ }
 }

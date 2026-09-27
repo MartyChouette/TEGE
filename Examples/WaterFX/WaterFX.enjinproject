@@ -8,5 +8,17 @@
       "buildIndex": 0,
       "isStartScene": true
     }
-  ]
+  ],
+  "input": {
+    "customActions": [
+      {
+        "slot": 0,
+        "name": "Toggle Rain",
+        "key": 82,
+        "mouse": -1,
+        "gamepad": -1,
+        "mode": 2
+      }
+    ]
+  }
 }

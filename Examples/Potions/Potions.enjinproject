@@ -329,6 +329,74 @@
     "targetFrameRate": 0,
     "vSync": false
   },
+  "input": {
+    "customActions": [
+      {
+        "slot": 0,
+        "name": "Choice 1",
+        "key": 49,
+        "mouse": -1,
+        "gamepad": -1,
+        "mode": 2
+      },
+      {
+        "slot": 1,
+        "name": "Choice 2",
+        "key": 50,
+        "mouse": -1,
+        "gamepad": -1,
+        "mode": 2
+      },
+      {
+        "slot": 2,
+        "name": "Choice 3",
+        "key": 51,
+        "mouse": -1,
+        "gamepad": -1,
+        "mode": 2
+      },
+      {
+        "slot": 3,
+        "name": "Choice 4",
+        "key": 52,
+        "mouse": -1,
+        "gamepad": -1,
+        "mode": 2
+      },
+      {
+        "slot": 4,
+        "name": "Choice 5",
+        "key": 53,
+        "mouse": -1,
+        "gamepad": -1,
+        "mode": 2
+      },
+      {
+        "slot": 5,
+        "name": "Choice 6",
+        "key": 54,
+        "mouse": -1,
+        "gamepad": -1,
+        "mode": 2
+      },
+      {
+        "slot": 6,
+        "name": "Choice 7",
+        "key": 55,
+        "mouse": -1,
+        "gamepad": -1,
+        "mode": 2
+      },
+      {
+        "slot": 7,
+        "name": "Food Menu",
+        "key": 72,
+        "mouse": -1,
+        "gamepad": -1,
+        "mode": 2
+      }
+    ]
+  },
   "physicsBackend": 0,
   "projectMode": 2,
   "projectName": "Potions",

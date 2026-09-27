@@ -12,5 +12,33 @@
    "buildIndex": 1,
    "isStartScene": false
   }
- ]
+ ],
+ "input": {
+  "customActions": [
+   {
+    "slot": 0,
+    "name": "Clap",
+    "key": 81,
+    "mouse": -1,
+    "gamepad": -1,
+    "mode": 2
+   },
+   {
+    "slot": 1,
+    "name": "Toggle Projectors",
+    "key": 80,
+    "mouse": -1,
+    "gamepad": -1,
+    "mode": 2
+   },
+   {
+    "slot": 2,
+    "name": "Where Am I",
+    "key": 82,
+    "mouse": -1,
+    "gamepad": -1,
+    "mode": 2
+   }
+  ]
+ }
 }

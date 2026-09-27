@@ -30,11 +30,13 @@ class PlayerController : TegeBehavior {
     }
 
     void OnUpdate(float dt) {
+        // Movement reads the built-in actions, not keys: they carry WASD, the
+        // arrow keys and the left stick, and a player can rebind them.
         Vector3 move = Vector3(0, 0, 0);
-        if (Input_GetKey(Key::W)) move.z -= 1.0f;
-        if (Input_GetKey(Key::S)) move.z += 1.0f;
-        if (Input_GetKey(Key::A)) move.x -= 1.0f;
-        if (Input_GetKey(Key::D)) move.x += 1.0f;
+        if (InputAction_IsDown(GameAction::MoveForward)) move.z -= 1.0f;
+        if (InputAction_IsDown(GameAction::MoveBack))    move.z += 1.0f;
+        if (InputAction_IsDown(GameAction::MoveLeft))    move.x -= 1.0f;
+        if (InputAction_IsDown(GameAction::MoveRight))   move.x += 1.0f;
 
         if (move.Length() > 0.001f) {
             move = move.Normalized() * (moveSpeed * dt);

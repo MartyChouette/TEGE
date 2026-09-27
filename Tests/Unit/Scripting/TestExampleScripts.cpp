@@ -85,11 +85,17 @@ ENJIN_TEST(ExampleScripts, EveryShippedExampleScriptCompiles) {
         return;
     }
 
+    // The new-project templates too: they are the other thing people copy, and
+    // the hub writes them into a user's project with no compile in between
+    const fs::path repo = fs::path(ENJIN_REPO_ROOT);
     std::vector<fs::path> scripts;
-    for (const auto& entry : fs::recursive_directory_iterator(examples)) {
-        if (!entry.is_regular_file()) continue;
-        if (entry.path().extension() != ".as") continue;
-        scripts.push_back(entry.path());
+    for (const fs::path& root : { examples, repo / "builtin_templates" }) {
+        if (!fs::is_directory(root)) continue;
+        for (const auto& entry : fs::recursive_directory_iterator(root)) {
+            if (!entry.is_regular_file()) continue;
+            if (entry.path().extension() != ".as") continue;
+            scripts.push_back(entry.path());
+        }
     }
     std::sort(scripts.begin(), scripts.end());
 
@@ -121,7 +127,7 @@ ENJIN_TEST(ExampleScripts, EveryShippedExampleScriptCompiles) {
         engine.SetScriptDirectory(p.parent_path().string());
 
         const std::string source = ReadFile(p);
-        const std::string rel = fs::relative(p, examples).generic_string();
+        const std::string rel = fs::relative(p, repo).generic_string();
         std::printf("    %s\n", rel.c_str());
         std::fflush(stdout);   // the compiler logs through a different stream
 
@@ -132,7 +138,7 @@ ENJIN_TEST(ExampleScripts, EveryShippedExampleScriptCompiles) {
 
         ++failed;
         char buf[1024];
-        std::snprintf(buf, sizeof(buf), "Examples/%s does not compile: %s",
+        std::snprintf(buf, sizeof(buf), "%s does not compile: %s",
                       rel.c_str(), engine.GetLastError().c_str());
         EnjinTest::ReportFailureMsg(__FILE__, __LINE__, buf);
     }

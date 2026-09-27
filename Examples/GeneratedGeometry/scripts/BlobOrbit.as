@@ -9,7 +9,12 @@ class BlobOrbit : TegeBehavior {
     float t = 0.0f;
     bool paused = false;
 
+    // "Pause Blobs" is a project action (Project Settings > Input & Touch),
+    // Space by default, so it can be rebound and shows in the controls screen.
+    int actPause = -1;
+
     void OnStart() {
+        actPause = InputAction_Find("Pause Blobs");
         for (int i = 0; i < 7; i++) {
             uint64 b = Scene_FindEntity("Blob" + i);
             if (b == 0) continue;
@@ -23,7 +28,7 @@ class BlobOrbit : TegeBehavior {
     }
 
     void OnUpdate(float dt) {
-        if (Input_GetKeyDown(Key::Space)) paused = !paused;
+        if (InputAction_IsPressed(actPause)) paused = !paused;
         if (paused) return;
 
         t += dt;

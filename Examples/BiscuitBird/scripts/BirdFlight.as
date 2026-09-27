@@ -104,7 +104,8 @@ class BirdFlight : TegeBehavior {
     // A tap flaps, the left stick steers.
     //
     // The keyboard and gamepad routes go through the ACTION MAP rather than
-    // polling physical keys: Jump already carries Space and gamepad A, and
+    // polling physical keys: Jump already carries Space and gamepad A,
+    // MoveForward carries W and Up (and the stick pushed up), and
     // MoveLeft/MoveRight already carry A/D, the arrow keys and the left stick's
     // X axis. Reading actions means this bird gains the stick, gains rebinding,
     // and appears in the controls screen and the touch overlay, none of which a
@@ -113,10 +114,9 @@ class BirdFlight : TegeBehavior {
     // The raw pointer tap stays: tapping ANYWHERE flaps, which is the whole
     // control scheme on a phone and is not something an action button expresses.
     bool Tapped() {
-        return Input_GetMouseButtonDown(MouseBtn::Left)
+        return Input_GetMouseButtonDown(MouseBtn::Left)   // raw-input-ok: a tap anywhere on screen is the phone control scheme
             || InputAction_IsPressed(GameAction::Jump)
-            || Input_GetKeyDown(Key::W)
-            || Input_GetKeyDown(Key::Up);
+            || InputAction_IsPressed(GameAction::MoveForward);
     }
 
     float SteerInput() {
@@ -126,7 +126,7 @@ class BirdFlight : TegeBehavior {
                 - InputAction_GetValue(GameAction::MoveLeft);
 
         // Held pointer: distance from the middle of the screen is the stick.
-        if (Input_GetMouseButton(MouseBtn::Left)) {
+        if (Input_GetMouseButton(MouseBtn::Left)) {   // raw-input-ok: the held pointer's screen position is the steering stick
             Vector2 size = Input_GetScreenSize();
             if (size.x > 1.0f) {
                 Vector2 m = Input_GetMousePosition();
