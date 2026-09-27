@@ -1,4 +1,5 @@
 #include "Enjin/Renderer/VectorTessellator.h"
+#include "Enjin/Platform/AssetFS.h"
 #include "Enjin/Logging/Log.h"
 
 // NANOSVG_IMPLEMENTATION lives in SVGLoader.cpp; this file only uses the API.
@@ -224,7 +225,16 @@ TessellatedGraphic TessellateImage(NSVGimage* image, f32 tol) {
 } // namespace
 
 TessellatedGraphic TessellateSVG(const std::string& path, f32 curveTolerance) {
-    NSVGimage* image = nsvgParseFromFile(path.c_str(), "px", 96.0f);
+    // Through AssetFS (EP-18). nsvgParse edits its buffer, hence the copy.
+    NSVGimage* image = nullptr;
+    {
+        std::vector<u8> bytes;
+        if (Platform::AssetFS::ReadBytes(path, bytes)) {
+            std::vector<char> buf(bytes.begin(), bytes.end());
+            buf.push_back('\0');
+            image = nsvgParse(buf.data(), "px", 96.0f);
+        }
+    }
     if (!image) {
         ENJIN_LOG_WARN(Renderer, "VectorTessellator: failed to parse SVG '%s'", path.c_str());
         return {};

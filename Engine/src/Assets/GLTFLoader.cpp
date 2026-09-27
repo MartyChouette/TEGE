@@ -3,10 +3,32 @@
 
 #include "Enjin/Assets/GLTFLoader.h"
 #include "Enjin/Logging/Log.h"
+#include "Enjin/Platform/AssetFS.h"
+#include <cstdlib>
+#include <cstring>
 #include <filesystem>
 
 namespace Enjin {
 namespace Assets {
+
+namespace {
+// cgltf opens the .gltf and every external .bin itself. These hand it the
+// bytes through AssetFS instead, so a packed build finds both (EP-18).
+cgltf_result AssetFSRead(const cgltf_memory_options*, const cgltf_file_options*,
+                         const char* path, cgltf_size* size, void** data) {
+    std::vector<u8> bytes;
+    if (!path || !Platform::AssetFS::ReadBytes(path, bytes)) return cgltf_result_file_not_found;
+    void* mem = std::malloc(bytes.empty() ? 1 : bytes.size());
+    if (!mem) return cgltf_result_out_of_memory;
+    if (!bytes.empty()) std::memcpy(mem, bytes.data(), bytes.size());
+    *size = bytes.size();
+    *data = mem;
+    return cgltf_result_success;
+}
+void AssetFSRelease(const cgltf_memory_options*, const cgltf_file_options*, void* data, cgltf_size) {
+    std::free(data);
+}
+} // namespace
 
 std::string GLTFLoader::s_LastError;
 
@@ -15,6 +37,8 @@ bool GLTFLoader::Load(const std::string& filepath, GLTFScene& outScene) {
 
     // Parse the glTF file
     cgltf_options options = {};
+    options.file.read = &AssetFSRead;
+    options.file.release = &AssetFSRelease;
     cgltf_data* data = nullptr;
     cgltf_result result = cgltf_parse_file(&options, filepath.c_str(), &data);
 

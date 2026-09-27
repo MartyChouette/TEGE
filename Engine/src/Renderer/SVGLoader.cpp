@@ -1,4 +1,5 @@
 #include "Enjin/Renderer/SVGLoader.h"
+#include "Enjin/Platform/AssetFS.h"
 #include "Enjin/Renderer/SDFGenerator.h"
 #include "Enjin/Logging/Log.h"
 
@@ -18,7 +19,16 @@ namespace Renderer {
 SVGImage SVGLoader::LoadAndRasterize(const std::string& path, f32 scale) {
     SVGImage result;
 
-    NSVGimage* svgImage = nsvgParseFromFile(path.c_str(), "px", 96.0f);
+    // Through AssetFS (EP-18). nsvgParse edits its buffer, hence the copy.
+    NSVGimage* svgImage = nullptr;
+    {
+        std::vector<u8> bytes;
+        if (Platform::AssetFS::ReadBytes(path, bytes)) {
+            std::vector<char> buf(bytes.begin(), bytes.end());
+            buf.push_back('\0');
+            svgImage = nsvgParse(buf.data(), "px", 96.0f);
+        }
+    }
     if (!svgImage) {
         ENJIN_LOG_ERROR(Renderer, "SVGLoader: Failed to parse SVG file: %s", path.c_str());
         return result;

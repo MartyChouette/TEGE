@@ -1,4 +1,6 @@
 #include "Enjin/Assets/VOXLoader.h"
+#include "Enjin/Platform/AssetFS.h"
+#include <sstream>
 #include "Enjin/Logging/Log.h"
 #include <fstream>
 #include <cstring>
@@ -14,8 +16,11 @@ bool VOXLoader::Load(const std::string& filepath, VOXModel& outModel) {
     s_LastError.clear();
     outModel = VOXModel{};
 
-    std::ifstream file(filepath, std::ios::binary);
-    if (!file.is_open()) {
+    // Through AssetFS, so a packed build reads the pak's copy (EP-18)
+    std::vector<u8> fileBytes;
+    const bool fileOpened = Platform::AssetFS::ReadBytes(filepath, fileBytes);
+    std::istringstream file(std::string(fileBytes.begin(), fileBytes.end()), std::ios::binary);
+    if (!fileOpened) {
         s_LastError = "Failed to open VOX file: " + filepath;
         ENJIN_LOG_ERROR(Asset, "%s", s_LastError.c_str());
         return false;

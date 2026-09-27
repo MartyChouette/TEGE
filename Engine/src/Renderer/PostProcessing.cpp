@@ -1,4 +1,5 @@
 #include "Enjin/Renderer/PostProcessing.h"
+#include "Enjin/Platform/AssetFS.h"
 #include "Enjin/Renderer/Vulkan/VulkanContext.h"
 #include "Enjin/Renderer/Vulkan/VulkanRenderer.h"
 #include "Enjin/Renderer/Vulkan/VulkanBuffer.h"
@@ -1109,7 +1110,12 @@ bool PostProcessing::LoadLUT(const std::string& filepath) {
 
     // Load image using stb_image
     int width, height, channels;
-    unsigned char* pixels = stbi_load(filepath.c_str(), &width, &height, &channels, 4);
+    unsigned char* pixels = nullptr;
+    {
+        std::vector<u8> bytes;   // through AssetFS, so a packed build finds it (EP-18)
+        if (Platform::AssetFS::ReadBytes(filepath, bytes) && !bytes.empty())
+            pixels = stbi_load_from_memory(bytes.data(), static_cast<int>(bytes.size()), &width, &height, &channels, 4);
+    }
     if (!pixels) {
         ENJIN_LOG_ERROR(Renderer, "Failed to load LUT image: %s", filepath.c_str());
         return false;

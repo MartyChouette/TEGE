@@ -5,12 +5,62 @@
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
+#include <assimp/IOStream.hpp>
+#include <assimp/IOSystem.hpp>
+#include "Enjin/Platform/AssetFS.h"
+#include <cstring>
 
 #include <filesystem>
 #include <fstream>
 #include <algorithm>
 #include <functional>
 #include <unordered_map>
+
+namespace {
+// Assimp opens the model and its sidecars (an OBJ's .mtl, and the like) by
+// itself. This IOSystem hands it bytes through AssetFS, so a packed build
+// finds all of them (EP-18). Read-only: nothing here writes a model.
+class AssetFSStream final : public Assimp::IOStream {
+public:
+    explicit AssetFSStream(std::vector<unsigned char>&& bytes) : m_Bytes(std::move(bytes)) {}
+    size_t Read(void* buffer, size_t size, size_t count) override {
+        if (size == 0 || count == 0) return 0;
+        const size_t avail = (m_Bytes.size() - m_Pos) / size;
+        const size_t n = count < avail ? count : avail;
+        if (n) std::memcpy(buffer, m_Bytes.data() + m_Pos, n * size);
+        m_Pos += n * size;
+        return n;
+    }
+    size_t Write(const void*, size_t, size_t) override { return 0; }
+    aiReturn Seek(size_t offset, aiOrigin origin) override {
+        size_t base = origin == aiOrigin_SET ? 0 : origin == aiOrigin_CUR ? m_Pos : m_Bytes.size();
+        if (base + offset > m_Bytes.size()) return aiReturn_FAILURE;
+        m_Pos = base + offset;
+        return aiReturn_SUCCESS;
+    }
+    size_t Tell() const override { return m_Pos; }
+    size_t FileSize() const override { return m_Bytes.size(); }
+    void Flush() override {}
+private:
+    std::vector<unsigned char> m_Bytes;
+    size_t m_Pos = 0;
+};
+
+class AssetFSIOSystem final : public Assimp::IOSystem {
+public:
+    bool Exists(const char* file) const override {
+        return file && Enjin::Platform::AssetFS::Exists(file);
+    }
+    char getOsSeparator() const override { return '/'; }
+    Assimp::IOStream* Open(const char* file, const char* mode) override {
+        if (!file || (mode && std::strchr(mode, 'w'))) return nullptr;
+        std::vector<unsigned char> bytes;
+        if (!Enjin::Platform::AssetFS::ReadBytes(file, bytes)) return nullptr;
+        return new AssetFSStream(std::move(bytes));
+    }
+    void Close(Assimp::IOStream* stream) override { delete stream; }
+};
+} // namespace
 
 namespace Enjin {
 namespace Assets {
@@ -111,6 +161,7 @@ bool AssimpLoader::Load(const std::string& filepath, AssimpScene& outScene) {
     // Default LimitBoneWeights caps at 4; raise it so dense rigs keep influences 5-8.
     importer.SetPropertyInteger(AI_CONFIG_PP_LBW_MAX_WEIGHTS, 8);
 
+    importer.SetIOHandler(new AssetFSIOSystem());   // the importer owns and deletes it
     const aiScene* scene = importer.ReadFile(filepath, flags);
 
     if (!scene || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE || !scene->mRootNode) {

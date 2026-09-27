@@ -13,6 +13,7 @@
 // rescales it on the way in and the room bends.
 
 #include "Enjin/ECS/Systems/RenderSystem.h"
+#include "Enjin/Platform/AssetFS.h"
 
 #if !ENJIN_RENDERER_WEBGPU
 
@@ -73,7 +74,13 @@ u32 RenderSystem::LoadPlateImage(const std::string& path, bool isDepth) {
     int w = 0, h = 0, channels = 0;
     // Forced to 4 channels: the depth packing reads r, g and b, and a 3-channel
     // upload would need a format this loader does not otherwise use.
-    stbi_uc* pixels = stbi_load(resolved.c_str(), &w, &h, &channels, 4);
+    // Through AssetFS: a packed build reads the plate from the pak (EP-18)
+    stbi_uc* pixels = nullptr;
+    {
+        std::vector<u8> bytes;
+        if (Platform::AssetFS::ReadBytes(resolved, bytes) && !bytes.empty())
+            pixels = stbi_load_from_memory(bytes.data(), static_cast<int>(bytes.size()), &w, &h, &channels, 4);
+    }
     if (!pixels || w <= 0 || h <= 0) {
         if (pixels) stbi_image_free(pixels);
         ENJIN_LOG_ERROR(Renderer, "Background plate could not be loaded: %s", resolved.c_str());

@@ -12,6 +12,7 @@
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Platform/Input.h"
 #include "Enjin/Platform/Paths.h"
+#include "Enjin/Platform/AssetFS.h"
 #include "Enjin/Platform/Window.h"
 #include "Enjin/ECS/World.h"
 #include <atomic>
@@ -260,6 +261,16 @@ public:
                     return;
                 }
             }
+            // Every loader reads through the pak, with the exe's folder as the
+            // root its paths are relative to, which is where the loose copies
+            // used to sit (EP-18, Platform::AssetFS)
+            Enjin::Platform::AssetFS::Mount(exeDir,
+                [this](const std::string& v, std::vector<Enjin::u8>& out) {
+                    if (!m_AssetReader.HasFile(v)) return false;
+                    out = m_AssetReader.ReadFile(v);
+                    return true;
+                },
+                [this](const std::string& v) { return m_AssetReader.HasFile(v); });
 
             // Read build manifest from pack
             auto manifestData = m_AssetReader.ReadFile("_build/manifest.json");
@@ -1227,6 +1238,7 @@ public:
         m_CameraController.reset();
         m_Camera.reset();
         m_Renderer.reset();
+        Enjin::Platform::AssetFS::Unmount();   // its reader captures m_AssetReader
         m_AssetReader.Close();
     }
 

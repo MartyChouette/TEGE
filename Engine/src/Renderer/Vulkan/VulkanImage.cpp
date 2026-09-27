@@ -1,4 +1,5 @@
 #include "Enjin/Renderer/Vulkan/VulkanImage.h"
+#include "Enjin/Platform/AssetFS.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Core/Assert.h"
 #include <cstring>
@@ -27,23 +28,13 @@ bool VulkanImage::LoadFromFile(const std::string& filepath) {
     int width, height, channels;
     stbi_uc* pixels = nullptr;
 
-#ifdef _WIN32
-    // Convert UTF-8 path to wide string for Unicode support on Windows
-    {
-        int wlen = MultiByteToWideChar(CP_UTF8, 0, filepath.c_str(), -1, nullptr, 0);
-        if (wlen > 0) {
-            std::wstring wpath(wlen - 1, L'\0');
-            MultiByteToWideChar(CP_UTF8, 0, filepath.c_str(), -1, wpath.data(), wlen);
-            FILE* f = _wfopen(wpath.c_str(), L"rb");
-            if (f) {
-                pixels = stbi_load_from_file(f, &width, &height, &channels, STBI_rgb_alpha);
-                fclose(f);
-            }
-        }
+    // Through AssetFS, so a packed build reads the pak's copy (EP-18). It also
+    // reads UTF-8 paths on Windows, which is what the _wfopen here was for.
+    std::vector<u8> bytes;
+    if (Platform::AssetFS::ReadBytes(filepath, bytes) && !bytes.empty()) {
+        pixels = stbi_load_from_memory(bytes.data(), static_cast<int>(bytes.size()),
+                                       &width, &height, &channels, STBI_rgb_alpha);
     }
-#else
-    pixels = stbi_load(filepath.c_str(), &width, &height, &channels, STBI_rgb_alpha);
-#endif
 
     if (!pixels) {
         ENJIN_LOG_ERROR(Renderer, "Failed to load image: %s", filepath.c_str());

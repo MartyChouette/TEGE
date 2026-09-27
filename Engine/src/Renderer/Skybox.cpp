@@ -1,4 +1,5 @@
 #include "Enjin/Renderer/Skybox.h"
+#include "Enjin/Platform/AssetFS.h"
 #include "Enjin/Renderer/Vulkan/VulkanContext.h"
 #include "Enjin/Logging/Log.h"
 #include <cstring>
@@ -247,7 +248,13 @@ bool Skybox::LoadCubemap(const std::array<std::string, 6>& facePaths) {
 
     // Load the first face to determine dimensions
     int firstWidth = 0, firstHeight = 0, firstChannels = 0;
-    bool isHdr = stbi_is_hdr(facePaths[0].c_str()) != 0;
+    // Every face read through AssetFS, so a packed build finds them (EP-18)
+    std::array<std::vector<u8>, 6> faceBytes;
+    for (usize i = 0; i < 6; ++i) {
+        if (!facePaths[i].empty()) Platform::AssetFS::ReadBytes(facePaths[i], faceBytes[i]);
+    }
+    auto bytesLen = [&](usize i) { return static_cast<int>(faceBytes[i].size()); };
+    bool isHdr = !faceBytes[0].empty() && stbi_is_hdr_from_memory(faceBytes[0].data(), bytesLen(0)) != 0;
 
     // Load all 6 faces as RGBA8
     std::vector<std::unique_ptr<u8[]>> faceData(6);
@@ -267,7 +274,8 @@ bool Skybox::LoadCubemap(const std::array<std::string, 6>& facePaths) {
 
         if (isHdr) {
             // Load HDR image as float, then convert to RGBA8
-            float* hdrPixels = stbi_loadf(facePaths[i].c_str(), &width, &height, &channels, 4);
+            float* hdrPixels = faceBytes[i].empty() ? nullptr
+                : stbi_loadf_from_memory(faceBytes[i].data(), bytesLen(i), &width, &height, &channels, 4);
             if (!hdrPixels) {
                 ENJIN_LOG_WARN(Renderer, "Failed to load HDR cubemap face %s: %s, falling back to procedural",
                     faceNames[i], facePaths[i].c_str());
@@ -312,7 +320,8 @@ bool Skybox::LoadCubemap(const std::array<std::string, 6>& facePaths) {
             stbi_image_free(hdrPixels);
         } else {
             // Load LDR image directly as RGBA8
-            u8* pixels = stbi_load(facePaths[i].c_str(), &width, &height, &channels, 4);
+            u8* pixels = faceBytes[i].empty() ? nullptr
+                : stbi_load_from_memory(faceBytes[i].data(), bytesLen(i), &width, &height, &channels, 4);
             if (!pixels) {
                 ENJIN_LOG_WARN(Renderer, "Failed to load cubemap face %s: %s, falling back to procedural",
                     faceNames[i], facePaths[i].c_str());

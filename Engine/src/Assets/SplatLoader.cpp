@@ -1,4 +1,5 @@
 #include "Enjin/Assets/SplatLoader.h"
+#include "Enjin/Platform/AssetFS.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Math/Math.h"
 #include "Enjin/Math/Quaternion.h"
@@ -45,12 +46,12 @@ void FlipSplatYZ(SplatInstance& s) {
 
 SplatData SplatLoader::LoadFromFile(const std::string& path, u32 maxSplats, bool flipYZ) {
     SplatData out;
-    std::ifstream f(path, std::ios::binary);
-    if (!f.is_open()) {
+    // Through AssetFS, so a packed build reads the pak's copy (EP-18)
+    std::vector<u8> bytes;
+    if (!Platform::AssetFS::ReadBytes(path, bytes)) {
         out.error = "could not open '" + path + "'";
         return out;
     }
-    std::vector<u8> bytes((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
     if (bytes.size() < 16) {
         out.error = "file too small to be a splat file";
         return out;
