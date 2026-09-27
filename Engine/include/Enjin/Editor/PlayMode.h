@@ -142,6 +142,7 @@ public:
     const Gameplay::SavePointSystem& GetSavePointSystem() const { return m_SavePointSystem; }
     Gameplay::SaveIndicator& GetSaveIndicator() { return m_SaveIndicator; }
     Gameplay::InteractionSystem& GetInteractionSystem() { return m_InteractionSystem; }
+    Gameplay::DynamicDifficultySystem& GetDynamicDifficulty() { return m_DynamicDifficulty; }
     ECS::TweenSystem* GetTweenSystem() { return &m_TweenSystem; }
     ECS::StateMachineSystem* GetStateMachineSystem() { return &m_StateMachineSystem; }
     ECS::DialogueSystem* GetDialogueSystem() { return &m_DialogueSystem; }

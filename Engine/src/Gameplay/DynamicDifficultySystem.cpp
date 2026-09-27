@@ -1,8 +1,11 @@
 #include "Enjin/Gameplay/DynamicDifficultySystem.h"
 #include "Enjin/ECS/Components/DynamicDifficulty.h"
 #include "Enjin/ECS/Components/Gameplay.h"
+#include "Enjin/ECS/EntityEventBus.h"
 #include "Enjin/Logging/Log.h"
+#include <imgui.h>
 #include <algorithm>
+#include <cstdio>
 
 namespace Enjin {
 namespace Gameplay {
@@ -20,6 +23,7 @@ void DynamicDifficultySystem::Update(ECS::World* world, f32 deltaTime) {
         if (dd->trackTime) {
             dd->elapsedTime += deltaTime;
         }
+        UpdateDeathsAndHints(entity, *dd, deltaTime);
     }
 
     // Only recompute scores once per interval
@@ -147,6 +151,74 @@ void DynamicDifficultySystem::Recompute(ECS::World* world) {
             dd->checkpointMultiplier = 1.0f - easeFactor * dd->checkpointRange;
         }
     }
+}
+
+void DynamicDifficultySystem::UpdateDeathsAndHints(ECS::Entity entity, ECS::DynamicDifficultyComponent& dd,
+                                                   f32 deltaTime) {
+    dd.clock += deltaTime;
+    dd.timeSinceHint += deltaTime;
+
+    // recentDeaths is written by Difficulty_RecordDeath and Difficulty_Reset
+    // as well as RecordDeath here, so it is reconciled against the timestamps
+    // rather than trusted: more deaths than stamps means new ones now, fewer
+    // means a reset. Deaths never aged before (SD-27): one bad minute at the
+    // start of a level eased the rest of it however well the player did.
+    const bool wasReset = dd.recentDeaths < dd.deathTimes.size() && dd.recentDeaths == 0;
+    if (dd.recentDeaths > dd.deathTimes.size()) {
+        dd.deathTimes.resize(dd.recentDeaths, dd.clock);
+    } else if (dd.recentDeaths < dd.deathTimes.size()) {
+        dd.deathTimes.erase(dd.deathTimes.begin(), dd.deathTimes.end() - dd.recentDeaths);
+    }
+    if (dd.deathWindow > 0) {
+        const f32 oldest = dd.clock - static_cast<f32>(dd.deathWindow);
+        dd.deathTimes.erase(std::remove_if(dd.deathTimes.begin(), dd.deathTimes.end(),
+                                           [oldest](f32 t) { return t < oldest; }),
+                            dd.deathTimes.end());
+    }
+    dd.recentDeaths = static_cast<u32>(dd.deathTimes.size());
+    // Difficulty_Reset (a new section) zeroes the deaths; the hint count goes with them
+    if (wasReset) dd.hintsBeforeSection = 0;
+
+    if (!dd.adjustHintFrequency || dd.deathsBeforeHint == 0) return;
+    if (dd.recentDeaths < dd.deathsBeforeHint || dd.timeSinceHint < dd.hintCooldown) return;
+    dd.timeSinceHint = 0.0f;
+    dd.hintsBeforeSection++;
+    if (!m_EventBus) return;
+    ECS::EntityEvent ev;
+    ev.name = "difficulty_hint";
+    ev.sender = entity;
+    ev.ints["hint"] = static_cast<i32>(dd.hintsBeforeSection);
+    ev.ints["deaths"] = static_cast<i32>(dd.recentDeaths);
+    m_EventBus->Send(ev.name, ev);   // dd is not touched after this
+}
+
+void DynamicDifficultySystem::RenderOverlay(f32 originX, f32 originY, u32 viewportWidth, u32 viewportHeight) {
+    if (!m_Enabled || !m_World || viewportWidth == 0 || viewportHeight == 0) return;
+    const ECS::DynamicDifficultyComponent* shown = nullptr;
+    for (auto entity : m_World->GetEntitiesWithComponent<ECS::DynamicDifficultyComponent>()) {
+        const auto* dd = m_World->GetComponent<ECS::DynamicDifficultyComponent>(entity);
+        if (dd && dd->enabled) { shown = dd; break; }
+    }
+    // Visible To Player was saved and shown in the inspector and nothing drew
+    // it (SD-27). The adjustment is how far the smoothed score sits from where
+    // the base level alone would put it.
+    if (!shown || !shown->visibleToPlayer) return;
+    static const char* kLevels[] = {"Easy", "Normal", "Hard", "Nightmare"};
+    const u32 base = std::min(shown->baseDifficulty, 3u);
+    const f32 baseBias = static_cast<f32>(base) / 3.0f;
+    const f32 delta = (shown->smoothedScore - baseBias) * 100.0f;
+    const i32 adjust = static_cast<i32>(delta >= 0.0f ? delta + 0.5f : delta - 0.5f);
+    char text[64];
+    if (adjust == 0) std::snprintf(text, sizeof(text), "Difficulty: %s", kLevels[base]);
+    else std::snprintf(text, sizeof(text), "Difficulty: %s  %+d%%", kLevels[base], adjust);
+
+    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    const ImVec2 size = ImGui::CalcTextSize(text);
+    const f32 pad = 6.0f, margin = 12.0f;
+    const ImVec2 boxMax(originX + static_cast<f32>(viewportWidth) - margin, originY + margin + size.y + pad * 2.0f);
+    const ImVec2 boxMin(boxMax.x - size.x - pad * 2.0f, originY + margin);
+    dl->AddRectFilled(boxMin, boxMax, IM_COL32(0, 0, 0, 130), 4.0f);
+    dl->AddText(ImVec2(boxMin.x + pad, boxMin.y + pad), IM_COL32(255, 255, 255, 230), text);
 }
 
 f32 DynamicDifficultySystem::GetMultiplier(const std::string& which) const {

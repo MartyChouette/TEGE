@@ -6204,6 +6204,8 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                                                     static_cast<u32>(ovW), static_cast<u32>(ovH));
         m_PlayMode.GetInteractionSystem().RenderOverlay(ovX, ovY,
                                                         static_cast<u32>(ovW), static_cast<u32>(ovH));
+        m_PlayMode.GetDynamicDifficulty().RenderOverlay(ovX, ovY,
+                                                        static_cast<u32>(ovW), static_cast<u32>(ovH));
     }
 
     // Render audio visual indicators (accessibility)

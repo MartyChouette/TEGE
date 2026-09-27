@@ -11601,6 +11601,11 @@ void EditorLayer::DrawDynamicDifficultyComponent(ECS::Entity entity) {
 
             // Hint Frequency
             InspectorUndo::Checkbox(m_UndoRedo, "Adjust Hint Frequency##DD", &dd->adjustHintFrequency);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("After Deaths Before Hint recent deaths, sends a \"difficulty_hint\" event\n"
+                                  "(at most once per Hint Cooldown). Listen for it in a script or a\n"
+                                  "visual script to show the hint.");
+            }
             if (dd->adjustHintFrequency) {
                 ImGui::Indent();
                 i32 deathsBeforeHint = static_cast<i32>(dd->deathsBeforeHint);

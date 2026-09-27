@@ -647,6 +647,7 @@ public:
         Enjin::ECS::ForwardEntityEventsToScripts(m_EntityEventBus, &m_ScriptEventBus, &m_VisualScriptSystem);
         m_TimelineSystem.SetEventBus(&m_EntityEventBus);
         m_InteractionSystem.SetEventBus(&m_EntityEventBus);
+        m_DynamicDifficulty.SetEventBus(&m_EntityEventBus);
 
         // Touches that land on interactive UI become real pointers (press,
         // drag, release). Without this the move stick owns the left half of the
@@ -2371,6 +2372,7 @@ public:
         m_SubtitleSystem.RenderOverlay(0.0f, 0.0f, w, h);
         m_SaveIndicator.RenderOverlay(0.0f, 0.0f, w, h);
         m_InteractionSystem.RenderOverlay(0.0f, 0.0f, w, h);
+        m_DynamicDifficulty.RenderOverlay(0.0f, 0.0f, w, h);
         // Save / load menu -- same draw as desktop. It had no caller on EITHER
         // runtime, because the component it took was a second declaration of
         // SaveLoadMenuComponent living in Enjin::Gameplay while every entity

@@ -607,6 +607,7 @@ void PlayMode::Play() {
     ECS::ForwardEntityEventsToScripts(m_EntityEventBus, &m_EventBus, &m_VisualScriptSystem);
     m_TimelineSystem.SetEventBus(&m_EntityEventBus);
     m_InteractionSystem.SetEventBus(&m_EntityEventBus);
+    m_DynamicDifficulty.SetEventBus(&m_EntityEventBus);
     m_DialogueSystem.SetQuestSystem(&m_QuestSystem);
     m_DialogueSystem.SetCinematicSystem(&m_CinematicSystem);
     m_DialogueSystem.SetTieredSaveSystem(&m_TieredSaveSystem);

@@ -2,6 +2,7 @@
 
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/ECS/Entity.h"
+#include <vector>
 
 namespace Enjin {
 namespace ECS {
@@ -18,7 +19,7 @@ namespace ECS {
 struct DynamicDifficultyComponent {
     // --- Mode ---
     bool enabled = true;
-    bool visibleToPlayer = false;     // Transparent mode: show difficulty indicator in HUD
+    bool visibleToPlayer = false;     // Transparent mode: show difficulty indicator on screen
 
     // --- Base difficulty (player-chosen) ---
     // 0=Easy, 1=Normal, 2=Hard, 3=Nightmare (or custom labels)
@@ -35,8 +36,8 @@ struct DynamicDifficultyComponent {
 
     bool trackDeaths = true;
     f32 deathWeight = 1.0f;
-    u32 recentDeaths = 0;             // Deaths in current session/level
-    u32 deathWindow = 300;            // Time window in seconds for "recent" deaths
+    u32 recentDeaths = 0;             // Deaths inside the window (the system keeps this)
+    u32 deathWindow = 300;            // A death stops counting after this many seconds (0 = never)
 
     bool trackHealth = false;
     f32 healthWeight = 0.5f;
@@ -90,6 +91,11 @@ struct DynamicDifficultyComponent {
     bool adjustCheckpointFrequency = false;
     f32 checkpointMultiplier = 1.0f;    // <1 = more frequent checkpoints
     f32 checkpointRange = 0.3f;
+
+    // --- Runtime, not saved ---
+    f32 clock = 0.0f;                   // Seconds since play started
+    std::vector<f32> deathTimes;        // clock at each death still inside the window
+    f32 timeSinceHint = 1e9f;           // Seconds since the last hint (huge = none yet)
 };
 
 } // namespace ECS

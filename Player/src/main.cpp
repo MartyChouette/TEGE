@@ -2540,6 +2540,7 @@ public:
                     m_AudioIndicators.RenderOverlay(0.0f, 0.0f, extent.width, extent.height);
                     m_SaveIndicator.RenderOverlay(0.0f, 0.0f, extent.width, extent.height);
                     m_InteractionSystem.RenderOverlay(0.0f, 0.0f, extent.width, extent.height);
+                    m_DynamicDifficulty.RenderOverlay(0.0f, 0.0f, extent.width, extent.height);
                     m_Announcer.RenderStatusBar();
                 }
             }
@@ -3422,6 +3423,7 @@ private:
         Enjin::ECS::ForwardEntityEventsToScripts(m_EntityEventBus, &m_ScriptEventBus, &m_VisualScriptSystem);
         m_TimelineSystem.SetEventBus(&m_EntityEventBus);
         m_InteractionSystem.SetEventBus(&m_EntityEventBus);
+        m_DynamicDifficulty.SetEventBus(&m_EntityEventBus);
 
         // Touches that land on interactive UI become real pointers (press,
         // drag, release) instead of being claimed by the move stick.

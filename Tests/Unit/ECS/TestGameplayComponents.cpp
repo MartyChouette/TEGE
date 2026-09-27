@@ -5,6 +5,8 @@
 #include "Enjin/ECS/FollowTarget.h"
 #include "Enjin/ECS/CameraZones.h"
 #include "Enjin/Gameplay/InteractionSystem.h"
+#include "Enjin/Gameplay/DynamicDifficultySystem.h"
+#include "Enjin/ECS/Components/DynamicDifficulty.h"
 #include "Enjin/ECS/Systems/FlowerSystem.h"
 #include "Enjin/ECS/Systems/ControllerSystem.h"
 #include "Enjin/ECS/Systems/GameplaySystem.h"
@@ -811,6 +813,71 @@ ENJIN_TEST(Interaction, ASwitchPromptsWhileThePlayerIsOnItUnlessShowPromptIsOff)
     r.w.GetComponent<TransformComponent>(lever)->position = Math::Vector3(5.0f, 0.0f, 0.0f);
     r.sys.Update(0.016f, false);
     ENJIN_EXPECT_EQ(r.sys.GetFocused(), INVALID_ENTITY);
+}
+
+// ===========================================================================
+// Dynamic difficulty: deaths never aged and no hint was ever given (SD-27)
+// ===========================================================================
+
+ENJIN_TEST(DynamicDifficulty, DeathsAgeOutOfTheWindow) {
+    World w;
+    Gameplay::DynamicDifficultySystem sys;
+    sys.SetWorld(&w);
+    sys.SetEnabled(true);
+    Entity e = w.CreateEntity();
+    DynamicDifficultyComponent dd;
+    dd.deathWindow = 10;
+    w.AddComponent<DynamicDifficultyComponent>(e, dd);
+    sys.RecordDeath();
+    sys.RecordDeath();
+    sys.Update(&w, 1.0f);
+    ENJIN_EXPECT_EQ(w.GetComponent<DynamicDifficultyComponent>(e)->recentDeaths, 2u);
+    // A later death, the way a script records it (the binding writes the counter)
+    for (int i = 0; i < 5; ++i) sys.Update(&w, 1.0f);
+    w.GetComponent<DynamicDifficultyComponent>(e)->recentDeaths++;
+    sys.Update(&w, 1.0f);
+    ENJIN_EXPECT_EQ(w.GetComponent<DynamicDifficultyComponent>(e)->recentDeaths, 3u);
+    // Ten seconds past the first two: they are gone, the later one is not
+    for (int i = 0; i < 5; ++i) sys.Update(&w, 1.0f);
+    ENJIN_EXPECT_EQ(w.GetComponent<DynamicDifficultyComponent>(e)->recentDeaths, 1u);
+    for (int i = 0; i < 6; ++i) sys.Update(&w, 1.0f);
+    ENJIN_EXPECT_EQ(w.GetComponent<DynamicDifficultyComponent>(e)->recentDeaths, 0u);
+}
+
+ENJIN_TEST(DynamicDifficulty, EnoughDeathsSendAHintOncePerCooldown) {
+    World w;
+    EntityEventBus bus;
+    std::vector<EntityEvent> heard;
+    bus.SetForwarder([&heard](const std::string&, const EntityEvent& ev) { heard.push_back(ev); });
+    Gameplay::DynamicDifficultySystem sys;
+    sys.SetWorld(&w);
+    sys.SetEventBus(&bus);
+    sys.SetEnabled(true);
+    Entity e = w.CreateEntity();
+    DynamicDifficultyComponent dd;
+    dd.adjustHintFrequency = true;
+    dd.deathsBeforeHint = 2;
+    dd.deathWindow = 0;   // never age, so the count holds
+    w.AddComponent<DynamicDifficultyComponent>(e, dd);
+    sys.RecordDeath();
+    sys.Update(&w, 0.5f);
+    ENJIN_EXPECT_TRUE(heard.empty());
+    sys.RecordDeath();
+    sys.Update(&w, 0.5f);
+    ENJIN_ASSERT_EQ(heard.size(), size_t(1));
+    ENJIN_EXPECT_EQ(heard[0].name, std::string("difficulty_hint"));
+    ENJIN_EXPECT_EQ(heard[0].sender, e);
+    ENJIN_EXPECT_EQ(heard[0].ints.at("hint"), 1);
+    ENJIN_EXPECT_EQ(heard[0].ints.at("deaths"), 2);
+    sys.Update(&w, 0.5f);
+    ENJIN_EXPECT_EQ(heard.size(), size_t(1));   // cooling down
+    // Recompute sets the cooldown itself (10 to 30 s, shorter when struggling)
+    for (int i = 0; i < 80; ++i) sys.Update(&w, 0.5f);
+    ENJIN_EXPECT_TRUE(heard.size() >= size_t(2));
+    // A reset (new section) zeroes the hint count with the deaths
+    w.GetComponent<DynamicDifficultyComponent>(e)->recentDeaths = 0;
+    sys.Update(&w, 0.5f);
+    ENJIN_EXPECT_EQ(w.GetComponent<DynamicDifficultyComponent>(e)->hintsBeforeSection, 0u);
 }
 
 // ===========================================================================
