@@ -79,6 +79,8 @@
 #include "Enjin/Audio/AudioEngine.h"
 #include "Enjin/Build/AssetReader.h"
 #include "Enjin/Platform/WebLazyFS.h"
+#include "Enjin/Assets/MeshAssetCache.h"
+#include "Enjin/GUI/UIFontRegistry.h"
 #include "Enjin/Scripting/ScriptEngine.h"
 #include "Enjin/Scripting/ScriptSystem.h"
 #include "Enjin/Scripting/ScriptBindings.h"
@@ -265,6 +267,14 @@ public:
                 self->m_HasPack = self->m_AssetReader.Open("game.enjpak", "");
                 if (!self->m_HasPack) self->m_HasPack = self->m_AssetReader.Open("game.enjpak", PACK_KEY);
                 self->RegisterLazyPakFiles();
+                // UI fonts and meshes loaded by reference resolve from the
+                // working directory, where the pak's files now appear, as
+                // prefabs and fluid takes do. Neither root was ever set on
+                // web, so every custom UI font fell back to the built-in face
+                // and mesh bakes had nowhere to be found (EP-19). Before any
+                // scene loads, since a canvas asks for its font as it loads.
+                Enjin::GUI::UIFontRegistry::Get().SetRoot(".");
+                Enjin::Assets::MeshAssetCache::Get().SetSearchRoot(".");
                 self->StartRendererInit();
             },
             [](void* arg) {

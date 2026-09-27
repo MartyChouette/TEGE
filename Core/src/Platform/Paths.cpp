@@ -311,6 +311,18 @@ std::string ResolveWithinRoot(const std::string& root, const std::string& relati
         if (rootStr.size() == 3 && rootStr[1] == ':') break;
         rootStr.pop_back();
     }
+    // A root of "." (the web player's: its pak is mounted at the working
+    // directory) normalizes away, so "./assets/a.png" comes back as
+    // "assets/a.png" and never starts with "./". Every path under it was
+    // refused, which is every prefab, font and fluid take in a browser. Under
+    // "." means relative and not climbing out.
+    if (rootStr == ".") {
+        if (resolved.is_absolute() || resolved.has_root_name() || resolved.has_root_directory())
+            return "";
+        const auto first = resolved.begin();
+        if (first != resolved.end() && *first == "..") return "";
+        return resolvedStr;
+    }
     // Accept the root itself, or anything under root + separator. The
     // separator boundary matters: "C:/proj2/x" must not pass for root
     // "C:/proj" even though it shares the string prefix.

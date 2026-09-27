@@ -188,4 +188,21 @@ ENJIN_TEST(PathSanitize, HasUpwardTraversal_AllowsPlainAndCollapsingPaths) {
     ENJIN_EXPECT_FALSE(Platform::HasUpwardTraversal(""));
 }
 
+// The web player roots its assets at "." (the pak is mounted at the working
+// directory). "." normalizes away, and every path under it used to be refused.
+ENJIN_TEST(PathSanitize, test_resolvewithinroot_dot_root_accepts_relative_and_refuses_escape) {
+    // Arrange
+    const std::string root = ".";
+
+    // Act
+    const std::string inside = Platform::ResolveWithinRoot(root, "prefabs/Boulder.prefab");
+    const std::string nested = Platform::ResolveWithinRoot(root, "./assets/../assets/font.ttf");
+    const std::string escape = Platform::ResolveWithinRoot(root, "../secret.txt");
+
+    // Assert
+    ENJIN_EXPECT_FALSE(inside.empty());
+    ENJIN_EXPECT_FALSE(nested.empty());
+    ENJIN_EXPECT_TRUE(escape.empty());
+}
+
 ENJIN_TEST_MAIN()
