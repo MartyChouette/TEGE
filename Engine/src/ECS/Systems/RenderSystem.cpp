@@ -1,4 +1,7 @@
 #include "Enjin/ECS/Systems/RenderSystem.h"
+#include "Enjin/ECS/Components/IKComponents.h"
+#include "Enjin/ECS/Components/HandIKComponent.h"
+#include "Enjin/Animation/IKSolver.h"
 #include "Enjin/Renderer/MaterialFlagWord.h"
 #include "Enjin/Renderer/MaterialDrawState.h"
 // Needed by EnsureTilemapMeshes, which both backend Update bodies call.
@@ -664,6 +667,662 @@ void RenderSystem::BeginFrameTransformCaches() {
     for (auto& t : transforms) {
         t.worldMatrixDirty = true;
     }
+}
+
+namespace {
+
+// Rotate a bone so its child lands where the solver put it.
+//
+// IK solves POSITIONS; a skeleton stores local ROTATIONS, so every solver here
+// has to convert. The conversion is the same three steps every time: original
+// direction to the child, new direction to the child, the rotation between them
+// composed onto the bone's local rotation. It was written out twice inside the
+// TwoBoneIK block and needed a third copy for the arm chain, and three copies
+// of the same quaternion arithmetic is how one of them ends up subtly different
+// from the others.
+//
+// `newFrom` differs from `origFrom` only for a bone whose own parent has
+// already moved this frame, which is every link after the first.
+void ApplyChainRotation(Animation::SkeletonPose& pose, i32 boneIdx,
+                        const Math::Vector3& origFrom, const Math::Vector3& origTo,
+                        const Math::Vector3& newTo, const Math::Vector3& newFrom) {
+    Math::Vector3 origDir = origTo - origFrom;
+    Math::Vector3 newDir = newTo - newFrom;
+    const f32 origLen = origDir.Length();
+    const f32 newLen = newDir.Length();
+    if (origLen <= 0.0001f || newLen <= 0.0001f) return;
+
+    origDir = origDir * (1.0f / origLen);
+    newDir = newDir * (1.0f / newLen);
+
+    Math::Vector3 axis = origDir.Cross(newDir);
+    const f32 axisMag = axis.Length();
+    if (axisMag <= 0.0001f) return;          // already aligned, or exactly opposed
+
+    axis = axis * (1.0f / axisMag);
+    const f32 dotP = std::clamp(origDir.Dot(newDir), -1.0f, 1.0f);
+    const Math::Quaternion delta(axis, std::acos(dotP));
+    pose.localRotations[boneIdx] = delta * pose.localRotations[boneIdx];
+}
+
+void ApplyChainRotation(Animation::SkeletonPose& pose, i32 boneIdx,
+                        const Math::Vector3& origFrom, const Math::Vector3& origTo,
+                        const Math::Vector3& newTo) {
+    ApplyChainRotation(pose, boneIdx, origFrom, origTo, newTo, origFrom);
+}
+
+} // namespace
+
+// Settle one hand's fingers onto whatever is under them.
+//
+// Bones give three joint POSITIONS per finger and the solver wants four points,
+// so the tip comes from a named leaf bone where the rig has one and is
+// extrapolated past the distal joint where it does not. Everything is lifted to
+// world space, solved there, and written back as rotation deltas, because a
+// surface exists in world space and a bone's local rotation does not.
+void RenderSystem::SolveHandIK(Entity entity, AnimatorComponent& animComp,
+                               HandIKComponent& hand, f32 deltaTime) {
+    const auto* skeleton = animComp.animator.GetSkeleton();
+    const i32 handIdx = skeleton ? skeleton->FindBoneIndex(hand.handBoneName) : -1;
+
+    // Say WHY it did nothing, once.
+    //
+    // Four different failures produce an identical hovering hand and none of
+    // them is an error: no skeleton bound, a wrist bone name that does not
+    // resolve, no surface query injected, or nothing within reach. Without this
+    // they are indistinguishable from the outside and from each other.
+    // Reported on CHANGE, not once.
+    //
+    // A once-only report fires during scene load, in editor mode, where there
+    // is legitimately no surface query yet -- so it says "NO" and then never
+    // speaks again, including after Play wires one up. What matters is each
+    // transition.
+    static int s_LastState = -1;
+    const int state = (skeleton ? 1 : 0) | (handIdx >= 0 ? 2 : 0) | (m_SurfaceQuery ? 4 : 0);
+    if (state != s_LastState) {
+        s_LastState = state;
+        ENJIN_LOG_INFO(Animation,
+            "HandIK setup: skeleton=%s bones=%d wrist='%s' index=%d surfaceQuery=%s",
+            skeleton ? "yes" : "NO",
+            skeleton ? static_cast<int>(skeleton->bones.size()) : 0,
+            hand.handBoneName.c_str(), handIdx,
+            m_SurfaceQuery ? "yes" : "NO");
+    }
+
+    if (!skeleton || handIdx < 0) return;
+
+    const auto& pose = animComp.animator.GetCurrentPose();
+    const Math::Matrix4 entityWorld = ComputeWorldMatrix(m_World, entity);
+
+    auto boneMatrix = [&](i32 idx) { return entityWorld * pose.worldTransforms[idx]; };
+    auto bonePos = [&](i32 idx) {
+        const Math::Matrix4 m = boneMatrix(idx);
+        return Math::Vector3(m.m[12], m.m[13], m.m[14]);
+    };
+    // Rotate a direction by a bone's world matrix without translating it.
+    auto boneDir = [&](i32 idx, const Math::Vector3& local) {
+        const Math::Matrix4 m = boneMatrix(idx);
+        return Math::Vector3(
+            m.m[0] * local.x + m.m[4] * local.y + m.m[8] * local.z,
+            m.m[1] * local.x + m.m[5] * local.y + m.m[9] * local.z,
+            m.m[2] * local.x + m.m[6] * local.y + m.m[10] * local.z);
+    };
+
+    Animation::HandPose solved;
+    solved.palmPosition = bonePos(handIdx);
+    solved.palmNormal = boneDir(handIdx, hand.palmNormalLocal);
+
+    // Bone indices per finger, kept so the write-back knows what to rotate.
+    struct Resolved { i32 bone[Animation::kFingerJoints]; bool usable; };
+    std::array<Resolved, Animation::kFingerCount> resolved{};
+
+    for (u32 f = 0; f < Animation::kFingerCount; ++f) {
+        const FingerBones& bones = hand.fingers[f];
+        resolved[f].usable = false;
+        if (!bones.IsSet()) continue;
+
+        const i32 p0 = skeleton->FindBoneIndex(bones.proximal);
+        const i32 p1 = skeleton->FindBoneIndex(bones.intermediate);
+        const i32 p2 = skeleton->FindBoneIndex(bones.distal);
+        if (p0 < 0 || p1 < 0 || p2 < 0) continue;
+
+        Animation::FingerChain& chain = solved.fingers[f];
+        chain.joints[0] = bonePos(p0);
+        chain.joints[1] = bonePos(p1);
+        chain.joints[2] = bonePos(p2);
+
+        i32 tipIdx = -1;
+        if (!bones.tip.empty()) tipIdx = skeleton->FindBoneIndex(bones.tip);
+        if (tipIdx >= 0) {
+            chain.joints[3] = bonePos(tipIdx);
+        } else {
+            // No leaf bone: continue past the distal joint along the last
+            // segment. Right for a straight finger, and it drifts as the finger
+            // curls, which is why naming a tip bone is better where the rig has
+            // one.
+            const Math::Vector3 last = chain.joints[2] - chain.joints[1];
+            chain.joints[3] = Math::Vector3(chain.joints[2].x + last.x,
+                                            chain.joints[2].y + last.y,
+                                            chain.joints[2].z + last.z);
+        }
+
+        chain.curlDirection = boneDir(handIdx, bones.curlDirection);
+        chain.approachWeight = hand.approachWeights[f];
+        chain.releaseWeight = hand.releaseWeights[f];
+
+        resolved[f].bone[0] = p0;
+        resolved[f].bone[1] = p1;
+        resolved[f].bone[2] = p2;
+        resolved[f].usable = true;
+    }
+
+    // Whether there is anything close enough to be worth holding decides which
+    // way the weights move. Both are advanced every frame whether or not a
+    // surface is found, so a hand that walks away from a counter releases
+    // instead of freezing mid-grip.
+    bool engaged = false;
+    Animation::SurfaceHit probe;
+    // Which solver to run. Authored modes are obeyed; Auto asks the geometry.
+    Animation::HandTargetMode activeMode = hand.mode;
+    Math::Vector3 activeEdgeDir = hand.edgeDirection;
+
+    if (m_SurfaceQuery) {
+        if (hand.mode == Animation::HandTargetMode::Auto) {
+            // Probe radius from the RIG, not a constant: half the span from the
+            // outermost knuckle to the other. A hand that reaches across a bar
+            // is what makes it a bar, so the test has to be the size of this
+            // hand rather than the size of the hand I happened to build.
+            const Math::Vector3 a = solved.fingers[0].joints[0];
+            const Math::Vector3 b = solved.fingers[Animation::kFingerCount - 1].joints[0];
+            const Math::Vector3 span(b.x - a.x, b.y - a.y, b.z - a.z);
+            const f32 radius = span.Length() * 0.5f;
+
+            const auto klass = Animation::HandIK::ClassifyContact(
+                solved.palmPosition, solved.palmNormal,
+                boneDir(handIdx, Math::Vector3(1.0f, 0.0f, 0.0f)),
+                boneDir(handIdx, Math::Vector3(0.0f, 0.0f, 1.0f)),
+                radius, hand.engageDistance, *m_SurfaceQuery);
+
+            engaged = klass.hit;
+            probe = klass.centre;
+            activeMode = klass.mode;
+            activeEdgeDir = klass.edgeDirection;
+        } else {
+            engaged = m_SurfaceQuery->Cast(solved.palmPosition, solved.palmNormal,
+                                           hand.engageDistance, probe) && probe.hit;
+        }
+    }
+    hand.engaged = engaged;
+    hand.resolvedMode = activeMode;
+
+    // A clock this pass can actually trust.
+    //
+    // The deltaTime handed to this pass is ZERO on the path the editor drives it
+    // from, and every weight here is a rate per second. The result was a hand
+    // that probed the counter correctly, reported engaged, and then never
+    // advanced a single finger off zero weight -- so the solve was skipped for
+    // all five and the hand hovered while the log insisted it had found the
+    // surface. Every other part of the chain was right.
+    //
+    // Measured here rather than plumbed through, because this is the only thing
+    // in the pass that integrates over time and the alternative is threading a
+    // reliable dt through a renderer path that does not have one.
+    const auto now = std::chrono::steady_clock::now();
+    f32 ikDt = deltaTime;
+    if (ikDt <= 0.0f) {
+        if (m_LastHandIKTime.time_since_epoch().count() != 0) {
+            ikDt = std::chrono::duration<f32>(now - m_LastHandIKTime).count();
+        }
+        // First frame, and any hitch: a huge step would snap the hand onto the
+        // surface in one go, which is the thing approach rates exist to avoid.
+        ikDt = std::min(ikDt, 0.05f);
+    }
+    m_LastHandIKTime = now;
+
+    for (u32 f = 0; f < Animation::kFingerCount; ++f) {
+        Animation::FingerChain& chain = solved.fingers[f];
+        Animation::HandIK::AdvanceWeights(chain,
+                                          engaged ? hand.weight : 0.0f,
+                                          engaged ? 0.0f : 1.0f,
+                                          hand.approachRate, hand.releaseRate, ikDt);
+        hand.approachWeights[f] = chain.approachWeight;
+        hand.releaseWeights[f] = chain.releaseWeight;
+    }
+
+    if (!m_SurfaceQuery) {
+        // Nothing to ask. Hands stay on the animation, which is correct for a
+        // headless tool and not something to log every frame.
+        hand.fingersContacted = 0;
+        return;
+    }
+
+    // Remember where the animation had things, so the write-back computes a
+    // delta rather than a destination.
+    const Animation::HandPose animated = solved;
+
+    Animation::HandIKResult result;
+    if (activeMode == Animation::HandTargetMode::SurfaceEdge) {
+        if (engaged) {
+            result = Animation::HandIK::SolveEdge(solved, probe.point,
+                                                  activeEdgeDir, probe.normal);
+        }
+    } else {
+        result = Animation::HandIK::SolveSurface(solved, *m_SurfaceQuery);
+    }
+
+    hand.fingersContacted = result.fingersContacted;
+
+    // Say what happened, once a second.
+    //
+    // A hand that is not conforming looks identical whatever the cause: no
+    // surface query, a palm axis pointing out the back of the hand, a bone name
+    // that does not resolve, or simply nothing within reach. All four produce a
+    // hand that hovers, and none of them produce an error. This line is the
+    // difference between "it does nothing" and knowing which nothing it is.
+    //
+    // Throttled rather than per-frame: the interesting transition is walking up
+    // to a counter, which takes about a second, and a per-frame line would bury
+    // every other log in the console.
+    // Counted in CALLS, not seconds. A time accumulator here never fired,
+    // because the deltaTime this pass receives is zero on the path the editor
+    // drives it from -- which is itself worth knowing, since every IK weight
+    // rate is expressed per second.
+    static u32 s_HandLogTick = 0;
+    if ((s_HandLogTick++ % 120u) == 0u) {
+        ENJIN_LOG_INFO(Animation,
+            "HandIK: palm (%.2f, %.2f, %.2f) normal (%.2f, %.2f, %.2f) "
+            "engaged=%s probeHit=%s at %.3f m, %u of 5 fingers in contact, %s",
+            solved.palmPosition.x, solved.palmPosition.y, solved.palmPosition.z,
+            solved.palmNormal.x, solved.palmNormal.y, solved.palmNormal.z,
+            engaged ? "yes" : "NO", probe.hit ? "yes" : "NO", probe.distance,
+            result.fingersContacted,
+            activeMode == Animation::HandTargetMode::SurfaceEdge ? "curling over an edge"
+                                                                 : "pressing on a face");
+    }
+
+    // Write the solved chains back as rotations.
+    auto& poseMut = const_cast<Animation::SkeletonPose&>(pose);
+    for (u32 f = 0; f < Animation::kFingerCount; ++f) {
+        hand.contacted[f] = solved.fingers[f].contacted;
+        if (!resolved[f].usable || !solved.fingers[f].contacted) continue;
+
+        const Animation::FingerChain& before = animated.fingers[f];
+        const Animation::FingerChain& after = solved.fingers[f];
+        for (u32 j = 0; j < Animation::kFingerJoints; ++j) {
+            ApplyChainRotation(poseMut, resolved[f].bone[j],
+                               before.joints[j], before.joints[j + 1],
+                               after.joints[j + 1], after.joints[j]);
+        }
+    }
+}
+
+// Everything that edits a skeleton's pose after the clip is sampled: the pose
+// library, then look-at, interaction, two-bone and hand IK. It lived inside
+// the Vulkan Update, which the editor never calls and the web build does not
+// have, so IK and poses ran only in the desktop player. Now every runtime calls
+// this after ticking an animator (the desktop loop, EditorLayer::Update, the
+// web player), gated by AllowIKFor where animation LOD applies.
+void RenderSystem::ApplyPoseEdits(Entity entity, AnimatorComponent* animComp, f32 deltaTime) {
+    if (!m_World || !animComp) return;
+    // Does this entity carry anything that EDITS the pose?
+    //
+    // IK used to be skipped entirely unless a clip was playing, which is
+    // backwards for the case that matters most: a character standing still
+    // with a hand resting on a counter is exactly when nothing is playing.
+    auto* poseLib = m_World->GetComponent<PoseLibraryComponent>(entity);
+    const bool hasPose = poseLib && (!poseLib->activePose.empty() || poseLib->currentBlend > 0.0f);
+    // "hasIK" means "something edits the pose this frame": IK or a pose.
+    const bool hasIK = hasPose ||
+        m_World->HasComponent<LookAtIKComponent>(entity) ||
+        m_World->HasComponent<InteractionIKComponent>(entity) ||
+        m_World->HasComponent<TwoBoneIKComponent>(entity) ||
+        m_World->HasComponent<HandIKComponent>(entity);
+
+    if (!animComp->animator.IsPlaying() && !hasIK) return;
+
+    // With no clip running, nothing resets the pose between frames.
+    //
+    // Every IK path below composes a rotation DELTA onto whatever is
+    // already in localRotations. While a clip plays, Update() resamples it
+    // each frame and supplies a clean starting point; with no clip, Update()
+    // returns at its first line and last frame's IK is still sitting there,
+    // so the deltas compound and the limb winds up rotating without bound.
+    if (hasIK && !animComp->animator.IsPlaying()) {
+        animComp->animator.RestoreBindPose();
+        // And rebuild the world transforms from it, because the IK blocks
+        // below read bone WORLD positions out of the pose. Resetting the
+        // local rotations without this would leave them solving against
+        // last frame's already-solved positions.
+        animComp->animator.RecomputePose();
+    }
+
+    // Pose library (SD-27; nothing applied a pose before). Each bone in the
+    // active pose is turned toward its authored local rotation by the
+    // pose's current blend times that bone's own weight. The blend moves
+    // toward Blend Weight at Blend Speed per second while a pose is active
+    // and back to 0 when it is cleared, still showing the last pose on the
+    // way out. It runs on the freshly sampled (or bind) pose each frame, so
+    // it never compounds, and before IK, so a look-at still turns a posed
+    // head.
+    if (poseLib) {
+        if (!poseLib->activePose.empty()) poseLib->appliedPose = poseLib->activePose;
+        const f32 target = poseLib->activePose.empty() ? 0.0f : std::clamp(poseLib->blendWeight, 0.0f, 1.0f);
+        const f32 step = std::max(poseLib->blendSpeed, 0.0f) * deltaTime;
+        if (poseLib->blendSpeed <= 0.0f) poseLib->currentBlend = target;
+        else if (poseLib->currentBlend < target) poseLib->currentBlend = std::min(target, poseLib->currentBlend + step);
+        else poseLib->currentBlend = std::max(target, poseLib->currentBlend - step);
+
+        const auto* skel = animComp->animator.GetSkeleton();
+        const PoseLibraryComponent::NamedPose* pose = nullptr;
+        for (const auto& p : poseLib->poses) if (p.name == poseLib->appliedPose) { pose = &p; break; }
+        if (skel && pose && poseLib->currentBlend > 0.0f) {
+            for (const auto& ov : pose->overrides) {
+                const i32 idx = skel->FindBoneIndex(ov.boneName);
+                const auto& locals = animComp->animator.GetCurrentPose().localRotations;
+                if (idx < 0 || idx >= static_cast<i32>(locals.size())) continue;
+                const f32 w = poseLib->currentBlend * std::clamp(ov.weight, 0.0f, 1.0f);
+                animComp->animator.SetBoneLocalRotation(ov.boneName, Math::Quaternion::Slerp(locals[idx], ov.rotation, w));
+            }
+        }
+    }
+
+    auto* lookAtIK = m_World->GetComponent<LookAtIKComponent>(entity);
+    if (lookAtIK && lookAtIK->lookWeight > 0.0f) {
+        // Resolve target position
+        Math::Vector3 targetPos = lookAtIK->targetWorldPos;
+        if (lookAtIK->useEntityTarget && lookAtIK->targetEntity != INVALID_ENTITY) {
+            auto* targetTransform = m_World->GetComponent<TransformComponent>(lookAtIK->targetEntity);
+            if (targetTransform) {
+                targetPos = targetTransform->position;
+            }
+        }
+
+        // The head bone, by NAME, and the solved rotation written back onto
+        // it.
+        //
+        // This used to take the head position as entityPosition + (0,1.6,0)
+        // -- a guess at how tall a character is -- solve, store the result
+        // in currentHeadRotation, and stop. Nothing read that field, so the
+        // head never turned. headBoneName and neckBoneName were never read
+        // at all, and neither was currentNeckRotation. The component
+        // serialized, showed an inspector, cost a solve every frame and did
+        // nothing, which is the same shape InteractionIK was in above.
+        auto* entityTransform = m_World->GetComponent<TransformComponent>(entity);
+        const auto* skeleton = animComp->animator.GetSkeleton();
+        const i32 headIdx = skeleton
+            ? skeleton->FindBoneIndex(lookAtIK->headBoneName) : -1;
+
+        if (entityTransform && skeleton && headIdx >= 0) {
+            const auto& pose = animComp->animator.GetCurrentPose();
+            if (headIdx < static_cast<i32>(pose.worldTransforms.size()) &&
+                headIdx < static_cast<i32>(pose.localRotations.size())) {
+
+                const Math::Matrix4 entityWorld = entityTransform->ToMatrix();
+                const Math::Matrix4 headWorld = entityWorld * pose.worldTransforms[headIdx];
+
+                // The REAL head position, from the pose, rather than a
+                // guess about character height. Translation is the last
+                // column of the world matrix.
+                const Math::Vector3 headWorldPos(headWorld.m[12], headWorld.m[13], headWorld.m[14]);
+
+                // The head's ANIMATED world rotation, before IK touches it.
+                // maxRotation is measured from here, so a look-at deflects
+                // the animation by at most that many degrees rather than
+                // walking to the target over enough frames.
+                const Math::Quaternion restWorld = Math::Quaternion::FromMatrix(headWorld);
+
+                const Math::Quaternion solved = Animation::LookAtIK::Solve(
+                    headWorldPos, targetPos, lookAtIK->currentHeadRotation,
+                    lookAtIK->maxRotation, lookAtIK->smoothSpeed, deltaTime,
+                    restWorld);
+                lookAtIK->currentHeadRotation = solved;
+
+                // Solve returns a WORLD rotation; localRotations are in
+                // PARENT space. Converting through the parent is the
+                // difference between a head that looks at the target and
+                // one that looks at it only while the character faces down
+                // -Z. (TwoBoneIK above pre-multiplies a world-space delta
+                // straight onto a local rotation, which carries that
+                // approximation -- not copied here.)
+                const i32 parentIdx = skeleton->bones[headIdx].parentIndex;
+                const Math::Matrix4 parentWorld =
+                    (parentIdx >= 0 && parentIdx < static_cast<i32>(pose.worldTransforms.size()))
+                    ? entityWorld * pose.worldTransforms[parentIdx]
+                    : entityWorld;
+                const Math::Quaternion parentRot = Math::Quaternion::FromMatrix(parentWorld);
+                const Math::Quaternion desiredLocal = parentRot.Conjugate() * solved;
+
+                // lookWeight blends between the animation's own head
+                // rotation and the look-at, so a partial weight is a
+                // partial turn rather than an on/off switch.
+                auto& poseMut = const_cast<Animation::SkeletonPose&>(pose);
+                poseMut.localRotations[headIdx] = Math::Quaternion::Slerp(
+                    poseMut.localRotations[headIdx], desiredLocal,
+                    std::clamp(lookAtIK->lookWeight, 0.0f, 1.0f));
+            }
+        }
+    }
+
+    auto* interactionIK = m_World->GetComponent<InteractionIKComponent>(entity);
+    if (interactionIK && interactionIK->ikWeight > 0.0f) {
+        auto* entityTransform = m_World->GetComponent<TransformComponent>(entity);
+        if (entityTransform) {
+            // Find nearest interactable within radius (only scan InteractableComponent entities)
+            Math::Vector3 handPos = entityTransform->position + Math::Vector3(0.3f, 1.0f, 0.5f);
+            Math::Vector3 nearestTarget = handPos;
+            Entity nearestEntity = INVALID_ENTITY;
+            f32 nearestDist = interactionIK->interactionRadius + 1.0f;
+
+            for (Entity other : m_World->GetEntitiesWithComponent<InteractableComponent>()) {
+                if (other == entity) continue;
+                if (!interactionIK->interactionTag.empty()) {
+                    auto* otherTag = m_World->GetComponent<TagComponent>(other);
+                    if (!otherTag || !otherTag->HasTag(interactionIK->interactionTag))
+                        continue;
+                }
+                auto* otherTransform = m_World->GetComponent<TransformComponent>(other);
+                if (!otherTransform) continue;
+                f32 dist = (otherTransform->position - handPos).Length();
+                if (dist < nearestDist && dist <= interactionIK->interactionRadius) {
+                    nearestDist = dist;
+                    nearestTarget = otherTransform->position;
+                    nearestEntity = other;
+                }
+            }
+
+            if (nearestDist <= interactionIK->interactionRadius) {
+                // Solve the shoulder/elbow/hand chain from the ACTUAL BONES
+                // and write the answer back into the pose.
+                //
+                // What was here before did none of that. It built a chain
+                // out of three hardcoded offsets from the entity position,
+                // ignoring handBoneName, elbowBoneName and shoulderBoneName
+                // entirely, ran FABRIK into a scratch vector, and then threw
+                // the result away: m_IKChainCache was never read again, and
+                // currentTarget and currentHandTarget were never written by
+                // anything. So this component has never moved a bone. It
+                // serialized, it showed an inspector, it cost a solve every
+                // frame, and it did nothing, which is the hardest kind of
+                // dead code to notice because everything about it looks
+                // alive.
+                //
+                // The write-back follows TwoBoneIKComponent's pattern, which
+                // is the one IK path in here that does work.
+                const auto* skeleton = animComp->animator.GetSkeleton();
+                const i32 shoulderIdx = skeleton
+                    ? skeleton->FindBoneIndex(interactionIK->shoulderBoneName) : -1;
+                const i32 elbowIdx = skeleton
+                    ? skeleton->FindBoneIndex(interactionIK->elbowBoneName) : -1;
+                const i32 handIdx = skeleton
+                    ? skeleton->FindBoneIndex(interactionIK->handBoneName) : -1;
+
+                if (shoulderIdx >= 0 && elbowIdx >= 0 && handIdx >= 0) {
+                    const auto& pose = animComp->animator.GetCurrentPose();
+                    const Math::Matrix4 entityWorld = ComputeWorldMatrix(m_World, entity);
+
+                    auto boneWorld = [&](i32 idx) {
+                        const Math::Matrix4 m = entityWorld * pose.worldTransforms[idx];
+                        return Math::Vector3(m.m[12], m.m[13], m.m[14]);
+                    };
+
+                    const Math::Vector3 shoulderPos = boneWorld(shoulderIdx);
+                    const Math::Vector3 elbowPos = boneWorld(elbowIdx);
+                    const Math::Vector3 handWorldPos = boneWorld(handIdx);
+
+                    Math::Vector3 solvedElbow, solvedHand;
+                    Animation::TwoBoneIK::Solve(
+                        shoulderPos, elbowPos, handWorldPos, nearestTarget,
+                        Math::Vector3(0.0f, 0.0f, 1.0f), interactionIK->ikWeight,
+                        solvedElbow, solvedHand);
+
+                    auto& poseMut = const_cast<Animation::SkeletonPose&>(pose);
+                    ApplyChainRotation(poseMut, shoulderIdx, shoulderPos, elbowPos, solvedElbow);
+                    ApplyChainRotation(poseMut, elbowIdx, elbowPos, handWorldPos,
+                                       solvedHand, solvedElbow);
+
+                    // Report what it settled on, so a script or the
+                    // inspector can see the hand is actually engaged.
+                    interactionIK->currentTarget = nearestEntity;
+                    interactionIK->currentHandTarget = solvedHand;
+                }
+            }
+        }
+    }
+
+    // Hand IK: five fingers, each settled on whatever is under it.
+    auto* handIK = m_World->GetComponent<HandIKComponent>(entity);
+    if (handIK && handIK->weight > 0.0f) {
+        SolveHandIK(entity, *animComp, *handIK, deltaTime);
+    }
+
+    // Two-Bone IK: analytic solve for arm/leg chains
+    auto* twoBoneIK = m_World->GetComponent<TwoBoneIKComponent>(entity);
+    if (twoBoneIK && twoBoneIK->weight > 0.0f) {
+        const auto* skeleton = animComp->animator.GetSkeleton();
+        if (skeleton) {
+            i32 rootIdx = skeleton->FindBoneIndex(twoBoneIK->rootBoneName);
+            i32 midIdx = skeleton->FindBoneIndex(twoBoneIK->midBoneName);
+            i32 endIdx = skeleton->FindBoneIndex(twoBoneIK->endBoneName);
+
+            if (rootIdx >= 0 && midIdx >= 0 && endIdx >= 0) {
+                const auto& pose = animComp->animator.GetCurrentPose();
+
+                // Get entity world transform to convert bone-local to world space
+                auto* entityTransform2 = m_World->GetComponent<TransformComponent>(entity);
+                Math::Matrix4 entityWorld = entityTransform2 ? ComputeWorldMatrix(m_World, entity) : Math::Matrix4::Identity();
+
+                // Extract bone world positions (pose.worldTransforms are in entity-local space)
+                Math::Matrix4 rootWorld = entityWorld * pose.worldTransforms[rootIdx];
+                Math::Matrix4 midWorld = entityWorld * pose.worldTransforms[midIdx];
+                Math::Matrix4 endWorld = entityWorld * pose.worldTransforms[endIdx];
+
+                Math::Vector3 rootPos(rootWorld.m[12], rootWorld.m[13], rootWorld.m[14]);
+                Math::Vector3 midPos(midWorld.m[12], midWorld.m[13], midWorld.m[14]);
+                Math::Vector3 endPos(endWorld.m[12], endWorld.m[13], endWorld.m[14]);
+
+                // Resolve target position
+                Math::Vector3 ikTarget = twoBoneIK->targetPosition;
+                if (twoBoneIK->useEntityTarget && twoBoneIK->targetEntity != INVALID_ENTITY) {
+                    auto* targetTransform = m_World->GetComponent<TransformComponent>(twoBoneIK->targetEntity);
+                    if (targetTransform) {
+                        ikTarget = targetTransform->position;
+                    }
+                }
+
+                // Solve two-bone IK
+                Math::Vector3 solvedMid, solvedEnd;
+                Animation::TwoBoneIK::Solve(
+                    rootPos, midPos, endPos, ikTarget,
+                    twoBoneIK->poleVector, twoBoneIK->weight,
+                    solvedMid, solvedEnd
+                );
+
+                // Apply IK result by computing rotation deltas for root and mid bones
+                auto& poseMut = const_cast<Animation::SkeletonPose&>(pose);
+
+                // Root bone rotation delta: rotate the upper limb toward solved mid position
+                {
+                    Math::Vector3 origDir = midPos - rootPos;
+                    Math::Vector3 newDir = solvedMid - rootPos;
+                    f32 origLen = origDir.Length();
+                    f32 newLen = newDir.Length();
+                    if (origLen > 0.0001f && newLen > 0.0001f) {
+                        origDir = origDir * (1.0f / origLen);
+                        newDir = newDir * (1.0f / newLen);
+                        Math::Vector3 axis = origDir.Cross(newDir);
+                        f32 axisMag = axis.Length();
+                        f32 dotP = std::clamp(origDir.Dot(newDir), -1.0f, 1.0f);
+                        if (axisMag > 0.0001f) {
+                            axis = axis * (1.0f / axisMag);
+                            Math::Quaternion rotDelta(axis, std::acos(dotP));
+                            poseMut.localRotations[rootIdx] = rotDelta * poseMut.localRotations[rootIdx];
+                        }
+                    }
+                }
+
+                // Mid bone rotation delta: rotate the lower limb toward solved end position
+                {
+                    Math::Vector3 origDir = endPos - midPos;
+                    Math::Vector3 newDir = solvedEnd - solvedMid;
+                    f32 origLen = origDir.Length();
+                    f32 newLen = newDir.Length();
+                    if (origLen > 0.0001f && newLen > 0.0001f) {
+                        origDir = origDir * (1.0f / origLen);
+                        newDir = newDir * (1.0f / newLen);
+                        Math::Vector3 axis = origDir.Cross(newDir);
+                        f32 axisMag = axis.Length();
+                        f32 dotP = std::clamp(origDir.Dot(newDir), -1.0f, 1.0f);
+                        if (axisMag > 0.0001f) {
+                            axis = axis * (1.0f / axisMag);
+                            Math::Quaternion rotDelta(axis, std::acos(dotP));
+                            poseMut.localRotations[midIdx] = rotDelta * poseMut.localRotations[midIdx];
+                        }
+                    }
+                }
+
+                // Write updated rotations back and mark dirty
+                animComp->animator.SetBoneLocalRotation(
+                    twoBoneIK->rootBoneName, poseMut.localRotations[rootIdx]);
+                animComp->animator.SetBoneLocalRotation(
+                    twoBoneIK->midBoneName, poseMut.localRotations[midIdx]);
+                animComp->matricesDirty = true;
+            }
+        }
+    }
+
+    // Turn the edited pose into the matrices the renderer actually skins
+    // with.
+    //
+    // THIS is what was missing, and it is why no IK in this engine has ever
+    // reached the screen. Sampling builds the world transforms and the
+    // skinning matrices at the end of Update(), during pass 2. Every IK
+    // block above runs in pass 3 and edits localRotations, which by then
+    // nothing reads: the frame renders the pre-IK pose, and the next
+    // frame's sample overwrites the rotations before they are ever used.
+    // Look-at, two-bone, interaction and hand IK all computed correct
+    // answers into a buffer that was thrown away.
+    //
+    // The intent was there. TwoBoneIK sets animComp->matricesDirty, which
+    // reads like a request to rebuild -- but nothing anywhere consumes that
+    // flag; it appears only in the component's own copy constructors. A
+    // dirty flag with no consumer is indistinguishable from a working one
+    // right up until somebody looks.
+    if (hasIK) {
+        animComp->animator.RecomputePose();
+        animComp->matricesDirty = false;
+    }
+}
+
+// The animation-LOD band's IK switch for this entity, from its distance to the
+// render camera. True when LOD is off or there is no camera.
+bool RenderSystem::AllowIKFor(Entity entity) const {
+    if (!m_AnimationLODEnabled || !m_Camera || !m_World) return true;
+    const AnimationLODComponent* authored = m_World->GetComponent<AnimationLODComponent>(entity);
+    const AnimationLODComponent& cfg = authored ? *authored : kDefaultAnimationLOD;
+    if (!cfg.enabled) return true;
+    const Math::Matrix4 wm = ComputeWorldMatrix(m_World, entity);
+    const f32 d = (Math::Vector3(wm.m[12], wm.m[13], wm.m[14]) - m_Camera->GetPosition()).Length();
+    return cfg.bands[cfg.ResolveBand(d)].ik;
 }
 
 } // namespace ECS
@@ -8257,292 +8916,6 @@ void RenderSystem::ProcessProbeBakesOutsideFrame() {
     UpdateProbeCubemapDescriptor();   // binding 19: the newly baked cubemap
 }
 
-namespace {
-
-// Rotate a bone so its child lands where the solver put it.
-//
-// IK solves POSITIONS; a skeleton stores local ROTATIONS, so every solver here
-// has to convert. The conversion is the same three steps every time: original
-// direction to the child, new direction to the child, the rotation between them
-// composed onto the bone's local rotation. It was written out twice inside the
-// TwoBoneIK block and needed a third copy for the arm chain, and three copies
-// of the same quaternion arithmetic is how one of them ends up subtly different
-// from the others.
-//
-// `newFrom` differs from `origFrom` only for a bone whose own parent has
-// already moved this frame, which is every link after the first.
-void ApplyChainRotation(Animation::SkeletonPose& pose, i32 boneIdx,
-                        const Math::Vector3& origFrom, const Math::Vector3& origTo,
-                        const Math::Vector3& newTo, const Math::Vector3& newFrom) {
-    Math::Vector3 origDir = origTo - origFrom;
-    Math::Vector3 newDir = newTo - newFrom;
-    const f32 origLen = origDir.Length();
-    const f32 newLen = newDir.Length();
-    if (origLen <= 0.0001f || newLen <= 0.0001f) return;
-
-    origDir = origDir * (1.0f / origLen);
-    newDir = newDir * (1.0f / newLen);
-
-    Math::Vector3 axis = origDir.Cross(newDir);
-    const f32 axisMag = axis.Length();
-    if (axisMag <= 0.0001f) return;          // already aligned, or exactly opposed
-
-    axis = axis * (1.0f / axisMag);
-    const f32 dotP = std::clamp(origDir.Dot(newDir), -1.0f, 1.0f);
-    const Math::Quaternion delta(axis, std::acos(dotP));
-    pose.localRotations[boneIdx] = delta * pose.localRotations[boneIdx];
-}
-
-void ApplyChainRotation(Animation::SkeletonPose& pose, i32 boneIdx,
-                        const Math::Vector3& origFrom, const Math::Vector3& origTo,
-                        const Math::Vector3& newTo) {
-    ApplyChainRotation(pose, boneIdx, origFrom, origTo, newTo, origFrom);
-}
-
-} // namespace
-
-// Settle one hand's fingers onto whatever is under them.
-//
-// Bones give three joint POSITIONS per finger and the solver wants four points,
-// so the tip comes from a named leaf bone where the rig has one and is
-// extrapolated past the distal joint where it does not. Everything is lifted to
-// world space, solved there, and written back as rotation deltas, because a
-// surface exists in world space and a bone's local rotation does not.
-void RenderSystem::SolveHandIK(Entity entity, AnimatorComponent& animComp,
-                               HandIKComponent& hand, f32 deltaTime) {
-    const auto* skeleton = animComp.animator.GetSkeleton();
-    const i32 handIdx = skeleton ? skeleton->FindBoneIndex(hand.handBoneName) : -1;
-
-    // Say WHY it did nothing, once.
-    //
-    // Four different failures produce an identical hovering hand and none of
-    // them is an error: no skeleton bound, a wrist bone name that does not
-    // resolve, no surface query injected, or nothing within reach. Without this
-    // they are indistinguishable from the outside and from each other.
-    // Reported on CHANGE, not once.
-    //
-    // A once-only report fires during scene load, in editor mode, where there
-    // is legitimately no surface query yet -- so it says "NO" and then never
-    // speaks again, including after Play wires one up. What matters is each
-    // transition.
-    static int s_LastState = -1;
-    const int state = (skeleton ? 1 : 0) | (handIdx >= 0 ? 2 : 0) | (m_SurfaceQuery ? 4 : 0);
-    if (state != s_LastState) {
-        s_LastState = state;
-        ENJIN_LOG_INFO(Animation,
-            "HandIK setup: skeleton=%s bones=%d wrist='%s' index=%d surfaceQuery=%s",
-            skeleton ? "yes" : "NO",
-            skeleton ? static_cast<int>(skeleton->bones.size()) : 0,
-            hand.handBoneName.c_str(), handIdx,
-            m_SurfaceQuery ? "yes" : "NO");
-    }
-
-    if (!skeleton || handIdx < 0) return;
-
-    const auto& pose = animComp.animator.GetCurrentPose();
-    const Math::Matrix4 entityWorld = ComputeWorldMatrix(m_World, entity);
-
-    auto boneMatrix = [&](i32 idx) { return entityWorld * pose.worldTransforms[idx]; };
-    auto bonePos = [&](i32 idx) {
-        const Math::Matrix4 m = boneMatrix(idx);
-        return Math::Vector3(m.m[12], m.m[13], m.m[14]);
-    };
-    // Rotate a direction by a bone's world matrix without translating it.
-    auto boneDir = [&](i32 idx, const Math::Vector3& local) {
-        const Math::Matrix4 m = boneMatrix(idx);
-        return Math::Vector3(
-            m.m[0] * local.x + m.m[4] * local.y + m.m[8] * local.z,
-            m.m[1] * local.x + m.m[5] * local.y + m.m[9] * local.z,
-            m.m[2] * local.x + m.m[6] * local.y + m.m[10] * local.z);
-    };
-
-    Animation::HandPose solved;
-    solved.palmPosition = bonePos(handIdx);
-    solved.palmNormal = boneDir(handIdx, hand.palmNormalLocal);
-
-    // Bone indices per finger, kept so the write-back knows what to rotate.
-    struct Resolved { i32 bone[Animation::kFingerJoints]; bool usable; };
-    std::array<Resolved, Animation::kFingerCount> resolved{};
-
-    for (u32 f = 0; f < Animation::kFingerCount; ++f) {
-        const FingerBones& bones = hand.fingers[f];
-        resolved[f].usable = false;
-        if (!bones.IsSet()) continue;
-
-        const i32 p0 = skeleton->FindBoneIndex(bones.proximal);
-        const i32 p1 = skeleton->FindBoneIndex(bones.intermediate);
-        const i32 p2 = skeleton->FindBoneIndex(bones.distal);
-        if (p0 < 0 || p1 < 0 || p2 < 0) continue;
-
-        Animation::FingerChain& chain = solved.fingers[f];
-        chain.joints[0] = bonePos(p0);
-        chain.joints[1] = bonePos(p1);
-        chain.joints[2] = bonePos(p2);
-
-        i32 tipIdx = -1;
-        if (!bones.tip.empty()) tipIdx = skeleton->FindBoneIndex(bones.tip);
-        if (tipIdx >= 0) {
-            chain.joints[3] = bonePos(tipIdx);
-        } else {
-            // No leaf bone: continue past the distal joint along the last
-            // segment. Right for a straight finger, and it drifts as the finger
-            // curls, which is why naming a tip bone is better where the rig has
-            // one.
-            const Math::Vector3 last = chain.joints[2] - chain.joints[1];
-            chain.joints[3] = Math::Vector3(chain.joints[2].x + last.x,
-                                            chain.joints[2].y + last.y,
-                                            chain.joints[2].z + last.z);
-        }
-
-        chain.curlDirection = boneDir(handIdx, bones.curlDirection);
-        chain.approachWeight = hand.approachWeights[f];
-        chain.releaseWeight = hand.releaseWeights[f];
-
-        resolved[f].bone[0] = p0;
-        resolved[f].bone[1] = p1;
-        resolved[f].bone[2] = p2;
-        resolved[f].usable = true;
-    }
-
-    // Whether there is anything close enough to be worth holding decides which
-    // way the weights move. Both are advanced every frame whether or not a
-    // surface is found, so a hand that walks away from a counter releases
-    // instead of freezing mid-grip.
-    bool engaged = false;
-    Animation::SurfaceHit probe;
-    // Which solver to run. Authored modes are obeyed; Auto asks the geometry.
-    Animation::HandTargetMode activeMode = hand.mode;
-    Math::Vector3 activeEdgeDir = hand.edgeDirection;
-
-    if (m_SurfaceQuery) {
-        if (hand.mode == Animation::HandTargetMode::Auto) {
-            // Probe radius from the RIG, not a constant: half the span from the
-            // outermost knuckle to the other. A hand that reaches across a bar
-            // is what makes it a bar, so the test has to be the size of this
-            // hand rather than the size of the hand I happened to build.
-            const Math::Vector3 a = solved.fingers[0].joints[0];
-            const Math::Vector3 b = solved.fingers[Animation::kFingerCount - 1].joints[0];
-            const Math::Vector3 span(b.x - a.x, b.y - a.y, b.z - a.z);
-            const f32 radius = span.Length() * 0.5f;
-
-            const auto klass = Animation::HandIK::ClassifyContact(
-                solved.palmPosition, solved.palmNormal,
-                boneDir(handIdx, Math::Vector3(1.0f, 0.0f, 0.0f)),
-                boneDir(handIdx, Math::Vector3(0.0f, 0.0f, 1.0f)),
-                radius, hand.engageDistance, *m_SurfaceQuery);
-
-            engaged = klass.hit;
-            probe = klass.centre;
-            activeMode = klass.mode;
-            activeEdgeDir = klass.edgeDirection;
-        } else {
-            engaged = m_SurfaceQuery->Cast(solved.palmPosition, solved.palmNormal,
-                                           hand.engageDistance, probe) && probe.hit;
-        }
-    }
-    hand.engaged = engaged;
-    hand.resolvedMode = activeMode;
-
-    // A clock this pass can actually trust.
-    //
-    // The deltaTime handed to this pass is ZERO on the path the editor drives it
-    // from, and every weight here is a rate per second. The result was a hand
-    // that probed the counter correctly, reported engaged, and then never
-    // advanced a single finger off zero weight -- so the solve was skipped for
-    // all five and the hand hovered while the log insisted it had found the
-    // surface. Every other part of the chain was right.
-    //
-    // Measured here rather than plumbed through, because this is the only thing
-    // in the pass that integrates over time and the alternative is threading a
-    // reliable dt through a renderer path that does not have one.
-    const auto now = std::chrono::steady_clock::now();
-    f32 ikDt = deltaTime;
-    if (ikDt <= 0.0f) {
-        if (m_LastHandIKTime.time_since_epoch().count() != 0) {
-            ikDt = std::chrono::duration<f32>(now - m_LastHandIKTime).count();
-        }
-        // First frame, and any hitch: a huge step would snap the hand onto the
-        // surface in one go, which is the thing approach rates exist to avoid.
-        ikDt = std::min(ikDt, 0.05f);
-    }
-    m_LastHandIKTime = now;
-
-    for (u32 f = 0; f < Animation::kFingerCount; ++f) {
-        Animation::FingerChain& chain = solved.fingers[f];
-        Animation::HandIK::AdvanceWeights(chain,
-                                          engaged ? hand.weight : 0.0f,
-                                          engaged ? 0.0f : 1.0f,
-                                          hand.approachRate, hand.releaseRate, ikDt);
-        hand.approachWeights[f] = chain.approachWeight;
-        hand.releaseWeights[f] = chain.releaseWeight;
-    }
-
-    if (!m_SurfaceQuery) {
-        // Nothing to ask. Hands stay on the animation, which is correct for a
-        // headless tool and not something to log every frame.
-        hand.fingersContacted = 0;
-        return;
-    }
-
-    // Remember where the animation had things, so the write-back computes a
-    // delta rather than a destination.
-    const Animation::HandPose animated = solved;
-
-    Animation::HandIKResult result;
-    if (activeMode == Animation::HandTargetMode::SurfaceEdge) {
-        if (engaged) {
-            result = Animation::HandIK::SolveEdge(solved, probe.point,
-                                                  activeEdgeDir, probe.normal);
-        }
-    } else {
-        result = Animation::HandIK::SolveSurface(solved, *m_SurfaceQuery);
-    }
-
-    hand.fingersContacted = result.fingersContacted;
-
-    // Say what happened, once a second.
-    //
-    // A hand that is not conforming looks identical whatever the cause: no
-    // surface query, a palm axis pointing out the back of the hand, a bone name
-    // that does not resolve, or simply nothing within reach. All four produce a
-    // hand that hovers, and none of them produce an error. This line is the
-    // difference between "it does nothing" and knowing which nothing it is.
-    //
-    // Throttled rather than per-frame: the interesting transition is walking up
-    // to a counter, which takes about a second, and a per-frame line would bury
-    // every other log in the console.
-    // Counted in CALLS, not seconds. A time accumulator here never fired,
-    // because the deltaTime this pass receives is zero on the path the editor
-    // drives it from -- which is itself worth knowing, since every IK weight
-    // rate is expressed per second.
-    static u32 s_HandLogTick = 0;
-    if ((s_HandLogTick++ % 120u) == 0u) {
-        ENJIN_LOG_INFO(Animation,
-            "HandIK: palm (%.2f, %.2f, %.2f) normal (%.2f, %.2f, %.2f) "
-            "engaged=%s probeHit=%s at %.3f m, %u of 5 fingers in contact, %s",
-            solved.palmPosition.x, solved.palmPosition.y, solved.palmPosition.z,
-            solved.palmNormal.x, solved.palmNormal.y, solved.palmNormal.z,
-            engaged ? "yes" : "NO", probe.hit ? "yes" : "NO", probe.distance,
-            result.fingersContacted,
-            activeMode == Animation::HandTargetMode::SurfaceEdge ? "curling over an edge"
-                                                                 : "pressing on a face");
-    }
-
-    // Write the solved chains back as rotations.
-    auto& poseMut = const_cast<Animation::SkeletonPose&>(pose);
-    for (u32 f = 0; f < Animation::kFingerCount; ++f) {
-        hand.contacted[f] = solved.fingers[f].contacted;
-        if (!resolved[f].usable || !solved.fingers[f].contacted) continue;
-
-        const Animation::FingerChain& before = animated.fingers[f];
-        const Animation::FingerChain& after = solved.fingers[f];
-        for (u32 j = 0; j < Animation::kFingerJoints; ++j) {
-            ApplyChainRotation(poseMut, resolved[f].bone[j],
-                               before.joints[j], before.joints[j + 1],
-                               after.joints[j + 1], after.joints[j]);
-        }
-    }
-}
 
 void RenderSystem::ProbeBakeOutsideFrameDiagnostic() {
     if (!m_ReflectionProbes || !m_VulkanRenderer) return;
@@ -9074,325 +9447,13 @@ void RenderSystem::Update(f32 deltaTime) {
         Entity entity = job.entity;
         AnimatorComponent* animComp = job.comp;
 
-        // Does this entity carry anything that EDITS the pose?
-        //
-        // IK used to be skipped entirely unless a clip was playing, which is
-        // backwards for the case that matters most: a character standing still
-        // with a hand resting on a counter is exactly when nothing is playing.
-        // Animation LOD said this character is too far away to be worth a solve.
-        // Skipping it also skips the bind-pose restore below, which is correct: a pose
-        // nobody is editing has nothing to reset.
+        // Pose edits: the pose library, then IK. Shared above the backend #if
+        // so the editor and the web player run them too (see ApplyPoseEdits).
+        // Animation LOD said this character is too far away to be worth a
+        // solve; skipping also skips the bind-pose restore, which is correct:
+        // a pose nobody is editing has nothing to reset.
         if (!job.allowIK) continue;
-
-        const bool hasIK =
-            m_World->HasComponent<LookAtIKComponent>(entity) ||
-            m_World->HasComponent<InteractionIKComponent>(entity) ||
-            m_World->HasComponent<TwoBoneIKComponent>(entity) ||
-            m_World->HasComponent<HandIKComponent>(entity);
-
-        if (!animComp->animator.IsPlaying() && !hasIK) continue;
-
-        // With no clip running, nothing resets the pose between frames.
-        //
-        // Every IK path below composes a rotation DELTA onto whatever is
-        // already in localRotations. While a clip plays, Update() resamples it
-        // each frame and supplies a clean starting point; with no clip, Update()
-        // returns at its first line and last frame's IK is still sitting there,
-        // so the deltas compound and the limb winds up rotating without bound.
-        if (hasIK && !animComp->animator.IsPlaying()) {
-            animComp->animator.RestoreBindPose();
-            // And rebuild the world transforms from it, because the IK blocks
-            // below read bone WORLD positions out of the pose. Resetting the
-            // local rotations without this would leave them solving against
-            // last frame's already-solved positions.
-            animComp->animator.RecomputePose();
-        }
-
-        auto* lookAtIK = m_World->GetComponent<LookAtIKComponent>(entity);
-        if (lookAtIK && lookAtIK->lookWeight > 0.0f) {
-            // Resolve target position
-            Math::Vector3 targetPos = lookAtIK->targetWorldPos;
-            if (lookAtIK->useEntityTarget && lookAtIK->targetEntity != INVALID_ENTITY) {
-                auto* targetTransform = m_World->GetComponent<TransformComponent>(lookAtIK->targetEntity);
-                if (targetTransform) {
-                    targetPos = targetTransform->position;
-                }
-            }
-
-            // The head bone, by NAME, and the solved rotation written back onto
-            // it.
-            //
-            // This used to take the head position as entityPosition + (0,1.6,0)
-            // -- a guess at how tall a character is -- solve, store the result
-            // in currentHeadRotation, and stop. Nothing read that field, so the
-            // head never turned. headBoneName and neckBoneName were never read
-            // at all, and neither was currentNeckRotation. The component
-            // serialized, showed an inspector, cost a solve every frame and did
-            // nothing, which is the same shape InteractionIK was in above.
-            auto* entityTransform = m_World->GetComponent<TransformComponent>(entity);
-            const auto* skeleton = animComp->animator.GetSkeleton();
-            const i32 headIdx = skeleton
-                ? skeleton->FindBoneIndex(lookAtIK->headBoneName) : -1;
-
-            if (entityTransform && skeleton && headIdx >= 0) {
-                const auto& pose = animComp->animator.GetCurrentPose();
-                if (headIdx < static_cast<i32>(pose.worldTransforms.size()) &&
-                    headIdx < static_cast<i32>(pose.localRotations.size())) {
-
-                    const Math::Matrix4 entityWorld = entityTransform->ToMatrix();
-                    const Math::Matrix4 headWorld = entityWorld * pose.worldTransforms[headIdx];
-
-                    // The REAL head position, from the pose, rather than a
-                    // guess about character height. Translation is the last
-                    // column of the world matrix.
-                    const Math::Vector3 headWorldPos(headWorld.m[12], headWorld.m[13], headWorld.m[14]);
-
-                    // The head's ANIMATED world rotation, before IK touches it.
-                    // maxRotation is measured from here, so a look-at deflects
-                    // the animation by at most that many degrees rather than
-                    // walking to the target over enough frames.
-                    const Math::Quaternion restWorld = Math::Quaternion::FromMatrix(headWorld);
-
-                    const Math::Quaternion solved = Animation::LookAtIK::Solve(
-                        headWorldPos, targetPos, lookAtIK->currentHeadRotation,
-                        lookAtIK->maxRotation, lookAtIK->smoothSpeed, deltaTime,
-                        restWorld);
-                    lookAtIK->currentHeadRotation = solved;
-
-                    // Solve returns a WORLD rotation; localRotations are in
-                    // PARENT space. Converting through the parent is the
-                    // difference between a head that looks at the target and
-                    // one that looks at it only while the character faces down
-                    // -Z. (TwoBoneIK above pre-multiplies a world-space delta
-                    // straight onto a local rotation, which carries that
-                    // approximation -- not copied here.)
-                    const i32 parentIdx = skeleton->bones[headIdx].parentIndex;
-                    const Math::Matrix4 parentWorld =
-                        (parentIdx >= 0 && parentIdx < static_cast<i32>(pose.worldTransforms.size()))
-                        ? entityWorld * pose.worldTransforms[parentIdx]
-                        : entityWorld;
-                    const Math::Quaternion parentRot = Math::Quaternion::FromMatrix(parentWorld);
-                    const Math::Quaternion desiredLocal = parentRot.Conjugate() * solved;
-
-                    // lookWeight blends between the animation's own head
-                    // rotation and the look-at, so a partial weight is a
-                    // partial turn rather than an on/off switch.
-                    auto& poseMut = const_cast<Animation::SkeletonPose&>(pose);
-                    poseMut.localRotations[headIdx] = Math::Quaternion::Slerp(
-                        poseMut.localRotations[headIdx], desiredLocal,
-                        std::clamp(lookAtIK->lookWeight, 0.0f, 1.0f));
-                }
-            }
-        }
-
-        auto* interactionIK = m_World->GetComponent<InteractionIKComponent>(entity);
-        if (interactionIK && interactionIK->ikWeight > 0.0f) {
-            auto* entityTransform = m_World->GetComponent<TransformComponent>(entity);
-            if (entityTransform) {
-                // Find nearest interactable within radius (only scan InteractableComponent entities)
-                Math::Vector3 handPos = entityTransform->position + Math::Vector3(0.3f, 1.0f, 0.5f);
-                Math::Vector3 nearestTarget = handPos;
-                Entity nearestEntity = INVALID_ENTITY;
-                f32 nearestDist = interactionIK->interactionRadius + 1.0f;
-
-                for (Entity other : m_World->GetEntitiesWithComponent<InteractableComponent>()) {
-                    if (other == entity) continue;
-                    if (!interactionIK->interactionTag.empty()) {
-                        auto* otherTag = m_World->GetComponent<TagComponent>(other);
-                        if (!otherTag || !otherTag->HasTag(interactionIK->interactionTag))
-                            continue;
-                    }
-                    auto* otherTransform = m_World->GetComponent<TransformComponent>(other);
-                    if (!otherTransform) continue;
-                    f32 dist = (otherTransform->position - handPos).Length();
-                    if (dist < nearestDist && dist <= interactionIK->interactionRadius) {
-                        nearestDist = dist;
-                        nearestTarget = otherTransform->position;
-                        nearestEntity = other;
-                    }
-                }
-
-                if (nearestDist <= interactionIK->interactionRadius) {
-                    // Solve the shoulder/elbow/hand chain from the ACTUAL BONES
-                    // and write the answer back into the pose.
-                    //
-                    // What was here before did none of that. It built a chain
-                    // out of three hardcoded offsets from the entity position,
-                    // ignoring handBoneName, elbowBoneName and shoulderBoneName
-                    // entirely, ran FABRIK into a scratch vector, and then threw
-                    // the result away: m_IKChainCache was never read again, and
-                    // currentTarget and currentHandTarget were never written by
-                    // anything. So this component has never moved a bone. It
-                    // serialized, it showed an inspector, it cost a solve every
-                    // frame, and it did nothing, which is the hardest kind of
-                    // dead code to notice because everything about it looks
-                    // alive.
-                    //
-                    // The write-back follows TwoBoneIKComponent's pattern, which
-                    // is the one IK path in here that does work.
-                    const auto* skeleton = animComp->animator.GetSkeleton();
-                    const i32 shoulderIdx = skeleton
-                        ? skeleton->FindBoneIndex(interactionIK->shoulderBoneName) : -1;
-                    const i32 elbowIdx = skeleton
-                        ? skeleton->FindBoneIndex(interactionIK->elbowBoneName) : -1;
-                    const i32 handIdx = skeleton
-                        ? skeleton->FindBoneIndex(interactionIK->handBoneName) : -1;
-
-                    if (shoulderIdx >= 0 && elbowIdx >= 0 && handIdx >= 0) {
-                        const auto& pose = animComp->animator.GetCurrentPose();
-                        const Math::Matrix4 entityWorld = ComputeWorldMatrix(m_World, entity);
-
-                        auto boneWorld = [&](i32 idx) {
-                            const Math::Matrix4 m = entityWorld * pose.worldTransforms[idx];
-                            return Math::Vector3(m.m[12], m.m[13], m.m[14]);
-                        };
-
-                        const Math::Vector3 shoulderPos = boneWorld(shoulderIdx);
-                        const Math::Vector3 elbowPos = boneWorld(elbowIdx);
-                        const Math::Vector3 handWorldPos = boneWorld(handIdx);
-
-                        Math::Vector3 solvedElbow, solvedHand;
-                        Animation::TwoBoneIK::Solve(
-                            shoulderPos, elbowPos, handWorldPos, nearestTarget,
-                            Math::Vector3(0.0f, 0.0f, 1.0f), interactionIK->ikWeight,
-                            solvedElbow, solvedHand);
-
-                        auto& poseMut = const_cast<Animation::SkeletonPose&>(pose);
-                        ApplyChainRotation(poseMut, shoulderIdx, shoulderPos, elbowPos, solvedElbow);
-                        ApplyChainRotation(poseMut, elbowIdx, elbowPos, handWorldPos,
-                                           solvedHand, solvedElbow);
-
-                        // Report what it settled on, so a script or the
-                        // inspector can see the hand is actually engaged.
-                        interactionIK->currentTarget = nearestEntity;
-                        interactionIK->currentHandTarget = solvedHand;
-                    }
-                }
-            }
-        }
-
-        // Hand IK: five fingers, each settled on whatever is under it.
-        auto* handIK = m_World->GetComponent<HandIKComponent>(entity);
-        if (handIK && handIK->weight > 0.0f) {
-            SolveHandIK(entity, *animComp, *handIK, deltaTime);
-        }
-
-        // Two-Bone IK: analytic solve for arm/leg chains
-        auto* twoBoneIK = m_World->GetComponent<TwoBoneIKComponent>(entity);
-        if (twoBoneIK && twoBoneIK->weight > 0.0f) {
-            const auto* skeleton = animComp->animator.GetSkeleton();
-            if (skeleton) {
-                i32 rootIdx = skeleton->FindBoneIndex(twoBoneIK->rootBoneName);
-                i32 midIdx = skeleton->FindBoneIndex(twoBoneIK->midBoneName);
-                i32 endIdx = skeleton->FindBoneIndex(twoBoneIK->endBoneName);
-
-                if (rootIdx >= 0 && midIdx >= 0 && endIdx >= 0) {
-                    const auto& pose = animComp->animator.GetCurrentPose();
-
-                    // Get entity world transform to convert bone-local to world space
-                    auto* entityTransform2 = m_World->GetComponent<TransformComponent>(entity);
-                    Math::Matrix4 entityWorld = entityTransform2 ? ComputeWorldMatrix(m_World, entity) : Math::Matrix4::Identity();
-
-                    // Extract bone world positions (pose.worldTransforms are in entity-local space)
-                    Math::Matrix4 rootWorld = entityWorld * pose.worldTransforms[rootIdx];
-                    Math::Matrix4 midWorld = entityWorld * pose.worldTransforms[midIdx];
-                    Math::Matrix4 endWorld = entityWorld * pose.worldTransforms[endIdx];
-
-                    Math::Vector3 rootPos(rootWorld.m[12], rootWorld.m[13], rootWorld.m[14]);
-                    Math::Vector3 midPos(midWorld.m[12], midWorld.m[13], midWorld.m[14]);
-                    Math::Vector3 endPos(endWorld.m[12], endWorld.m[13], endWorld.m[14]);
-
-                    // Resolve target position
-                    Math::Vector3 ikTarget = twoBoneIK->targetPosition;
-                    if (twoBoneIK->useEntityTarget && twoBoneIK->targetEntity != INVALID_ENTITY) {
-                        auto* targetTransform = m_World->GetComponent<TransformComponent>(twoBoneIK->targetEntity);
-                        if (targetTransform) {
-                            ikTarget = targetTransform->position;
-                        }
-                    }
-
-                    // Solve two-bone IK
-                    Math::Vector3 solvedMid, solvedEnd;
-                    Animation::TwoBoneIK::Solve(
-                        rootPos, midPos, endPos, ikTarget,
-                        twoBoneIK->poleVector, twoBoneIK->weight,
-                        solvedMid, solvedEnd
-                    );
-
-                    // Apply IK result by computing rotation deltas for root and mid bones
-                    auto& poseMut = const_cast<Animation::SkeletonPose&>(pose);
-
-                    // Root bone rotation delta: rotate the upper limb toward solved mid position
-                    {
-                        Math::Vector3 origDir = midPos - rootPos;
-                        Math::Vector3 newDir = solvedMid - rootPos;
-                        f32 origLen = origDir.Length();
-                        f32 newLen = newDir.Length();
-                        if (origLen > 0.0001f && newLen > 0.0001f) {
-                            origDir = origDir * (1.0f / origLen);
-                            newDir = newDir * (1.0f / newLen);
-                            Math::Vector3 axis = origDir.Cross(newDir);
-                            f32 axisMag = axis.Length();
-                            f32 dotP = std::clamp(origDir.Dot(newDir), -1.0f, 1.0f);
-                            if (axisMag > 0.0001f) {
-                                axis = axis * (1.0f / axisMag);
-                                Math::Quaternion rotDelta(axis, std::acos(dotP));
-                                poseMut.localRotations[rootIdx] = rotDelta * poseMut.localRotations[rootIdx];
-                            }
-                        }
-                    }
-
-                    // Mid bone rotation delta: rotate the lower limb toward solved end position
-                    {
-                        Math::Vector3 origDir = endPos - midPos;
-                        Math::Vector3 newDir = solvedEnd - solvedMid;
-                        f32 origLen = origDir.Length();
-                        f32 newLen = newDir.Length();
-                        if (origLen > 0.0001f && newLen > 0.0001f) {
-                            origDir = origDir * (1.0f / origLen);
-                            newDir = newDir * (1.0f / newLen);
-                            Math::Vector3 axis = origDir.Cross(newDir);
-                            f32 axisMag = axis.Length();
-                            f32 dotP = std::clamp(origDir.Dot(newDir), -1.0f, 1.0f);
-                            if (axisMag > 0.0001f) {
-                                axis = axis * (1.0f / axisMag);
-                                Math::Quaternion rotDelta(axis, std::acos(dotP));
-                                poseMut.localRotations[midIdx] = rotDelta * poseMut.localRotations[midIdx];
-                            }
-                        }
-                    }
-
-                    // Write updated rotations back and mark dirty
-                    animComp->animator.SetBoneLocalRotation(
-                        twoBoneIK->rootBoneName, poseMut.localRotations[rootIdx]);
-                    animComp->animator.SetBoneLocalRotation(
-                        twoBoneIK->midBoneName, poseMut.localRotations[midIdx]);
-                    animComp->matricesDirty = true;
-                }
-            }
-        }
-
-        // Turn the edited pose into the matrices the renderer actually skins
-        // with.
-        //
-        // THIS is what was missing, and it is why no IK in this engine has ever
-        // reached the screen. Sampling builds the world transforms and the
-        // skinning matrices at the end of Update(), during pass 2. Every IK
-        // block above runs in pass 3 and edits localRotations, which by then
-        // nothing reads: the frame renders the pre-IK pose, and the next
-        // frame's sample overwrites the rotations before they are ever used.
-        // Look-at, two-bone, interaction and hand IK all computed correct
-        // answers into a buffer that was thrown away.
-        //
-        // The intent was there. TwoBoneIK sets animComp->matricesDirty, which
-        // reads like a request to rebuild -- but nothing anywhere consumes that
-        // flag; it appears only in the component's own copy constructors. A
-        // dirty flag with no consumer is indistinguishable from a working one
-        // right up until somebody looks.
-        if (hasIK) {
-            animComp->animator.RecomputePose();
-            animComp->matricesDirty = false;
-        }
+        ApplyPoseEdits(entity, animComp, deltaTime);
     }
 
     // Update bone attachment transforms: snap attached entities to their target bone

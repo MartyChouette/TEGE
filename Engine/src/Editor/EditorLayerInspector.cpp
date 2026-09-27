@@ -4535,6 +4535,9 @@ void EditorLayer::DrawInspectorPanel() {
                             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Save and recall bone poses for expressions and gestures.\nClick a pose to preview it. Use 'Save Current' to capture the current skeleton state.");
 
                             ImGui::DragFloat("Blend##PoseLib", &poseLib->blendWeight, 0.05f, 0.0f, 1.0f, "%.2f");
+                            ImGui::SetItemTooltip("How far the active pose is applied, 0 to 1.");
+                            ImGui::DragFloat("Blend Speed##PoseLib", &poseLib->blendSpeed, 0.1f, 0.0f, 50.0f, "%.1f /s");
+                            ImGui::SetItemTooltip("How fast a pose blends in and out, in weight per second. 0 switches instantly.");
                             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Master blend weight for pose application (0 = no effect, 1 = full pose)");
 
                             // Pose buttons — large, accessible, grouped by category

@@ -2222,8 +2222,12 @@ void EditorLayer::Update(f32 deltaTime) {
                     continue;   // skipped this frame; the dt stays banked
                 }
                 animComp->Update(stepDt, quality);
+                if (m_RenderSystem->AllowIKFor(entity)) m_RenderSystem->ApplyPoseEdits(entity, animComp, stepDt);
             } else {
                 animComp->Update(deltaTime);
+                // Poses and IK preview while editing too; they only ever ran
+                // in the desktop player (see RenderSystem::ApplyPoseEdits)
+                if (m_RenderSystem) m_RenderSystem->ApplyPoseEdits(entity, animComp, deltaTime);
             }
         }
 

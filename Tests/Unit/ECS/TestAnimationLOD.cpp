@@ -8,6 +8,12 @@
 #include "EnjinTest.h"
 #include "Enjin/ECS/Components/AnimationLOD.h"
 #include "Enjin/Animation/Animation.h"
+#include "Enjin/ECS/World.h"
+#include "Enjin/ECS/Components/Skeleton.h"
+#include "Enjin/ECS/Components/Gameplay.h"
+#include "Enjin/ECS/Components/Transform.h"
+#include "Enjin/ECS/Systems/RenderSystem.h"
+#include <cmath>
 
 #include <memory>
 
@@ -239,6 +245,76 @@ ENJIN_TEST(AnimationLODBands, BoneDepthDefaultsToEveryBone) {
     // behaviour, and silently dropping bones would be a picture change nobody requested.
     AnimationLODComponent lod;
     for (i32 b = 0; b < lod.bandCount; ++b) ENJIN_EXPECT_EQ(lod.bands[b].maxBoneDepth, 0u);
+}
+
+// ===========================================================================
+// Pose library: nothing applied a pose (SD-27). Runs in RenderSystem::
+// ApplyPoseEdits, which every runtime calls after ticking an animator.
+// ===========================================================================
+
+namespace {
+struct PoseRig {
+    World world;
+    Entity e = INVALID_ENTITY;
+    RenderSystem rs{&world, nullptr};
+    PoseRig(f32 blendSpeed) {
+        e = world.CreateEntity();
+        world.AddComponent<TransformComponent>(e);
+        auto& anim = world.AddComponent<AnimatorComponent>(e);
+        anim.animator.SetSkeleton(ChainSkeleton());
+        PoseLibraryComponent lib;
+        PoseLibraryComponent::NamedPose bend;
+        bend.name = "bend";
+        PoseLibraryComponent::BoneOverride ov;
+        ov.boneName = "arm";
+        ov.rotation = Math::Quaternion::FromEuler(Math::Vector3(0.0f, 0.0f, Math::Radians(90.0f)));
+        ov.weight = 1.0f;
+        bend.overrides.push_back(ov);
+        lib.poses.push_back(bend);
+        lib.activePose = "bend";
+        lib.blendWeight = 1.0f;
+        lib.blendSpeed = blendSpeed;
+        world.AddComponent<PoseLibraryComponent>(e, lib);
+    }
+    void Step(f32 dt) { rs.ApplyPoseEdits(e, world.GetComponent<AnimatorComponent>(e), dt); }
+    // Angle of the arm's local rotation from bind, in degrees
+    f32 ArmAngle() {
+        const auto& q = world.GetComponent<AnimatorComponent>(e)->animator.GetCurrentPose().localRotations[2];
+        const f32 w = std::min(1.0f, std::abs(q.w));
+        return 2.0f * std::acos(w) * 180.0f / 3.14159265f;
+    }
+};
+}
+
+ENJIN_TEST(PoseLibrary, TheActivePoseTurnsItsBones) {
+    PoseRig r(0.0f);   // speed 0 = straight to full weight
+    r.Step(0.016f);
+    ENJIN_EXPECT_TRUE(std::abs(r.ArmAngle() - 90.0f) < 0.5f);
+    ENJIN_EXPECT_TRUE(std::abs(r.world.GetComponent<AnimatorComponent>(r.e)->animator
+                               .GetCurrentPose().localRotations[1].w - 1.0f) < 1e-4f);   // spine untouched
+}
+
+ENJIN_TEST(PoseLibrary, ItBlendsInAtItsSpeedAndDoesNotCompound) {
+    PoseRig r(2.0f);   // two units a second: half weight after a quarter second
+    for (int i = 0; i < 15; ++i) r.Step(1.0f / 60.0f);
+    ENJIN_EXPECT_TRUE(std::abs(r.ArmAngle() - 45.0f) < 2.0f);
+    // Holding the same weight, re-applied every frame, stays put rather than
+    // creeping toward 90: each frame starts from the bind pose
+    auto* lib = r.world.GetComponent<PoseLibraryComponent>(r.e);
+    lib->blendWeight = lib->currentBlend;
+    for (int i = 0; i < 30; ++i) r.Step(1.0f / 60.0f);
+    ENJIN_EXPECT_TRUE(std::abs(r.ArmAngle() - 45.0f) < 2.0f);
+}
+
+ENJIN_TEST(PoseLibrary, ClearingThePoseBlendsBackOut) {
+    PoseRig r(4.0f);
+    for (int i = 0; i < 30; ++i) r.Step(1.0f / 60.0f);
+    ENJIN_EXPECT_TRUE(std::abs(r.ArmAngle() - 90.0f) < 0.5f);
+    r.world.GetComponent<PoseLibraryComponent>(r.e)->activePose.clear();
+    r.Step(1.0f / 8.0f);                         // half way out
+    ENJIN_EXPECT_TRUE(r.ArmAngle() > 20.0f && r.ArmAngle() < 70.0f);
+    for (int i = 0; i < 30; ++i) r.Step(1.0f / 60.0f);
+    ENJIN_EXPECT_TRUE(r.ArmAngle() < 0.5f);
 }
 
 ENJIN_TEST_MAIN()

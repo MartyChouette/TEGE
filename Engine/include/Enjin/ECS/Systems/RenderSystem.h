@@ -3326,6 +3326,11 @@ public:
 
     // Animation LOD. Lived inside the Vulkan Update only, so web refreshes every
     // animator every frame. Backend-agnostic; web's call site is in web_main.
+    // Pose library + IK for one animator, after it was ticked. Every runtime
+    // calls this; see RenderSystem.cpp.
+    void ApplyPoseEdits(Entity entity, AnimatorComponent* animComp, f32 deltaTime);
+    bool AllowIKFor(Entity entity) const;
+
     bool ShouldRefreshAnimator(AnimatorComponent& ac, Entity entity,
                                f32 deltaTime, f32& outStepDt,
                                AnimationQuality& outQuality);

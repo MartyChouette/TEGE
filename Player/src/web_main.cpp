@@ -1549,9 +1549,10 @@ public:
                     continue;   // skipped this frame; dt stays banked for the next
                 }
                 // Fidelity as well as rate: blend trees and keyframe interpolation drop
-                // out with distance the same way they do on desktop. Web does not run
-                // the IK pass, so the band's `ik` flag has nothing to gate here.
+                // out with distance the same way they do on desktop, and so does IK.
                 anim->Update(stepDt, quality);
+                // Pose library and IK, shared with desktop. Web never ran them.
+                if (m_RenderSystem->AllowIKFor(entity)) m_RenderSystem->ApplyPoseEdits(entity, anim, stepDt);
             }
         } else {
             for (auto entity : m_World->GetEntitiesWithComponent<Enjin::ECS::AnimatorComponent>()) {

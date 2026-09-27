@@ -3091,6 +3091,11 @@ struct PoseLibraryComponent {
     f32 blendWeight = 1.0f;          // Master blend weight for pose application
     f32 blendSpeed = 5.0f;           // Interpolation speed (units/sec)
 
+    // Runtime (RenderSystem::ApplyPoseEdits): how far the pose is blended in,
+    // and which pose that is -- kept while blending OUT after activePose clears
+    f32 currentBlend = 0.0f;
+    std::string appliedPose;
+
     // Helper: find pose by name
     NamedPose* FindPose(const std::string& name) {
         for (auto& p : poses) { if (p.name == name) return &p; }
