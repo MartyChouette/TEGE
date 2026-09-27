@@ -81,8 +81,10 @@ void RenderSystem::SetWebRetro(const Renderer::PostProcessSettings& s) {
 }
 
 Renderer::SkyboxConfig RenderSystem::WeatherSky(const Renderer::SkyboxConfig& cfg) const {
-    if (m_WeatherSkyRain <= 0.001f && m_WeatherSkySnow <= 0.001f) return cfg;
     Renderer::SkyboxConfig out = cfg;
+    // World time's sun, when it drives one; both backends' skies come through here
+    if (m_SkySunDriven) out.sunDirection = m_SkySunDir;
+    if (m_WeatherSkyRain <= 0.001f && m_WeatherSkySnow <= 0.001f) return out;
     auto lerp3 = [](Math::Vector3& c, const Math::Vector3& to, f32 t) {
         c = c + (to - c) * t;
     };

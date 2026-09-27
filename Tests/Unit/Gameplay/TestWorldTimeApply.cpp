@@ -18,6 +18,7 @@
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Light.h"
 #include "Enjin/ECS/Components/Transform.h"
+#include "Enjin/ECS/Systems/RenderSystem.h"
 
 using namespace Enjin;
 using namespace Enjin::Effects;
@@ -122,6 +123,40 @@ ENJIN_TEST(WorldTimeApply, AWorldWithNoDirectionalLightIsNotACrash) {
     WorldTimeSystem time;
     UpdateAndApplyWorldTime(&w, time, nullptr, nullptr, nullptr, 0.016f);
     ENJIN_EXPECT_TRUE(w.IsValid(e));
+}
+
+// The sky's sun and the sun light are one sun. World time turned the light and
+// left the sky on the scene's saved direction, and with world time off nothing
+// linked them either: the Playground drew its sun disc under the map while the
+// light came from above.
+ENJIN_TEST(WorldTimeApply, TheSkySunIsWhereTheLightComesFrom) {
+    ECS::World w;
+    const ECS::Entity sun = MakeSun(w);
+    ECS::RenderSystem render(&w, nullptr);   // no GPU: only the sky state is exercised
+    Renderer::SkyboxConfig saved;
+    saved.sunDirection = Math::Vector3(0.35f, -0.7f, 0.4f);   // the Playground's, below the horizon
+
+    // World time at noon: the sky sun is overhead, opposite the light's travel
+    WorldTimeSystem time;
+    time.SetTime(12.0f, 1, 6, 1);
+    UpdateAndApplyWorldTime(&w, time, &render, nullptr, nullptr, 0.0f);
+    const Math::Vector3 skyNoon = render.WeatherSky(saved).sunDirection;
+    ENJIN_EXPECT_TRUE(skyNoon.y > 0.5f);
+
+    // World time off: the sky follows the light, not the saved field
+    w.GetComponent<ECS::TransformComponent>(sun)->rotation =
+        Math::Quaternion(-0.34f, -0.1f, 0.0f, 0.93f).Normalized();
+    SyncSkySunToSunLight(&w, &render);
+    const Math::Vector3 sky = render.WeatherSky(saved).sunDirection;
+    const Math::Vector3 travel = LightTravelDir(w, sun);
+    ENJIN_EXPECT_TRUE(sky.y > 0.0f);
+    ENJIN_EXPECT_FLOAT_NEAR(sky.x, -travel.x, 1e-4f);
+    ENJIN_EXPECT_FLOAT_NEAR(sky.y, -travel.y, 1e-4f);
+
+    // No sun light at all: the saved field stands
+    ECS::World empty;
+    SyncSkySunToSunLight(&empty, &render);
+    ENJIN_EXPECT_FLOAT_NEAR(render.WeatherSky(saved).sunDirection.y, -0.7f, 1e-6f);
 }
 
 ENJIN_TEST_MAIN()

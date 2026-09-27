@@ -42,6 +42,10 @@ void UpdateAndApplyWorldTime(ECS::World* world,
     // back below the horizon so it always arrives from above; the colour and
     // intensity below already make it read as moonlight rather than sun.
     Math::Vector3 sunDir = time.GetSunDirection();
+    // The sky draws the real sun, below the horizon at night, where the light
+    // itself is mirrored up into moonlight below. The sky wants the direction
+    // towards the sun; GetSunDirection is the direction light travels.
+    if (render) render->SetSkySunDirection(sunDir * -1.0f);
     if (sunDir.y > -0.15f) {
         sunDir.y = -0.15f - std::fabs(sunDir.y) * 0.5f;
         const f32 len = std::sqrt(sunDir.x * sunDir.x + sunDir.y * sunDir.y + sunDir.z * sunDir.z);
@@ -91,6 +95,24 @@ void UpdateAndApplyWorldTime(ECS::World* world,
     if (seasonal && weather && seasonal->GetConfig().enabled) {
         seasonal->Update(deltaTime, state, *weather);
     }
+}
+
+void SyncSkySunToSunLight(ECS::World* world, ECS::RenderSystem* render) {
+    if (!render) return;
+    const ECS::TransformComponent* sun = nullptr;
+    f32 best = -1.0f;
+    if (world) {
+        for (ECS::Entity e : world->GetEntitiesWithComponent<ECS::LightComponent>()) {
+            const auto* light = world->GetComponent<ECS::LightComponent>(e);
+            const auto* xf = world->GetComponent<ECS::TransformComponent>(e);
+            if (!light || !xf || light->type != ECS::LightType::Directional) continue;
+            if (light->intensity > best) { best = light->intensity; sun = xf; }
+        }
+    }
+    if (!sun) { render->ClearSkySunDirection(); return; }
+    // The light travels along the transform's forward; the sky wants the way
+    // back to the sun
+    render->SetSkySunDirection(sun->rotation.GetForward() * -1.0f);
 }
 
 } // namespace Effects

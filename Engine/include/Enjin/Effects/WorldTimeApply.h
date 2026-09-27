@@ -43,5 +43,15 @@ ENJIN_API void UpdateAndApplyWorldTime(ECS::World* world,
                                        WeatherSystem* weather,
                                        f32 deltaTime);
 
+/**
+ * Point the sky's sun at the scene's sun light when world time is not driving
+ * it. The directional light and the skybox's own sunDirection were two
+ * answers to one question, and nothing kept them together: the Playground
+ * saved a sky sun below the horizon while its light shone from above, so the
+ * disc sat under the map. The strongest directional light is the sun; with
+ * none, the skybox's field stands.
+ */
+ENJIN_API void SyncSkySunToSunLight(ECS::World* world, ECS::RenderSystem* render);
+
 } // namespace Effects
 } // namespace Enjin

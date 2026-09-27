@@ -1605,6 +1605,14 @@ public:
         m_WeatherSkySnow = std::clamp(snow, 0.0f, 1.0f);
     }
     Renderer::SkyboxConfig WeatherSky(const Renderer::SkyboxConfig& cfg) const;
+    Math::Vector3 m_SkySunDir = Math::Vector3(0.0f, 1.0f, 0.0f);
+    bool m_SkySunDriven = false;
+    // The sky's sun (a direction TOWARDS the sun, the skybox convention) as
+    // world time places it. World time turned the directional light and left
+    // the sky on the scene's saved direction, so the disc could sit under the
+    // map while the light came from above. Cleared when world time is off.
+    void SetSkySunDirection(const Math::Vector3& towardSun) { m_SkySunDir = towardSun; m_SkySunDriven = true; }
+    void ClearSkySunDirection() { m_SkySunDriven = false; }
 
 #if !ENJIN_RENDERER_WEBGPU
     // Skybox

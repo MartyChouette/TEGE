@@ -3494,6 +3494,8 @@ void EditorLayer::UpdateGameViewSims(f32 simDt) {
     if (m_WorldTimeEnabled) {
         Effects::UpdateAndApplyWorldTime(m_World, m_WorldTime, m_RenderSystem,
                                          &m_SeasonalWeather, &m_WeatherSystem, simDt);
+    } else if (m_RenderSystem) {
+        Effects::SyncSkySunToSunLight(m_World, m_RenderSystem);   // the sky follows the sun light
     }
 
     // World curvature

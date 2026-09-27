@@ -2111,6 +2111,8 @@ public:
             Enjin::Effects::UpdateAndApplyWorldTime(m_World.get(), m_WorldTime,
                                                     m_RenderSystem, &m_SeasonalWeather,
                                                     &m_WeatherSystem, deltaTime);
+        } else if (m_RenderSystem) {
+            Enjin::Effects::SyncSkySunToSunLight(m_World.get(), m_RenderSystem);   // the sky follows the sun light
         }
         m_CurlNoiseSystem.Update(deltaTime);
         m_DestructibleSystem.Update(deltaTime);
