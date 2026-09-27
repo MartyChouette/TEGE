@@ -97,7 +97,9 @@ if(ENJIN_PLATFORM_WEB)
          "src/Effects/FluidRenderer.cpp" "src/Effects/GrassRenderer.cpp"
          "src/Effects/ShrubRenderer.cpp" "src/Effects/TreeRenderer.cpp"
          "src/Effects/SpriteBatchRenderer.cpp"
-         "src/GUI/ImGuiLayer.cpp" "src/GUI/ShaderGUI.cpp" "src/GUI/EngineSplash.cpp"
+         # EngineSplash.cpp is NOT here: it is plain ImGui, and the web player
+         # draws the same engine card at startup (WP-9)
+         "src/GUI/ImGuiLayer.cpp" "src/GUI/ShaderGUI.cpp"
          # ScriptBindings_Render/_AudioGraph compile on web ON PURPOSE: every
          # script-visible symbol must register on every platform or any .as
          # module mentioning one fails to compile (Render_SetRainActive bug).

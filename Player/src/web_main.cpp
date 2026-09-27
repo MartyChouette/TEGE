@@ -56,6 +56,7 @@
 #include "Enjin/GUI/UISystem.h"
 #include "Enjin/GUI/UITemplates.h"
 #include "Enjin/GUI/GameMenus.h"
+#include "Enjin/GUI/EngineSplash.h"
 #include "Enjin/GUI/EmbeddedFonts.h"    // web ImGui font (parity with desktop ImGuiLayer)
 #include "Enjin/GUI/EmbeddedPlayfair.h"
 #include "Enjin/Renderer/WebGPU/WebGPUTypes.h"
@@ -304,6 +305,26 @@ public:
                 m_WindowWidth = manifest.value("windowWidth", 1280u);
                 m_WindowHeight = manifest.value("windowHeight", 720u);
                 m_StartScene = manifest.value("startScene", "");
+                // Startup: the engine card and the authored flow, read as the
+                // desktop player reads them (WP-9). Web opened straight into
+                // the first scene and skipped both.
+                m_EngineSplash = manifest.value("engineSplash", true);
+                m_StartupFlow.clear();
+                if (manifest.contains("startupFlow") && manifest["startupFlow"].is_array()) {
+                    for (const auto& sj : manifest["startupFlow"]) {
+                        FlowStep step;
+                        const std::string t = sj.value("type", "scene");
+                        step.type = (t == "menu") ? FlowStepType::Menu : FlowStepType::Scene;
+                        step.scene = sj.value("scene", "");
+                        const std::string a = sj.value("advance", "gameplay");
+                        if (a == "timer") step.advance = FlowAdvance::Timer;
+                        else if (a == "input") step.advance = FlowAdvance::Input;
+                        else if (a == "script") step.advance = FlowAdvance::Script;
+                        else step.advance = FlowAdvance::Gameplay;
+                        step.duration = sj.value("duration", 3.0f);
+                        m_StartupFlow.push_back(step);
+                    }
+                }
                 m_PhysicsBackendType = manifest.value("physicsBackend", 0u);
                 m_ProjectMode = manifest.value("projectMode", 1u);
                 // Project input settings: custom action names/bindings and the
@@ -640,6 +661,7 @@ public:
         // nothing (WP-2).
         Enjin::Scripting::SetBindingsDialogueSystem(&m_DialogueSystem);
         Enjin::Scripting::SetBindingsSceneManager(&m_SceneManager);
+        Enjin::Scripting::SetBindingsFlowAdvanceFlag(&m_FlowAdvanceRequested);
         Enjin::Scripting::SetBindingsPhysics2D(m_Physics2D.get());
         Enjin::Scripting::SetBindingsNetworking(&m_NetworkSystem);
         Enjin::Scripting::SetBindingsCinematicSystem(&m_CinematicSystem);
@@ -977,6 +999,7 @@ public:
         Enjin::Scripting::SetBindingsWind(nullptr);
         { extern Enjin::Effects::Water3D* s_VisualScriptWater; s_VisualScriptWater = nullptr; }
         Enjin::Scripting::SetBindingsSceneManager(nullptr);
+        Enjin::Scripting::SetBindingsFlowAdvanceFlag(nullptr);
         Enjin::Scripting::SetBindingsPhysics2D(nullptr);
         Enjin::Scripting::SetBindingsNetworking(nullptr);
         Enjin::Scripting::SetBindingsInputActionMap(nullptr);
@@ -1379,9 +1402,12 @@ public:
     // New Game is a NEW game: after anything has been played the first scene
     // loads fresh; on the first press the scene is already pristine.
     void WebStartNewGame() {
-        if (m_SessionPlayed) QueueWebSceneLoad(m_StartScene, true);
-        else HideWebTitle();
+        const bool played = m_SessionPlayed;
         m_SessionPlayed = true;
+        // On a Menu step of the startup flow, New Game moves the flow on
+        if (m_FlowActive) { m_GameMenu.HideAll(); AdvanceWebFlow(); return; }
+        if (played) QueueWebSceneLoad(m_StartScene, true);
+        else HideWebTitle();
     }
 
     // Continue picks up the session in progress after a quit to the title;
@@ -1400,8 +1426,9 @@ public:
             }
             if (best >= 0) { WebLoadSlot(best); return; }
         }
-        HideWebTitle();
         m_SessionPlayed = true;
+        if (m_FlowActive) { m_GameMenu.HideAll(); AdvanceWebFlow(); return; }
+        HideWebTitle();
     }
 
     // A save is a delta over its level, so the level loads first
@@ -1441,6 +1468,100 @@ public:
         else ShowWebTitle();
     }
 
+    // ── Startup flow (WP-9) ─────────────────────────────────────────────────
+    bool WebEngineSplashActive() const {
+        return m_EngineSplash && m_SimulationStarted && m_EngineSplashTimer < kEngineSplashDuration;
+    }
+
+    // "Made with TEGE", the card desktop and the editor show, drawn through
+    // the shared DrawEngineSplash. A key or click after half a second skips
+    // to the fade.
+    void DrawWebEngineSplash() {
+        if (!WebEngineSplashActive()) return;
+        ImGuiIO& io = ImGui::GetIO();
+        m_EngineSplashTimer += io.DeltaTime;
+        constexpr Enjin::f32 kFadeStart = kEngineSplashDuration - 1.0f;
+        if (m_EngineSplashTimer > 0.5f && m_EngineSplashTimer < kFadeStart &&
+            (Enjin::Input::IsMouseButtonPressed(Enjin::MouseButton::Left) ||
+             Enjin::Input::IsKeyPressed(Enjin::KeyCode::Space) ||
+             Enjin::Input::IsKeyPressed(Enjin::KeyCode::Enter) ||
+             Enjin::Input::IsKeyPressed(Enjin::KeyCode::Escape) ||
+             Enjin::Input::GetActiveTouchCount() > 0)) {
+            m_EngineSplashTimer = kFadeStart;
+        }
+        Enjin::GUI::SplashOptions opts;
+        opts.artStylePreset = m_SceneRenderSettings.artStylePreset;
+        opts.reducedMotion = m_AccessibilitySettings.reducedMotion;
+        Enjin::GUI::DrawEngineSplash(m_EngineSplashTimer, kEngineSplashDuration, kFadeStart,
+                                     /*creditLine*/ nullptr, nullptr, opts);
+    }
+
+    // What follows the card. Desktop always ends at a title unless the flow
+    // says otherwise; web used to drop the player straight into play.
+    void BeginWebStartup() {
+        if (!m_StartupFlow.empty()) {
+            m_FlowActive = true;
+            m_FlowIndex = -1;
+            AdvanceWebFlow();
+        } else if (!m_AtMainMenu) {
+            ShowWebTitle();   // the authored canvas was already up if there is one
+        }
+    }
+
+    void AdvanceWebFlow() {
+        if (!m_FlowActive) return;
+        m_FlowIndex++;
+        if (m_FlowIndex >= static_cast<int>(m_StartupFlow.size())) {
+            // Ran off the end: whatever scene is loaded becomes gameplay
+            m_FlowActive = false;
+            HideWebTitle();
+            return;
+        }
+        const FlowStep& step = m_StartupFlow[static_cast<Enjin::usize>(m_FlowIndex)];
+        m_FlowAdvanceRequested = false;
+        if (step.type == FlowStepType::Menu) {
+            // The built-in title over the current scene, as on desktop; New
+            // Game advances the flow
+            m_AtMainMenu = true;
+            Enjin::Input::SetMouseCaptured(false);
+            m_GameMenu.ShowScreen(Enjin::GUI::MenuScreen::MainMenu);
+            return;
+        }
+        if (!step.scene.empty() && step.scene != m_CurrentWebScenePath) {
+            QueueWebSceneLoad(step.scene, true);
+        } else {
+            HideWebTitle();
+        }
+        m_FlowTimer = step.duration;
+    }
+
+    void UpdateWebFlowAdvance(Enjin::f32 deltaTime) {
+        if (!m_FlowActive || m_FlowIndex < 0 ||
+            m_FlowIndex >= static_cast<int>(m_StartupFlow.size())) return;
+        const FlowStep& step = m_StartupFlow[static_cast<Enjin::usize>(m_FlowIndex)];
+        if (step.type != FlowStepType::Scene || !m_PendingWebScene.empty()) return;
+        switch (step.advance) {
+            case FlowAdvance::Timer:
+                m_FlowTimer -= deltaTime;
+                if (m_FlowTimer <= 0.0f) AdvanceWebFlow();
+                break;
+            case FlowAdvance::Input:
+                if (Enjin::Input::IsKeyPressed(Enjin::KeyCode::Space) ||
+                    Enjin::Input::IsKeyPressed(Enjin::KeyCode::Enter) ||
+                    Enjin::Input::IsKeyPressed(Enjin::KeyCode::Escape) ||
+                    Enjin::Input::IsMouseButtonPressed(Enjin::MouseButton::Left)) {
+                    AdvanceWebFlow();
+                }
+                break;
+            case FlowAdvance::Script:
+                if (m_FlowAdvanceRequested) { m_FlowAdvanceRequested = false; AdvanceWebFlow(); }
+                break;
+            case FlowAdvance::Gameplay:
+            default:
+                break;
+        }
+    }
+
     void Update(Enjin::f32 deltaTime) {
         m_LastUpdateDt = deltaTime;   // SyncCameraToWorld's zone blend steps by it
         // Global time scale (Time_SetScale): scales gameplay dt only.
@@ -1456,7 +1577,11 @@ public:
         // A content warning or a built-in menu holds the game. Held one frame
         // past closing too: the key or click that closed it is a pressed edge
         // this frame, and it must not also pause or jump
-        const bool warningNow = WebContentWarningOpen() || m_GameMenu.IsMenuOpen();
+        if (m_SimulationStarted && !m_StartupBegun && !WebEngineSplashActive()) {
+            m_StartupBegun = true;
+            BeginWebStartup();
+        }
+        const bool warningNow = WebContentWarningOpen() || m_GameMenu.IsMenuOpen() || WebEngineSplashActive();
         const bool warningOpen = warningNow || m_WarningOpenLastFrame;
         m_WarningOpenLastFrame = warningNow;
         // Dialogue too, as on desktop: gameplay actions (Jump, Attack, the
@@ -1661,6 +1786,7 @@ public:
             }
         }
         m_SimFrame++;
+        if (!m_Paused && !warningOpen) UpdateWebFlowAdvance(deltaTime);
         if (m_Paused || m_AtMainMenu || warningOpen) {
             // World::Update still runs so deferred entity destroys flush (the
             // pause canvas removal on resume) -- gameplay systems stay skipped.
@@ -2173,7 +2299,7 @@ public:
     // active preset + live bindings, so this player shares them with desktop.
     void RenderTouchOverlay() {
         Enjin::InputSystem::DrawTouchOverlay();
-        if (!m_AtMainMenu && !m_Paused) {
+        if (!m_AtMainMenu && !m_Paused && !WebEngineSplashActive()) {
             ImGuiIO& hintIO = ImGui::GetIO();
             Enjin::InputSystem::DrawControlsHint(0.0f, 0.0f, hintIO.DisplaySize.x, hintIO.DisplaySize.y);
         }
@@ -2538,8 +2664,9 @@ public:
         m_InteractionSystem.RenderOverlay(0.0f, 0.0f, w, h);
         // Built-in menus over everything else; while one is up the canvases
         // underneath take no clicks, as on desktop
-        m_UISystem.SetInputEnabled(!m_GameMenu.IsMenuOpen());
-        if (m_GameMenu.IsMenuOpen()) m_GameMenu.Render(static_cast<Enjin::f32>(w), static_cast<Enjin::f32>(h));
+        m_UISystem.SetInputEnabled(!m_GameMenu.IsMenuOpen() && !WebEngineSplashActive());
+        if (m_GameMenu.IsMenuOpen() && !WebEngineSplashActive())
+            m_GameMenu.Render(static_cast<Enjin::f32>(w), static_cast<Enjin::f32>(h));
         m_DynamicDifficulty.RenderOverlay(0.0f, 0.0f, w, h);
         // Save / load menu -- same draw as desktop. It had no caller on EITHER
         // runtime, because the component it took was a second declaration of
@@ -2553,7 +2680,7 @@ public:
         // Always-available pause button. A touchscreen has no Escape key, so without
         // this you could never open the pause menu on mobile web (#37). Small, semi-
         // transparent, top-right; works on desktop too (touch = click on web).
-        if (!m_AtMainMenu) {
+        if (!m_AtMainMenu && !WebEngineSplashActive()) {
             const float pbSz = 44.0f, pbPad = 12.0f;
             ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - pbSz - pbPad, pbPad));
             ImGui::SetNextWindowBgAlpha(0.30f);
@@ -2579,6 +2706,9 @@ public:
         // Once: this block was pasted twice, so every frame drew the overlay
         // and the controls hint on top of themselves (IN-30).
         RenderTouchOverlay();
+        // The engine card last, over everything; the pause button and the
+        // controls hint stand down while it plays
+        DrawWebEngineSplash();
 
         // Now that this frame's windows exist, ask the precise question: is the
         // cursor actually over an ImGui window, or is an ImGui widget being
@@ -3439,6 +3569,27 @@ private:
     Enjin::i32 m_PendingSlotLoad = -1;     // after the load: apply this save slot
     bool m_SessionPlayed = false;          // New Game / Continue has been pressed once
     bool m_TitleUnderOptions = false;      // Options opened from the built-in title
+
+    // Startup, as the desktop player runs it (WP-9): the engine card, then the
+    // project's startup flow if it has one, else the authored MainMenu canvas,
+    // else the built-in title. It begins at the click-to-start gate.
+    enum class FlowStepType { Scene, Menu };
+    enum class FlowAdvance { Gameplay, Timer, Input, Script };   // Gameplay = terminal
+    struct FlowStep {
+        FlowStepType type = FlowStepType::Scene;
+        std::string scene;
+        FlowAdvance advance = FlowAdvance::Gameplay;
+        Enjin::f32 duration = 3.0f;
+    };
+    std::vector<FlowStep> m_StartupFlow;
+    int m_FlowIndex = -1;
+    bool m_FlowActive = false;
+    Enjin::f32 m_FlowTimer = 0.0f;
+    bool m_FlowAdvanceRequested = false;   // Flow_Advance() from a script
+    bool m_EngineSplash = true;            // manifest engineSplash
+    Enjin::f32 m_EngineSplashTimer = 0.0f;
+    bool m_StartupBegun = false;
+    static constexpr Enjin::f32 kEngineSplashDuration = 4.0f;   // desktop's choreography
     Enjin::ECS::StateMachineSystem m_StateMachineSystem;
     Enjin::ECS::AISystem m_AISystem;
     Enjin::ECS::DialogueSystem m_DialogueSystem;
