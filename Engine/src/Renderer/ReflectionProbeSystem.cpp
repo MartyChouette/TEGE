@@ -690,6 +690,26 @@ bool ReflectionProbeSystem::BakeAt(ECS::World* world, ECS::RenderSystem* renderS
     faceTarget->Destroy();
     faceTarget.reset();
 
+    // Flip each face top to bottom. The face table is OpenGL's (the side
+    // faces look out with up = -Y), which assumes an image's first row is its
+    // BOTTOM. A Vulkan render target's first row is its top, so every face
+    // came out upside down and a cube reflected the room hanging from the
+    // ceiling: trees in the top of the reflection, sky in the bottom. With the
+    // rows reversed each face matches the cube-map addressing rules exactly,
+    // including left and right, which the -Y up already had right.
+    const usize rowBytes = static_cast<usize>(resolution) * 4;
+    std::vector<u8> rowTmp(rowBytes);
+    for (auto& pixels : facePixels) {
+        if (pixels.size() < expectedFaceBytes) continue;
+        for (u32 y = 0; y < resolution / 2; ++y) {
+            u8* top = pixels.data() + static_cast<usize>(y) * rowBytes;
+            u8* bottom = pixels.data() + static_cast<usize>(resolution - 1 - y) * rowBytes;
+            std::memcpy(rowTmp.data(), top, rowBytes);
+            std::memcpy(top, bottom, rowBytes);
+            std::memcpy(bottom, rowTmp.data(), rowBytes);
+        }
+    }
+
     // Upload all 6 faces to the cubemap
     if (!UploadFacesToCubemap(cubemap, facePixels, resolution)) {
         ENJIN_LOG_ERROR(Renderer, "Failed to upload face data to cubemap");
