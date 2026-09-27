@@ -312,7 +312,15 @@ void FlowerSystem::ProcessGrabForces(f32 dt) {
 
                 // Smooth blend toward desired velocity (critically damped, no overshoot)
                 f32 blend = 1.0f - std::exp(-grab->grabDamper * dt);
-                velocity = velocity * (1.0f - blend) + desiredVel * blend;
+                Math::Vector3 next = velocity * (1.0f - blend) + desiredVel * blend;
+                // Max Accel caps how hard the grab can yank the part in one frame
+                // (SD-27; it was a field nothing read). The default leaves a
+                // normal grab untouched and stops a flick from teleporting it.
+                const Math::Vector3 dv = next - velocity;
+                const f32 dvMax = std::max(grab->maxAccel, 0.0f) * dt;
+                const f32 dvLen = dv.Length();
+                if (dvMax > 0.0f && dvLen > dvMax) next = velocity + dv * (dvMax / dvLen);
+                velocity = next;
             }
         }
 
@@ -558,6 +566,24 @@ void FlowerSystem::UpdateJointTracking() {
         // --- Break detection (ref: XYTetherJoint) ---
         // Don't check breaks during arm delay grace period
         if (tether->aliveTime < tether->armDelay) continue;
+
+        // Sap squirts while the part is pulled past the Tension Drip threshold.
+        // SpawnTensionDrip was written and never called, so the whole Tension
+        // Drip section (rate, threshold, squirt speed) and the stem's Liquid
+        // Intensity did nothing (SD-27).
+        if (grab && grab->isGrabbed && tether->stemEntity != INVALID_ENTITY) {
+            const auto* dripCfg = m_World->GetComponent<FlowerParticleConfigComponent>(tether->stemEntity);
+            const auto* stem = m_World->GetComponent<FlowerStemComponent>(tether->stemEntity);
+            const f32 threshold = dripCfg ? dripCfg->tensionDripThreshold : 0.15f;
+            const f32 intensity = stem ? stem->liquidIntensity : 1.0f;
+            if (tether->currentTension >= threshold && intensity > 0.0f) {
+                Math::Vector3 pullDir = relVec;
+                const f32 len = pullDir.Length();
+                pullDir = len > 1e-5f ? pullDir * (1.0f / len) : Math::Vector3(0.0f, 1.0f, 0.0f);
+                const Math::Vector3 sap = stem ? stem->sapColor : Math::Vector3(0.1f, 0.5f, 0.08f);
+                SpawnTensionDrip(tether->junctionWorldPos, sap, tether->currentTension, pullDir, intensity, dripCfg);
+            }
+        }
 
         bool shouldBreak = false;
 
@@ -837,6 +863,10 @@ void FlowerSystem::SpawnBreakParticles(const Math::Vector3& junctionPos, const M
     const int sprayCount = config ? config->breakBurstCount : 10;
     const f32 spraySpeed = config ? config->breakBurstSpeed : 2.5f;
     const f32 sprayLifetime = config ? config->breakBurstLifetime : 0.3f;
+    // Up Kick and Scale were in the Break Burst inspector and unread; the
+    // values below were hard-coded where they belong (SD-27)
+    const f32 sprayUpKick = config ? config->breakBurstUpKick : -1.0f;
+    const f32 sprayScale = config ? config->breakBurstScale : 0.035f;
     const int dripCount = config ? config->breakDripCount : 6;
     const f32 dripSpeed = config ? config->breakDripSpeed : 3.0f;
     const f32 dripLifetime = config ? config->breakDripLifetime : 0.5f;
@@ -858,12 +888,12 @@ void FlowerSystem::SpawnBreakParticles(const Math::Vector3& junctionPos, const M
         fp.color = sapColor;
         fp.velocity = breakDir * speed * 0.6f + Math::Vector3(
             std::cos(angle) * spread * speed,
-            -1.0f - static_cast<f32>(i % 3) * 0.5f,
+            sprayUpKick - static_cast<f32>(i % 3) * 0.5f,
             std::sin(angle) * spread * speed
         );
         fp.lifetime = 0.0f;
         fp.maxLifetime = sprayLifetime;
-        fp.scale = 0.035f;  // Thin streaks
+        fp.scale = sprayScale;  // Thin streaks
         fp.isLiquid = true;
         m_Particles.push_back(fp);
     }

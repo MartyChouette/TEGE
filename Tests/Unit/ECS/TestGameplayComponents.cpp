@@ -5,6 +5,8 @@
 #include "Enjin/ECS/FollowTarget.h"
 #include "Enjin/ECS/CameraZones.h"
 #include "Enjin/Gameplay/InteractionSystem.h"
+#include "Enjin/ECS/Systems/FlowerSystem.h"
+#include "Enjin/ECS/Components/Flower.h"
 #include "Enjin/ECS/Systems/RenderSystem.h"
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include "Enjin/ECS/Components/Camera.h"
@@ -765,6 +767,67 @@ ENJIN_TEST(Interaction, NoLookRequirementAndResetClearsTheHighlight) {
     ENJIN_EXPECT_EQ(r.sys.GetFocused(), lever);
     r.sys.Reset();
     ENJIN_EXPECT_EQ(r.rs.GetInteractionFocus(), INVALID_ENTITY);
+}
+
+// ===========================================================================
+// Flower sap: SpawnTensionDrip was never called (SD-27)
+// ===========================================================================
+
+namespace {
+size_t DripsAfterPull(f32 threshold, bool& brokeEarly) {
+    World w;
+    FlowerSystem fs;
+    fs.SetWorld(&w);
+    fs.SetEnabled(true);
+    Entity stem = w.CreateEntity();
+    w.AddComponent<TransformComponent>(stem);
+    w.AddComponent<FlowerStemComponent>(stem);
+    FlowerParticleConfigComponent cfg;
+    cfg.tensionDripThreshold = threshold;
+    cfg.tensionDripRate = 20.0f;
+    w.AddComponent<FlowerParticleConfigComponent>(stem, cfg);
+    Entity petal = w.CreateEntity();
+    w.AddComponent<TransformComponent>(petal).position = Math::Vector3(0.0f, 0.5f, 0.0f);
+    TetherComponent t;
+    t.stemEntity = stem;
+    t.connectedEntity = stem;
+    t.armDelay = 0.0f;
+    // Nothing may snap it during the measurement: this is about the drip
+    t.relativeSpeedThreshold = 1e6f;
+    t.ownSpeedThreshold = 1e6f;
+    t.absoluteTravelThreshold = 1e6f;
+    t.relativeTravelThreshold = 1e6f;
+    t.pluckDwellThreshold = 2.0f;
+    t.releasePopHighThreshold = 2.0f;
+    w.AddComponent<TetherComponent>(petal, t);
+    GrabbableComponent g;
+    g.isGrabbed = true;
+    g.cursorWorldPoint = Math::Vector3(0.0f, 0.5f + 0.6f, 0.0f);   // pulls to half the stretch limit
+    w.AddComponent<GrabbableComponent>(petal, g);
+    size_t liquid = 0;
+    // Six frames: the pull climbs to about 0.22 tension. This bare rig has no
+    // crown to steady it, so a longer run swings through the stem and snaps.
+    for (int i = 0; i < 6; ++i) {
+        fs.Update(1.0f / 60.0f);
+        if (w.GetComponent<TetherComponent>(petal)->isBroken) { brokeEarly = true; break; }
+    }
+    for (const auto& p : fs.GetParticles()) if (p.isLiquid) ++liquid;
+    return liquid;
+}
+}
+
+ENJIN_TEST(FlowerSap, PullingPastTheThresholdSquirtsSap) {
+    bool broke = false;
+    const size_t drips = DripsAfterPull(0.1f, broke);
+    ENJIN_EXPECT_FALSE(broke);                   // measured while still attached, not the break burst
+    ENJIN_EXPECT_TRUE(drips > 0);
+}
+
+ENJIN_TEST(FlowerSap, BelowTheThresholdNothingDrips) {
+    bool broke = false;
+    const size_t drips = DripsAfterPull(0.99f, broke);
+    ENJIN_EXPECT_FALSE(broke);
+    ENJIN_EXPECT_EQ(drips, size_t(0));
 }
 
 ENJIN_TEST_MAIN()

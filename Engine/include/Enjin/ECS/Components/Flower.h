@@ -83,7 +83,8 @@ struct GrabbableComponent {
     // Authored parameters (ref: GrabPull spring physics)
     f32 grabSpring = 40.0f;      // How aggressively pulled toward cursor (lower = smoother)
     f32 grabDamper = 12.0f;      // Opposes overshoot, smooth deceleration
-    f32 maxAccel = 20.0f;        // Safety cap on acceleration
+    f32 maxAccel = 60.0f;        // Cap on how fast the grab changes the part's velocity (units/s^2).
+                                 // A normal grab peaks near 54 at the defaults; 60 leaves it alone
     f32 maxSpeed = 5.0f;         // Velocity cap for grabbed parts
     f32 grabRadius = 0.5f;       // Hit sphere size for ray picking
     f32 windSwayScale = 0.15f;   // Wind influence multiplier
@@ -120,7 +121,7 @@ struct FlowerParticleConfigComponent {
     f32 breakBurstSpeed = 2.5f;
     f32 breakBurstUpKick = -1.0f;
     f32 breakBurstLifetime = 0.3f;
-    f32 breakBurstScale = 0.06f;
+    f32 breakBurstScale = 0.035f;   // spray streak size; the value the burst always used
 
     // Break drip particles — heavy sap drops straight down
     i32 breakDripCount = 6;
