@@ -857,6 +857,70 @@ void EditorLayer::DrawCameraGizmos() {
     }
 }
 
+// Show Debug Arrows and Arrow Resolution were saved and in the inspector and
+// nothing drew an arrow (SD-27). A Resolution^3 grid across the field's box,
+// each arrow along the flow sampled there, longest arrow = one grid cell, so
+// the pattern reads at any Amplitude. Colour goes from blue (weak) to orange.
+void EditorLayer::DrawCurlNoiseArrows() {
+    if (!m_World || !m_Camera || !m_CurlNoiseSystem) return;
+    const f32 vpW = m_EditorViewportImageMaxX - m_EditorViewportImageMinX;
+    const f32 vpH = m_EditorViewportImageMaxY - m_EditorViewportImageMinY;
+    if (vpW <= 1.0f || vpH <= 1.0f) return;
+
+    const Math::Matrix4 viewProj = m_Camera->GetProjectionMatrix() * m_Camera->GetViewMatrix();
+    ImDrawList* dl = GetViewportOverlayDrawList();
+    auto toScreen = [&](const Math::Vector3& w, ImVec2& out) -> bool {
+        const Math::Vector4 clip = viewProj * Math::Vector4(w.x, w.y, w.z, 1.0f);
+        if (clip.w <= 0.001f) return false;
+        out = ImVec2((clip.x / clip.w + 1.0f) * 0.5f * vpW + m_EditorViewportImageMinX,
+                     (clip.y / clip.w + 1.0f) * 0.5f * vpH + m_EditorViewportImageMinY);
+        return true;
+    };
+
+    for (ECS::Entity e : m_World->GetEntitiesWithComponent<ECS::CurlNoiseFieldComponent>()) {
+        const auto* cn = m_World->GetComponent<ECS::CurlNoiseFieldComponent>(e);
+        const auto* t = m_World->GetComponent<ECS::TransformComponent>(e);
+        if (!cn || !t || !cn->showDebugArrows) continue;
+        const u32 res = std::clamp<u32>(cn->debugArrowResolution, 1u, 16u);
+
+        // Cell centres, so no arrow sits on the box edge where falloff is zero
+        std::vector<std::pair<Math::Vector3, Math::Vector3>> samples;
+        samples.reserve(static_cast<usize>(res) * res * res);
+        const Math::Vector3 size = cn->halfExtents * 2.0f;
+        const Math::Vector3 cell(size.x / res, size.y / res, size.z / res);
+        const Math::Vector3 lo = t->position - cn->halfExtents;
+        f32 maxLen = 0.0f;
+        for (u32 z = 0; z < res; ++z)
+            for (u32 y = 0; y < res; ++y)
+                for (u32 x = 0; x < res; ++x) {
+                    const Math::Vector3 p(lo.x + (x + 0.5f) * cell.x, lo.y + (y + 0.5f) * cell.y,
+                                          lo.z + (z + 0.5f) * cell.z);
+                    const Math::Vector3 v = m_CurlNoiseSystem->SampleField(p);
+                    maxLen = std::max(maxLen, v.Length());
+                    samples.emplace_back(p, v);
+                }
+        if (maxLen < 1e-6f) continue;
+        const f32 reach = std::min({cell.x, cell.y, cell.z}) * 0.9f;
+
+        for (const auto& [p, v] : samples) {
+            const f32 strength = v.Length() / maxLen;
+            const Math::Vector3 tip = p + v * (reach / maxLen);
+            ImVec2 a, b;
+            if (!toScreen(p, a) || !toScreen(tip, b)) continue;
+            const ImU32 col = IM_COL32(static_cast<int>(80 + 175 * strength), static_cast<int>(150 + 20 * strength),
+                                       static_cast<int>(255 - 200 * strength), 220);
+            dl->AddLine(a, b, col, 1.5f);
+            // Head: two short strokes back from the tip, in screen space
+            const f32 dx = b.x - a.x, dy = b.y - a.y;
+            const f32 len = std::sqrt(dx * dx + dy * dy);
+            if (len < 3.0f) continue;
+            const f32 ux = dx / len, uy = dy / len, head = std::min(6.0f, len * 0.4f);
+            dl->AddLine(b, ImVec2(b.x - head * (ux - uy * 0.5f), b.y - head * (uy + ux * 0.5f)), col, 1.5f);
+            dl->AddLine(b, ImVec2(b.x - head * (ux + uy * 0.5f), b.y - head * (uy - ux * 0.5f)), col, 1.5f);
+        }
+    }
+}
+
 void EditorLayer::DrawMarqueeRect() {
     if (!m_MarqueeDragging) return;
 

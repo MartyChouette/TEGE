@@ -1326,6 +1326,7 @@ private:
     void DrawMarqueeRect();                   // Draw rubber-band selection rectangle
     void DrawSelectionHighlight();            // Projected bounding boxes for selection + descendants
     void DrawCameraGizmos();                  // Always-visible, clickable virtual-camera icons + frustums
+    void DrawCurlNoiseArrows();               // Flow arrows for curl noise fields with Show Debug Arrows on
     // Screen positions of camera gizmo icons this frame, for click-selection.
     std::vector<std::pair<ECS::Entity, ImVec2>> m_CameraGizmoScreenPos;
     ImDrawList* GetViewportOverlayDrawList(); // Scene window draw list so overlays layer under dialogs

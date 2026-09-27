@@ -5201,6 +5201,7 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
 
         // Always-visible camera gizmos (virtual cameras have no mesh to click)
         DrawCameraGizmos();
+        DrawCurlNoiseArrows();
 
         // Grid is now rendered into the editor viewport RT in RenderOffscreen()
 

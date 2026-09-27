@@ -9469,7 +9469,7 @@ void EditorLayer::DrawCurlNoiseFieldComponent(ECS::Entity entity) {
 
         if (cn->showDebugArrows) {
             i32 res = static_cast<i32>(cn->debugArrowResolution);
-            if (InspectorUndo::DragInt(m_UndoRedo, "Arrow Resolution##CNF", &res, 1, 2, 8)) {
+            if (InspectorUndo::DragInt(m_UndoRedo, "Arrow Resolution##CNF", &res, 1, 1, 16)) {
                 cn->debugArrowResolution = static_cast<u32>(res);
             }
         }
