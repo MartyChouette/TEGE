@@ -45,6 +45,15 @@ struct LensComponent {
     f32 vignetteIntensity = 0.0f;
     f32 vignetteSoftness = 0.5f;
 
+    // Depth of field from the optics, off until asked for. Focus distance is
+    // in metres (world units); the in-focus depth comes from the aperture and
+    // the camera's field of view read as a focal length on a full-frame sensor
+    // (Renderer::ApplyLensToSettings). These came from the Cine component when
+    // it folded into the camera; presets leave them alone.
+    bool depthOfField = false;
+    f32 focusDistance = 5.0f;
+    f32 apertureTStop = 2.8f;
+
     // Seed parameters from a lens-type preset. Leaves Custom untouched.
     void ApplyPreset(LensType t) {
         switch (t) {

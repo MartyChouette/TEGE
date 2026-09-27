@@ -458,7 +458,6 @@ static const std::unordered_map<std::string, ComponentHelp>& Registry() {
         r["spawnPoint"] = { "Marks a spot where players or objects appear.", "Place it where you want things to spawn.", nullptr, { { RelationKind::PairsWith, "Transform", Has<ECS::TransformComponent>, Add<ECS::TransformComponent> } } };
         r["layer"] = { "Assigns the entity to a layer for grouping and filtering.", "Pick which layer it belongs to.", nullptr, {} };
         r["streamingVolume"] = { "Loads and unloads a chunk of the world as the player nears or leaves it.", "Set the chunk name and the load and unload distances.", nullptr, { { RelationKind::PairsWith, "Transform", Has<ECS::TransformComponent>, Add<ECS::TransformComponent> } } };
-        r["cineComponent"] = { "Runs a virtual camera shot for cutscenes and framing.", "Set the shot values and target to compose the view.", nullptr, { { RelationKind::PairsWith, "Camera", nullptr, nullptr } } };
         r["saveData"] = { "Marks values on this entity to be written into the save file.", "Choose which fields should persist across sessions.", nullptr, {} };
         r["saveLoadMenu"] = { "Shows a menu for saving and loading game slots.", "Place it where players pick a save slot.", nullptr, {} };
         r["skeleton"] = { "Holds the bones that drive a rigged model's animation.", "Attach it to a mesh that has a skeleton to animate.", nullptr, { { RelationKind::PairsWith, "Mesh", Has<ECS::MeshComponent>, nullptr } } };

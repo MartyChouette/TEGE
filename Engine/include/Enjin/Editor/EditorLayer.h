@@ -49,7 +49,6 @@
 #include <thread>
 #include <atomic>
 #include <mutex>
-#include "Enjin/ECS/Components/CineComponent.h"
 #include "Enjin/Renderer/SceneRenderSettings.h"
 #include "Enjin/Editor/PerformanceStats.h"
 #include "Enjin/Editor/TelemetrySystem.h"
@@ -949,7 +948,6 @@ private:
     void DrawHUDWidgetComponent(ECS::Entity entity);
     void DrawUICanvasComponent(ECS::Entity entity);
     void DrawCinematicCameraComponent(ECS::Entity entity);
-    void DrawCineComponent(ECS::Entity entity);
     void DrawTweenComponent(ECS::Entity entity);
     void DrawDynamicDifficultyComponent(ECS::Entity entity);
 

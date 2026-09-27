@@ -65,7 +65,7 @@
 #include "Enjin/ECS/Components/WFC.h"
 #include "Enjin/ECS/Components/CustomShader.h"
 #include "Enjin/ECS/Components/Lens.h"
-#include "Enjin/ECS/Components/CineComponent.h"
+#include "Enjin/Renderer/CameraLens.h"
 #include "Enjin/ECS/Components/MorphTarget.h"
 #include "Enjin/ECS/Components/MeshRenderer.h"
 #include "Enjin/ECS/Components/DynamicDifficulty.h"
@@ -2648,44 +2648,38 @@ ECS::ElementalVolumeComponent DeserializeElementalVolumeComponent(const json& j)
     return v;
 }
 
-json SerializeCineComponent(const ECS::CineComponent& c) {
-    json j;
-    j["enabled"] = c.enabled;
-    j["directorStyle"] = static_cast<int>(c.directorStyle);
-    j["rigArchetype"] = static_cast<int>(c.rigArchetype);
-    j["focalLengthMm"] = RF(c.focalLengthMm);
-    j["apertureTStop"] = RF(c.apertureTStop);
-    j["focusDistanceMeters"] = RF(c.focusDistanceMeters);
-    j["squeezeRatio"] = RF(c.squeezeRatio);
-    j["keyIntensityEv"] = RF(c.keyIntensityEv);
-    j["keyToFillRatio"] = RF(c.keyToFillRatio);
-    j["keyToRimRatio"] = RF(c.keyToRimRatio);
-    j["frequency"] = RF(c.frequency);
-    j["dampingRatio"] = RF(c.dampingRatio);
-    j["initialResponse"] = RF(c.initialResponse);
-    j["targetSubjectEntityId"] = c.targetSubjectEntityId;
-    j["framingOffset"] = SerializeVector3(c.framingOffset);
-    return j;
-}
-
-ECS::CineComponent DeserializeCineComponent(const json& j) {
-    ECS::CineComponent c;
-    if (j.contains("enabled")) c.enabled = JB(j["enabled"]);
-    if (j.contains("directorStyle")) c.directorStyle = static_cast<ECS::CineDirectorStyle>(j["directorStyle"].get<int>());
-    if (j.contains("rigArchetype")) c.rigArchetype = static_cast<ECS::CineRigArchetype>(j["rigArchetype"].get<int>());
-    if (j.contains("focalLengthMm")) c.focalLengthMm = j["focalLengthMm"].get<f32>();
-    if (j.contains("apertureTStop")) c.apertureTStop = j["apertureTStop"].get<f32>();
-    if (j.contains("focusDistanceMeters")) c.focusDistanceMeters = j["focusDistanceMeters"].get<f32>();
-    if (j.contains("squeezeRatio")) c.squeezeRatio = j["squeezeRatio"].get<f32>();
-    if (j.contains("keyIntensityEv")) c.keyIntensityEv = j["keyIntensityEv"].get<f32>();
-    if (j.contains("keyToFillRatio")) c.keyToFillRatio = j["keyToFillRatio"].get<f32>();
-    if (j.contains("keyToRimRatio")) c.keyToRimRatio = j["keyToRimRatio"].get<f32>();
-    if (j.contains("frequency")) c.frequency = j["frequency"].get<f32>();
-    if (j.contains("dampingRatio")) c.dampingRatio = j["dampingRatio"].get<f32>();
-    if (j.contains("initialResponse")) c.initialResponse = j["initialResponse"].get<f32>();
-    if (j.contains("targetSubjectEntityId")) c.targetSubjectEntityId = j["targetSubjectEntityId"].get<u64>();
-    if (j.contains("framingOffset")) c.framingOffset = DeserializeVector3(j["framingOffset"]);
-    return c;
+// The Cine component folded into the camera (SD-27). It was authored and
+// saved and nothing ever read it; the parts that map to something real now
+// live on the camera (focal length is its field of view) and on the Lens
+// (squeeze, focus distance, T-stop). A saved "cineComponent" is carried over
+// on load: focal length sets the field of view when the Cine was enabled, and
+// the optics go onto a Lens, added if the camera has none. Depth of field is
+// carried but left OFF, because the scene never rendered with it and turning
+// it on by loading would change a picture nobody asked to change. Director
+// style, rig, lighting ratios, dynamics, target and framing had no feature
+// behind them and are dropped.
+static void MigrateRetiredCineComponent(ECS::World* world, ECS::Entity entity, const json& j) {
+    if (!j.is_object()) return;
+    const bool enabled = !j.contains("enabled") || JB(j["enabled"]);
+    if (enabled && j.contains("focalLengthMm")) {
+        if (auto* cam = world->GetComponent<ECS::CameraComponent>(entity)) {
+            cam->fieldOfView = Renderer::FovFromFocalLength(j["focalLengthMm"].get<f32>());
+        }
+    }
+    auto* lens = world->GetComponent<ECS::LensComponent>(entity);
+    if (!lens) lens = &world->AddComponent<ECS::LensComponent>(entity);
+    if (j.contains("squeezeRatio")) {
+        const f32 squeeze = j["squeezeRatio"].get<f32>();
+        if (std::abs(squeeze - 1.0f) > 1e-4f) {
+            lens->anamorphicSqueeze = squeeze;
+            lens->type = ECS::LensType::Custom;
+        }
+    }
+    if (j.contains("focusDistanceMeters")) lens->focusDistance = j["focusDistanceMeters"].get<f32>();
+    if (j.contains("apertureTStop")) lens->apertureTStop = j["apertureTStop"].get<f32>();
+    ENJIN_LOG_INFO(Asset, "Entity %llu: the retired Cine component was carried onto its camera and Lens "
+                   "(depth of field left off; turn it on in the Lens).",
+                   static_cast<unsigned long long>(entity));
 }
 
 // Serialize PostProcessSettings (GPU-aligned UBO struct) to JSON
@@ -5025,6 +5019,9 @@ json SerializeLensComponent(const ECS::LensComponent& lens) {
     j["chromaticAberration"] = RF(lens.chromaticAberration);
     j["vignetteIntensity"] = RF(lens.vignetteIntensity);
     j["vignetteSoftness"] = RF(lens.vignetteSoftness);
+    j["depthOfField"] = lens.depthOfField;
+    j["focusDistance"] = RF(lens.focusDistance);
+    j["apertureTStop"] = RF(lens.apertureTStop);
     return j;
 }
 
@@ -5040,6 +5037,9 @@ ECS::LensComponent DeserializeLensComponent(const json& j) {
     if (j.contains("chromaticAberration")) lens.chromaticAberration = j["chromaticAberration"].get<f32>();
     if (j.contains("vignetteIntensity")) lens.vignetteIntensity = j["vignetteIntensity"].get<f32>();
     if (j.contains("vignetteSoftness")) lens.vignetteSoftness = j["vignetteSoftness"].get<f32>();
+    if (j.contains("depthOfField")) lens.depthOfField = JB(j["depthOfField"]);
+    if (j.contains("focusDistance")) lens.focusDistance = j["focusDistance"].get<f32>();
+    if (j.contains("apertureTStop")) lens.apertureTStop = j["apertureTStop"].get<f32>();
     return lens;
 }
 
@@ -10241,7 +10241,6 @@ static const std::vector<ComponentSerdes>& ComponentRegistry() {
         // only in the loops, so the per-key helpers could not copy/undo them ---
         ENJIN_SERDES("customShader", ECS::CustomShaderComponent, SerializeCustomShaderComponent, DeserializeCustomShaderComponent),
         ENJIN_SERDES("layer", ECS::LayerComponent, SerializeLayerComponent, DeserializeLayerComponent),
-        ENJIN_SERDES("cineComponent", ECS::CineComponent, SerializeCineComponent, DeserializeCineComponent),
         // scatterInstance: presence-only marker for procgen-spawned instances.
         ComponentSerdes{ "scatterInstance",
             [](ECS::World* w, ECS::Entity e){ return w->HasComponent<ECS::ScatterInstanceComponent>(e); },
@@ -10718,7 +10717,8 @@ void SceneSerializer::DeserializeEntities(const json& sceneJson, Deserialization
     // lose authored data. Set = registry keys + the entity-level keys handled
     // outside the registry below.
     std::unordered_set<std::string> knownEntityKeys = {
-        "id", "stableId", "mesh", "parent", "morphTargets"
+        "id", "stableId", "mesh", "parent", "morphTargets",
+        "cineComponent"   // retired; carried onto camera + Lens below
     };
     for (const auto& reg : ComponentRegistry()) knownEntityKeys.insert(reg.key);
     constexpr usize kMaxLoadWarnings = 25;
@@ -10889,6 +10889,9 @@ void SceneSerializer::DeserializeEntities(const json& sceneJson, Deserialization
                         "kept its default value", reg.key, it.key().c_str());
                 }
             }
+        }
+        if (auto cine = entityJson.find("cineComponent"); cine != entityJson.end()) {
+            MigrateRetiredCineComponent(m_World, entity, *cine);
         }
         if (entityJson.contains("mesh")) {
             auto mesh = DeserializeMeshComponent(entityJson["mesh"]);
@@ -11649,6 +11652,9 @@ ECS::Entity SceneSerializer::DeserializeEntityFromString(ECS::World* world, cons
             // on disk load instead of failing.
             static const json kEmptyComponent = json::object();
             reg.de(world, entity, regIt->is_null() ? kEmptyComponent : *regIt);
+        }
+        if (auto cine = entityJson.find("cineComponent"); cine != entityJson.end()) {
+            MigrateRetiredCineComponent(world, entity, *cine);
         }
         if (entityJson.contains("mesh")) {
             world->AddComponent<ECS::MeshComponent>(entity, DeserializeMeshComponent(entityJson["mesh"]));

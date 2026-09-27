@@ -1,4 +1,5 @@
 #include "EnjinTest.h"
+#include <cmath>
 #include "Enjin/ECS/Components/Lens.h"
 #include "Enjin/ECS/Components/Camera.h"
 #include "Enjin/ECS/Components/Transform.h"
@@ -133,6 +134,38 @@ ENJIN_TEST(LensApply, ReadsTheCameraTheGameRendersThrough) {
     w.GetComponent<LensComponent>(high)->enabled = false;
     ENJIN_EXPECT_FALSE(Renderer::ApplyCameraLens(&w, off));
     ENJIN_EXPECT_FLOAT_EQ(off.lensSqueeze, 1.0f);
+}
+
+ENJIN_TEST(LensApply, FocalLengthAndFieldOfViewAreOneNumber) {
+    // Full frame: a 50 mm lens is about 27 degrees tall
+    ENJIN_EXPECT_TRUE(std::abs(Renderer::FovFromFocalLength(50.0f) - 26.99f) < 0.05f);
+    ENJIN_EXPECT_TRUE(std::abs(Renderer::FocalLengthFromFov(Renderer::FovFromFocalLength(85.0f)) - 85.0f) < 0.01f);
+}
+
+ENJIN_TEST(LensApply, DepthOfFieldFollowsTheOptics) {
+    LensComponent lens;
+    Renderer::PostProcessSettings off;
+    Renderer::ApplyLensToSettings(lens, off, 40.0f);
+    ENJIN_EXPECT_EQ(off.dofEnabled, 0u);   // off until asked for
+
+    lens.depthOfField = true;
+    lens.focusDistance = 5.0f;
+    lens.apertureTStop = 2.8f;
+    Renderer::PostProcessSettings a;
+    Renderer::ApplyLensToSettings(lens, a, Renderer::FovFromFocalLength(35.0f));
+    ENJIN_EXPECT_EQ(a.dofEnabled, 1u);
+    ENJIN_EXPECT_FLOAT_EQ(a.dofFocalDistance, 5.0f);
+    // 2 N c s^2 / f^2 = 2 * 2.8 * 0.00003 * 25 / 0.035^2 = 3.43 m
+    ENJIN_EXPECT_TRUE(std::abs(a.dofFocalRange - 3.43f) < 0.02f);
+
+    // Stopping down deepens it; a longer lens thins it
+    lens.apertureTStop = 11.0f;
+    Renderer::PostProcessSettings b;
+    Renderer::ApplyLensToSettings(lens, b, Renderer::FovFromFocalLength(35.0f));
+    ENJIN_EXPECT_TRUE(b.dofFocalRange > a.dofFocalRange);
+    Renderer::PostProcessSettings c;
+    Renderer::ApplyLensToSettings(lens, c, Renderer::FovFromFocalLength(135.0f));
+    ENJIN_EXPECT_TRUE(c.dofFocalRange < b.dofFocalRange);
 }
 
 ENJIN_TEST_MAIN()

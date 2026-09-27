@@ -1,4 +1,5 @@
 #include "Enjin/ECS/Components/PreRenderedBackground.h"
+#include "Enjin/Renderer/CameraLens.h"
 #include "Enjin/Editor/EditorTheme.h"
 #include "Enjin/Editor/EditorLayer.h"
 #include "Enjin/AI/Navmesh.h"
@@ -66,7 +67,6 @@ extern char** environ;
 #include "Enjin/ECS/Components/FluidVolume.h"
 #include "Enjin/ECS/Components/FluidPlayback.h"
 #include "Enjin/Platform/Paths.h"
-#include "Enjin/ECS/Components/CineComponent.h"
 #include "Enjin/ECS/Components/Elemental.h"
 #include "Enjin/ECS/Components/Text.h"
 #include "Enjin/ECS/Components/IKComponents.h"
@@ -1638,6 +1638,15 @@ void EditorLayer::DrawCameraComponent(ECS::Entity entity) {
         // Perspective settings
         if (camera->projectionType == ECS::ProjectionType::Perspective) {
             InspectorUndo::DragFloat(m_UndoRedo, "Field of View", &camera->fieldOfView, 0.5f, 1.0f, 179.0f);
+            {
+                // The same number in millimetres on a full-frame sensor, for
+                // people who think in lenses. Editing it sets the field of view.
+                f32 focal = Renderer::FocalLengthFromFov(camera->fieldOfView);
+                if (ImGui::DragFloat("Focal Length (mm)", &focal, 0.5f, 8.0f, 600.0f, "%.0f mm")) {
+                    camera->fieldOfView = Renderer::FovFromFocalLength(focal);
+                }
+                ImGui::SetItemTooltip("The field of view as a lens on a full-frame camera: 24 wide, 50 normal, 85 portrait.");
+            }
             ImGui::SetItemTooltip("Vertical field of view in degrees");
         }
 
@@ -7023,6 +7032,20 @@ void EditorLayer::DrawLensComponent(ECS::Entity entity) {
         if (lens->vignetteIntensity > 0.0f) {
             if (InspectorUndo::SliderFloat(m_UndoRedo, "Vignette Softness", &lens->vignetteSoftness, 0.0f, 1.0f)) markCustom();
         }
+
+        ImGui::SeparatorText("Depth of Field");
+        InspectorUndo::Checkbox(m_UndoRedo, "Depth of Field##Lens", &lens->depthOfField);
+        if (lens->depthOfField) {
+            InspectorUndo::DragFloat(m_UndoRedo, "Focus Distance (m)##Lens", &lens->focusDistance, 0.05f, 0.1f, 500.0f, "%.2f m");
+            InspectorUndo::SliderFloat(m_UndoRedo, "Aperture (T-stop)##Lens", &lens->apertureTStop, 1.0f, 22.0f, "T%.1f");
+            ImGui::SetItemTooltip("Lower opens the lens: a thinner slice in focus. The camera's field of view\n"
+                                  "is read as a focal length, so a narrow view blurs more, as a long lens does.");
+            if (auto* cam = m_World->GetComponent<ECS::CameraComponent>(entity)) {
+                Renderer::PostProcessSettings probe;
+                Renderer::ApplyLensToSettings(*lens, probe, cam->fieldOfView);
+                ImGui::TextDisabled("In focus: %.2f m either side of %.2f m", probe.dofFocalRange, probe.dofFocalDistance);
+            }
+        }
         ImGui::TextDisabled("Applies when this entity is the active camera.");
     }
 }
@@ -7557,80 +7580,6 @@ void EditorLayer::DrawStreamingVolumeComponent(ECS::Entity entity) {
         if (ImGui::BeginPopupContextItem("StreamingVolumeCtx")) {
             if (ImGui::MenuItem("Remove Component")) {
                 RemoveComponentWithUndo<Scene::StreamingVolumeComponent>(entity, "streamingVolume", "Streaming Volume");
-            }
-            ImGui::EndPopup();
-        }
-    }
-}
-
-void EditorLayer::DrawCineComponent(ECS::Entity entity) {
-    std::string hdr = std::string(GetComponentIcon("Camera")) + "Virtual Cinematography (CINE)";
-    if (UI::SectionHeader(hdr.c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
-        auto* cine = m_World->GetComponent<ECS::CineComponent>(entity);
-        if (!cine) return;
-        DrawComponentHelp("cineComponent", m_World, entity);
-
-        InspectorUndo::Checkbox(m_UndoRedo, "Enabled##CineComp", &cine->enabled);
-
-        ImGui::SeparatorText("Director Preset");
-        const char* directorNames[] = {
-            "Kubrick (1-Point Dolly, Deep Focus, No Ease)",
-            "Hitchcock (Triads, Vertigo Zoom, Proximity)",
-            "Polanski (Eye-Level Lock, Claustrophobic Track)",
-            "Welles (Extreme Low Angle, Crane Oner, Contrast)",
-            "Spielberg (Retargeted Oner, Emotional Reveals)",
-            "Lucas (Graphic Tableaux, Dual-Vcam Wipes)",
-            "Ford (Locked Frame Holds, Absolute Look Aim)",
-            "Kurosawa (Telephoto Compression, A/B/C Multicam)"
-        };
-        int currentDirector = static_cast<int>(cine->directorStyle);
-        if (InspectorUndo::Combo(m_UndoRedo, "Director Style##CineComp", &currentDirector, directorNames, 8)) {
-            cine->directorStyle = static_cast<ECS::CineDirectorStyle>(currentDirector);
-        }
-
-        ImGui::SeparatorText("Grip Department & Rig");
-        const char* rigNames[] = {
-            "Fixed (Lock-off)",
-            "HumanCarried (Steadicam / Handheld)",
-            "Tracked (Dolly Track)",
-            "Arm (Crane / Boom Arm)",
-            "Suspended (Cable Cam)",
-            "FreeFlying (Drone / Flycam)"
-        };
-        int currentRig = static_cast<int>(cine->rigArchetype);
-        if (InspectorUndo::Combo(m_UndoRedo, "Rig Archetype##CineComp", &currentRig, rigNames, 6)) {
-            cine->rigArchetype = static_cast<ECS::CineRigArchetype>(currentRig);
-        }
-
-        ImGui::SeparatorText("Second-Order Dynamics");
-        InspectorUndo::SliderFloat(m_UndoRedo, "Frequency (f)##CineComp", &cine->frequency, 0.1f, 10.0f, "%.1f Hz");
-        ImGui::SetItemTooltip("Spring responsiveness (higher = faster, lower = heavier mass)");
-        InspectorUndo::SliderFloat(m_UndoRedo, "Damping Ratio (zeta)##CineComp", &cine->dampingRatio, 0.1f, 2.0f, "%.2f");
-        ImGui::SetItemTooltip("1.0 = Critically Damped, <1.0 = Underdamped / Overshoot, >1.0 = Overdamped");
-        InspectorUndo::SliderFloat(m_UndoRedo, "Initial Response (r)##CineComp", &cine->initialResponse, -2.0f, 2.0f, "%.2f");
-        ImGui::SetItemTooltip("0 = Smooth Start, >0 = Immediate, <0 = Anticipation");
-
-        ImGui::SeparatorText("Camera & Optics");
-        InspectorUndo::SliderFloat(m_UndoRedo, "Focal Length (mm)##CineComp", &cine->focalLengthMm, 12.0f, 300.0f, "%.0f mm");
-        InspectorUndo::SliderFloat(m_UndoRedo, "Aperture (T-Stop)##CineComp", &cine->apertureTStop, 1.0f, 22.0f, "T%.1f");
-        InspectorUndo::DragFloat(m_UndoRedo, "Focus Distance (m)##CineComp", &cine->focusDistanceMeters, 0.1f, 0.1f, 100.0f, "%.2f m");
-        InspectorUndo::SliderFloat(m_UndoRedo, "Anamorphic Squeeze##CineComp", &cine->squeezeRatio, 1.0f, 2.0f, "%.2fx");
-
-        ImGui::SeparatorText("Electric & Lighting Ratios");
-        InspectorUndo::DragFloat(m_UndoRedo, "Key Intensity (EV)##CineComp", &cine->keyIntensityEv, 0.1f, 0.0f, 20.0f, "%.1f EV");
-        InspectorUndo::SliderFloat(m_UndoRedo, "Key : Fill Ratio##CineComp", &cine->keyToFillRatio, 1.0f, 16.0f, "%.1f : 1");
-        InspectorUndo::SliderFloat(m_UndoRedo, "Key : Rim Ratio##CineComp", &cine->keyToRimRatio, 1.0f, 16.0f, "%.1f : 1");
-
-        ImGui::SeparatorText("Staging & Target Intent");
-        i32 targetId = static_cast<i32>(cine->targetSubjectEntityId);
-        if (ImGui::InputInt("Target Subject Entity ID##CineComp", &targetId)) {
-            cine->targetSubjectEntityId = static_cast<u64>(targetId);
-        }
-        ImGui::DragFloat3("Framing Offset##CineComp", &cine->framingOffset.x, 0.05f);
-
-        if (ImGui::BeginPopupContextItem("CineCompCtx")) {
-            if (ImGui::MenuItem("Remove Component")) {
-                RemoveComponentWithUndo<ECS::CineComponent>(entity, "cineComponent", "Virtual Cinematography (CINE)");
             }
             ImGui::EndPopup();
         }

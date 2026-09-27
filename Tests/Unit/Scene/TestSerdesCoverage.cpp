@@ -15,6 +15,8 @@
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/Components/Gameplay.h"
+#include "Enjin/ECS/Components/Lens.h"
+#include "Enjin/ECS/Components/Camera.h"
 #include "Enjin/ECS/Components/BoundaryPolygon.h"
 #include "Enjin/ECS/Components/WallPath.h"
 #include "Enjin/ECS/Components/VisualScript.h"
@@ -204,6 +206,28 @@ ENJIN_TEST(SerdesCoverage, SwimTuningSurvivesASave) {
     ENJIN_EXPECT_TRUE(Near(r->swimSurfaceBand, 0.4f));
     ENJIN_EXPECT_TRUE(Near(r->swimSurfaceStrokeScale, 0.15f));
     ENJIN_EXPECT_TRUE(Near(r->cameraCollisionRadius, 0.75f));
+}
+
+ENJIN_TEST(SerdesCoverage, ARetiredCineComponentIsCarriedOntoCameraAndLens) {
+    // Cine folded into the camera (SD-27): an old scene's values land on the
+    // camera's field of view and a Lens, with depth of field left off
+    World w;
+    const std::string json = R"({
+        "camera": {"fieldOfView": 60.0},
+        "cineComponent": {"enabled": true, "focalLengthMm": 50.0, "squeezeRatio": 1.33,
+                          "focusDistanceMeters": 7.5, "apertureTStop": 4.0, "directorStyle": 3}
+    })";
+    Entity e = Scene::SceneSerializer::DeserializeEntityFromString(&w, json);
+    ENJIN_ASSERT_TRUE(e != INVALID_ENTITY);
+    const auto* cam = w.GetComponent<CameraComponent>(e);
+    ENJIN_ASSERT_TRUE(cam != nullptr);
+    ENJIN_EXPECT_TRUE(Near(cam->fieldOfView, 26.99f, 0.05f));
+    const auto* lens = w.GetComponent<LensComponent>(e);
+    ENJIN_ASSERT_TRUE(lens != nullptr);
+    ENJIN_EXPECT_TRUE(Near(lens->anamorphicSqueeze, 1.33f));
+    ENJIN_EXPECT_TRUE(Near(lens->focusDistance, 7.5f));
+    ENJIN_EXPECT_TRUE(Near(lens->apertureTStop, 4.0f));
+    ENJIN_EXPECT_FALSE(lens->depthOfField);
 }
 
 ENJIN_TEST(SerdesCoverage, TimerCompleteEventSurvivesASave) {

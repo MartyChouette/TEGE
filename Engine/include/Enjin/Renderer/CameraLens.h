@@ -25,8 +25,15 @@ struct PostProcessSettings;
 // instead of leaving them in the scene's settings.
 ENJIN_API bool ApplyCameraLens(ECS::World* world, PostProcessSettings& live);
 
-// The mapping alone, for tests.
-ENJIN_API void ApplyLensToSettings(const ECS::LensComponent& lens, PostProcessSettings& s);
+// The mapping alone, for tests. fovDegrees is the camera's vertical field of
+// view, which depth of field reads as a focal length.
+ENJIN_API void ApplyLensToSettings(const ECS::LensComponent& lens, PostProcessSettings& s,
+                                   f32 fovDegrees = 60.0f);
+
+// Focal length in millimetres for a vertical field of view on a full-frame
+// (24 mm tall) sensor, and back. The camera inspector shows both.
+ENJIN_API f32 FocalLengthFromFov(f32 fovDegrees);
+ENJIN_API f32 FovFromFocalLength(f32 focalLengthMm);
 
 } // namespace Renderer
 } // namespace Enjin
