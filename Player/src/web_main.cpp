@@ -2265,12 +2265,8 @@ public:
         }
     }
 
-    // Draw the game's authored UI (UICanvasComponent + HUDWidgetComponent) into the
-    // swapchain via ImGui's WebGPU backend. This is the SAME UISystem code
-    // the desktop player runs — one UI source, web/PC parity.
-    // Touch controls overlay: virtual stick + jump button, drawn only after
-    // the first touch so desktop browsers never see it.
-    // Touch overlay (stick + action buttons) and, when the overlay is NOT
+    // Touch overlay (stick + action buttons) while the player is on touch
+    // (Input's last device, or Options > Touch Controls), and, when the overlay is NOT
     // active, the bottom-left controls hint. Both are drawn by Engine from the
     // active preset + live bindings, so this player shares them with desktop.
     void RenderTouchOverlay() {

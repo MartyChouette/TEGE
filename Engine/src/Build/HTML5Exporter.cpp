@@ -545,13 +545,34 @@ std::string HTML5Exporter::GenerateHTML(const HTML5ExportConfig& config,
          << "    });\n"
          << "    _ro.observe(document.getElementById('game-container'));\n\n";
 
-    // Fullscreen handler
+    // The page's fullscreen helpers. The engine (Input::SetWebFullscreen, the
+    // touch button) calls these when a shell defines them, and none did, so
+    // the iPhone case they exist for fell through to an API iPhone Safari does
+    // not have for a div (IN-35). Real fullscreen where the browser offers it;
+    // otherwise the container covers the viewport with CSS, which the
+    // ResizeObserver above sees like any other resize.
+    html << "    window.enjinEnterFullscreen = function() {\n"
+         << "      var el = document.getElementById('game-container');\n"
+         << "      var pseudo = function() { document.body.classList.add('enjin-pseudo-fullscreen'); };\n"
+         << "      var req = el.requestFullscreen || el.webkitRequestFullscreen;\n"
+         << "      if (!req) { pseudo(); return; }\n"
+         << "      try {\n"
+         << "        var p = req.call(el);\n"
+         << "        if (p && p.then) p.then(function() {\n"
+         << "          try { if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(function(){}); } catch (e) {}\n"
+         << "        }).catch(pseudo);\n"
+         << "      } catch (e) { pseudo(); }\n"
+         << "    };\n"
+         << "    window.enjinExitFullscreen = function() {\n"
+         << "      document.body.classList.remove('enjin-pseudo-fullscreen');\n"
+         << "      if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(function(){});\n"
+         << "      else if (document.webkitFullscreenElement && document.webkitExitFullscreen) document.webkitExitFullscreen();\n"
+         << "    };\n";
+
+    // Fullscreen button
     if (config.showFullscreenButton) {
         html << "    document.getElementById('fullscreen-btn').addEventListener('click', function() {\n"
-             << "      var el = document.getElementById('game-container');\n"
-             << "      if (el.requestFullscreen) el.requestFullscreen();\n"
-             << "      else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();\n"
-             << "      else if (el.mozRequestFullScreen) el.mozRequestFullScreen();\n"
+             << "      window.enjinEnterFullscreen();\n"
              << "    });\n";
     }
 
@@ -676,6 +697,15 @@ std::string HTML5Exporter::GenerateStyleCSS(const HTML5ExportConfig& config) {
         << "  height: 100%;\n"
         << "  position: relative;\n"
         << "}\n\n"
+        << "/* Fullscreen by CSS where the browser has no API for it (iPhone) */\n"
+        << "body.enjin-pseudo-fullscreen #game-container {\n"
+        << "  position: fixed;\n"
+        << "  inset: 0;\n"
+        << "  width: 100vw;\n"
+        << "  height: 100dvh;\n"
+        << "  z-index: 999;\n"
+        << "}\n"
+        << "\n"
         << "#game-canvas {\n"
         << "  width: 100%;\n"
         << "  height: 100%;\n"
