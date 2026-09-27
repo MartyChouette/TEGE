@@ -38,16 +38,20 @@ public:
     const Math::Vector3& ListenerPosition() const { return m_ListenerPos; }
     bool HasListener() const { return m_HasListener; }
 
-    // Pops every mixer snapshot an AudioSnapshotTrigger pushed. Editor Stop
-    // calls it: the mixer belongs to the editor's audio engine and outlives
-    // play, so a trigger the listener was standing in would otherwise leave
-    // the editor ducked.
+    // Pops every mixer snapshot an AudioSnapshotTrigger pushed, and switches
+    // off the AudioFidelity lo-fi effect. Editor Stop calls it: the mixer
+    // belongs to the editor's audio engine and outlives play, so otherwise the
+    // editor stays ducked, or crunchy.
     void ReleaseSnapshotTriggers();
 
     // The built-in snapshot an AudioSnapshotTrigger names: Dialogue, Pause,
     // Combat or Cutscene. False for anything else; there is nowhere to author
     // a custom snapshot yet.
     static bool ResolveSnapshotPreset(const std::string& name, AudioSnapshot& out);
+
+    // The fidelity preset that matches an art style, for Auto Match Art Style.
+    // False for styles with no period sound to match (the component is left alone).
+    static bool FidelityForArtStyle(u8 artStyle, ECS::AudioFidelityMode& out);
 
 private:
     void UpdateBeatClock(f32 deltaTime);
@@ -74,6 +78,8 @@ private:
     void UpdateAmbientLayers(f32 deltaTime);
     void UpdateMusicZones(f32 deltaTime);
     void UpdateSnapshotTriggers();
+    void UpdateAudioFidelity();
+    bool m_LoFiOn = false;   // so leaving a scene with fidelity switches it off once
 
     void ApplyValueToTarget(ECS::Entity entity, ECS::AudioTargetProperty target, f32 value);
 

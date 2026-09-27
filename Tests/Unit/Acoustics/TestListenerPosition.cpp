@@ -24,6 +24,10 @@
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Camera.h"
 #include "Enjin/ECS/Components/Gameplay.h"
+#include "Enjin/Audio/LoFi.h"
+#include "Enjin/ECS/Components/ArtStyle.h"
+#include <cmath>
+#include <vector>
 
 using namespace Enjin;
 using Enjin::Math::Vector3;
@@ -234,6 +238,83 @@ ENJIN_TEST(SnapshotTrigger, AnUnknownNamePushesNothing) {
     AddSnapshotTrigger(h.world, Vector3(0.0f), "Underwater");
     h.system.Update(0.016f);
     ENJIN_EXPECT_FALSE(h.audio.GetMixer().IsSnapshotActive("Underwater"));
+}
+
+// ===========================================================================
+// Audio Fidelity: the lo-fi master effect (SD-27)
+// ===========================================================================
+
+namespace {
+std::vector<f32> Ramp(u64 frames) {
+    std::vector<f32> v(frames * 2);
+    for (u64 i = 0; i < frames; ++i) {
+        v[i * 2] = static_cast<f32>(i) / static_cast<f32>(frames) - 0.5f;
+        v[i * 2 + 1] = -v[i * 2];
+    }
+    return v;
+}
+}
+
+ENJIN_TEST(LoFi, OffOrZeroIntensityLeavesTheMixAlone) {
+    Audio::LoFiProcessor lofi;
+    auto a = Ramp(256), b = a;
+    lofi.Process(a.data(), 256, 48000);          // disabled by default
+    ENJIN_EXPECT_TRUE(a == b);
+    Audio::LoFiParams p;
+    p.enabled = true;
+    p.intensity = 0.0f;
+    p.bitDepthReduction = 0.25f;
+    lofi.SetParams(p);
+    lofi.Process(a.data(), 256, 48000);
+    ENJIN_EXPECT_TRUE(a == b);
+}
+
+ENJIN_TEST(LoFi, BitDepthQuantisesAndSampleRateHolds) {
+    Audio::LoFiProcessor lofi;
+    Audio::LoFiParams p;
+    p.enabled = true;
+    p.bitDepthReduction = 0.25f;                 // 4 bits: steps of 1/8
+    p.sampleRateReduction = 0.25f;               // each sample held for four frames
+    lofi.SetParams(p);
+    auto a = Ramp(256);
+    lofi.Process(a.data(), 256, 48000);
+    for (u64 i = 0; i < 256; ++i) {
+        const f32 steps = a[i * 2] * 8.0f;
+        ENJIN_EXPECT_TRUE(std::abs(steps - std::round(steps)) < 1e-4f);
+    }
+    int changes = 0;
+    for (u64 i = 1; i < 256; ++i) if (a[i * 2] != a[(i - 1) * 2]) ++changes;
+    ENJIN_EXPECT_TRUE(changes <= 256 / 4 + 1);
+}
+
+ENJIN_TEST(LoFi, ZeroWidthIsMono) {
+    Audio::LoFiProcessor lofi;
+    Audio::LoFiParams p;
+    p.enabled = true;
+    p.stereoWidth = 0.0f;
+    lofi.SetParams(p);
+    auto a = Ramp(64);
+    lofi.Process(a.data(), 64, 48000);
+    for (u64 i = 0; i < 64; ++i) ENJIN_EXPECT_TRUE(std::abs(a[i * 2] - a[i * 2 + 1]) < 1e-6f);
+}
+
+ENJIN_TEST(LoFi, AutoMatchPicksThePresetFromTheCamerasArtStyle) {
+    ECS::AudioFidelityMode m;
+    ENJIN_EXPECT_TRUE(Audio::AudioReactiveSystem::FidelityForArtStyle(static_cast<u8>(ECS::ArtStyleType::Retro), m));
+    ENJIN_EXPECT_TRUE(m == ECS::AudioFidelityMode::PSOne);
+    ENJIN_EXPECT_TRUE(Audio::AudioReactiveSystem::FidelityForArtStyle(static_cast<u8>(ECS::ArtStyleType::Analog), m));
+    ENJIN_EXPECT_TRUE(m == ECS::AudioFidelityMode::Cassette);
+    ENJIN_EXPECT_FALSE(Audio::AudioReactiveSystem::FidelityForArtStyle(static_cast<u8>(ECS::ArtStyleType::HandPainted), m));
+
+    Harness h;
+    ECS::Entity cam = h.AddCamera(Vector3(0.0f));
+    ECS::ArtStyleComponent art;
+    art.style = ECS::ArtStyleType::PixelArt;
+    h.world.AddComponent<ECS::ArtStyleComponent>(cam, art);
+    ECS::Entity mgr = h.world.CreateEntity();
+    h.world.AddComponent<ECS::AudioFidelityComponent>(mgr, ECS::AudioFidelityComponent{});
+    h.system.Update(0.016f);
+    ENJIN_EXPECT_TRUE(h.world.GetComponent<ECS::AudioFidelityComponent>(mgr)->mode == ECS::AudioFidelityMode::Retro8Bit);
 }
 
 ENJIN_TEST_MAIN()

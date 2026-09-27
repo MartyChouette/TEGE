@@ -2,6 +2,9 @@
 
 #include <algorithm>
 #include "Enjin/Audio/AudioEngine.h"
+#include "Enjin/ECS/Components/ArtStyle.h"
+#include "Enjin/ECS/CameraZones.h"
+#include "Enjin/Audio/LoFi.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Light.h"
@@ -93,6 +96,7 @@ void AudioReactiveSystem::Update(f32 deltaTime) {
     UpdateAmbientLayers(deltaTime);
     UpdateMusicZones(deltaTime);
     UpdateSnapshotTriggers();
+    UpdateAudioFidelity();
     UpdateLipSync(deltaTime);
     UpdateMIDIBindings(deltaTime);
 }
@@ -767,11 +771,66 @@ void AudioReactiveSystem::UpdateSnapshotTriggers() {
     m_TriggerSnapshots = std::move(wanted);
 }
 
+// ============================================================================
+// Audio Fidelity — the lo-fi master effect (SD-27; nothing read the component)
+// ============================================================================
+
+bool AudioReactiveSystem::FidelityForArtStyle(u8 artStyle, ECS::AudioFidelityMode& out) {
+    switch (static_cast<ECS::ArtStyleType>(artStyle)) {
+        case ECS::ArtStyleType::Retro:    out = ECS::AudioFidelityMode::PSOne;      return true;
+        case ECS::ArtStyleType::PixelArt: out = ECS::AudioFidelityMode::Retro8Bit;  return true;
+        case ECS::ArtStyleType::Analog:   out = ECS::AudioFidelityMode::Cassette;   return true;
+        case ECS::ArtStyleType::PrePBR:   out = ECS::AudioFidelityMode::Retro16Bit; return true;
+        default: return false;
+    }
+}
+
+void AudioReactiveSystem::UpdateAudioFidelity() {
+    if (!m_Audio) return;
+    ECS::AudioFidelityComponent* fid = nullptr;
+    for (auto e : m_World->GetEntitiesWithComponent<ECS::AudioFidelityComponent>()) {
+        auto* c = m_World->GetComponent<ECS::AudioFidelityComponent>(e);
+        if (c && c->enabled) { fid = c; break; }
+    }
+    if (!fid) {
+        if (m_LoFiOn) { m_Audio->SetLoFi(LoFiParams{}); m_LoFiOn = false; }
+        return;
+    }
+
+    // Auto Match: the art style the game camera shows decides the preset
+    if (fid->autoMatchArtStyle) {
+        const ECS::Entity cam = ECS::ResolveGameCamera(m_World);
+        if (const auto* art = m_World->GetComponent<ECS::ArtStyleComponent>(cam)) {
+            ECS::AudioFidelityMode mode;
+            if (FidelityForArtStyle(static_cast<u8>(art->style), mode) && mode != fid->mode) fid->ApplyPreset(mode);
+        }
+    }
+
+    LoFiParams p;
+    p.enabled = fid->mode != ECS::AudioFidelityMode::Modern || fid->saturation > 0.0f ||
+                fid->sampleRateReduction < 1.0f || fid->bitDepthReduction < 1.0f ||
+                fid->lowPassCutoff < 20000.0f || fid->noiseFloor > 0.0f || fid->wobble > 0.0f ||
+                fid->stereoWidth != 1.0f;
+    p.intensity = fid->intensity;
+    p.sampleRateReduction = fid->sampleRateReduction;
+    p.bitDepthReduction = fid->bitDepthReduction;
+    p.lowPassCutoff = fid->lowPassCutoff;
+    p.noiseFloor = fid->noiseFloor;
+    p.wobble = fid->wobble;
+    p.wobbleSpeed = fid->wobbleSpeed;
+    p.saturation = fid->saturation;
+    p.stereoWidth = fid->stereoWidth;
+    m_Audio->SetLoFi(p);
+    m_LoFiOn = p.enabled;
+}
+
 void AudioReactiveSystem::ReleaseSnapshotTriggers() {
     if (m_Audio) {
         for (const auto& name : m_TriggerSnapshots) m_Audio->GetMixer().PopSnapshot(name);
     }
     m_TriggerSnapshots.clear();
+    // The lo-fi effect lives on the editor's audio engine too
+    if (m_Audio && m_LoFiOn) { m_Audio->SetLoFi(LoFiParams{}); m_LoFiOn = false; }
 }
 
 // ============================================================================

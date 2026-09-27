@@ -15,6 +15,7 @@
 // miniaudio supports Emscripten/Web Audio out of the box (MA_ENABLE_WEBAUDIO).
 // No special handling needed — miniaudio auto-detects the platform.
 #include "miniaudio.h"
+#include "Enjin/Audio/LoFi.h"
 
 #if defined(__EMSCRIPTEN__)
 #include <emscripten/emscripten.h>
@@ -406,6 +407,7 @@ static ma_node_vtable g_reverbNodeVTable = {
 // pImpl holding the ma_engine
 struct AudioEngine::Impl {
     ma_engine engine{};
+    LoFiProcessor lofi;     // master lo-fi (AudioFidelityComponent), run on the final mix
     ReverbNode reverb{};
     bool reverbReady = false;
     bool initialized = false;
@@ -430,7 +432,17 @@ AudioEngine::~AudioEngine() {
 bool AudioEngine::Initialize() {
     if (m_Initialized) return true;
 
-    ma_result result = ma_engine_init(nullptr, &m_Impl->engine);
+    // The final mix passes through the lo-fi processor, which is a no-op until
+    // an AudioFidelityComponent enables it. onProcess sees everything the
+    // engine outputs, music and UI sounds included, which a node on the
+    // reverb bus would not.
+    ma_engine_config engineCfg = ma_engine_config_init();
+    engineCfg.onProcess = [](void* user, float* frames, ma_uint64 count) {
+        auto* impl = static_cast<AudioEngine::Impl*>(user);
+        impl->lofi.Process(frames, static_cast<u64>(count), ma_engine_get_sample_rate(&impl->engine));
+    };
+    engineCfg.pProcessUserData = m_Impl.get();
+    ma_result result = ma_engine_init(&engineCfg, &m_Impl->engine);
     if (result != MA_SUCCESS) {
         ENJIN_LOG_ERROR(Audio, "Failed to initialize miniaudio engine (error %d)", result);
         // Fall back to initialized-but-silent mode so the rest of the engine works
@@ -1381,6 +1393,10 @@ bool AudioEngine::Seek(SoundHandle sound, f32 seconds) {
     if (rate == 0) return false;
     const ma_uint64 frame = static_cast<ma_uint64>(seconds * static_cast<f32>(rate));
     return ma_sound_seek_to_pcm_frame(ma, frame) == MA_SUCCESS;
+}
+
+void AudioEngine::SetLoFi(const LoFiParams& params) {
+    if (m_Impl) m_Impl->lofi.SetParams(params);
 }
 
 void AudioEngine::SetMasterVolume(f32 volume) {

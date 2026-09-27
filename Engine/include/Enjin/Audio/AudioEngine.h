@@ -270,6 +270,8 @@ public:
     bool Seek(SoundHandle sound, f32 seconds);
 
     // Master volume (affects all channels)
+    // The master lo-fi effect (AudioFidelityComponent via AudioReactiveSystem)
+    void SetLoFi(const struct LoFiParams& params);
     void SetMasterVolume(f32 volume);
     f32 GetMasterVolume() const { return m_MasterVolume; }
 
