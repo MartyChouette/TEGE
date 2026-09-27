@@ -78,7 +78,12 @@ struct ENJIN_API CameraComponent {
 
     // Rendering options
     u32 cullingMask = 0xFFFFFFFF;  // Layers to render
-    bool enablePostProcessing = false; // Opt-in: the editor prompts to enable it when a PP effect is turned on
+    // The scene's post settings apply through this camera unless it turns them
+    // off. It was opt-in, so a scene that authored a tone map, grade or bloom
+    // showed none of it until someone found this switch, and most examples
+    // never had (SD-29, decided 2026-09-27: an opt-out). Scenes saved before
+    // carry no key for it, which now reads as on.
+    bool enablePostProcessing = true;
 
     // Helper to get aspect ratio from viewport
     f32 GetAspectRatio(u32 screenWidth, u32 screenHeight) const {

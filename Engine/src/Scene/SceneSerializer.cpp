@@ -753,7 +753,9 @@ json SerializeCameraComponent(const ECS::CameraComponent& camera) {
     // Default is now OFF (opt-in), so persist the flag when it is ON. Older scenes that
     // omitted this field (when the default was ON) will load with PP off; re-enable it on
     // the camera (the editor prompts when you turn on a PP effect).
-    if (camera.enablePostProcessing) j["enablePostProcessing"] = true;
+    // Written only when OFF: on is the default, and an older scene with no key
+    // reads as on (SD-29)
+    if (!camera.enablePostProcessing) j["enablePostProcessing"] = false;
     return j;
 }
 

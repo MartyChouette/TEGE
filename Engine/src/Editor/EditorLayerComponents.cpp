@@ -1661,7 +1661,8 @@ void EditorLayer::DrawCameraComponent(ECS::Entity entity) {
 
         // Rendering
         InspectorUndo::Checkbox(m_UndoRedo, "Post-Processing", &camera->enablePostProcessing);
-        ImGui::SetItemTooltip("Enable bloom, FXAA, tone mapping, color grading on this camera");
+        ImGui::SetItemTooltip("This camera shows the scene's post-processing (bloom, FXAA, tone mapping, "
+                              "color grading). On unless turned off here.");
 
         ImGui::Separator();
 
