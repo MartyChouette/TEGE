@@ -47,8 +47,18 @@ public:
     // Dispatch all queued deferred events. Call once per frame.
     void ProcessDeferred();
 
-    // Remove all listeners and pending events.
+    // Remove all listeners and pending events. The forwarder is wiring, not
+    // state, so it survives: editor Stop clears the bus and the next Play must
+    // still reach scripts.
     void Clear();
+
+    // Sees every event this bus dispatches, after its own listeners, whether or
+    // not anything listened. The runtimes point it at scripts and visual
+    // scripts (ECS::ForwardEntityEventsToScripts). Without it an engine event
+    // reached only C++ listeners, and there were none, so ActionTrigger's Emit
+    // Event, dialogue events and water_enter went nowhere a game could hear.
+    using Forwarder = std::function<void(const std::string& eventName, const EntityEvent& event)>;
+    void SetForwarder(Forwarder forwarder) { m_Forwarder = std::move(forwarder); }
 
 private:
     struct Listener {
@@ -61,6 +71,7 @@ private:
     std::unordered_map<std::string, std::vector<Listener>> m_Listeners;
     std::vector<std::pair<std::string, EntityEvent>> m_DeferredQueue;
     u32 m_NextId = 1;
+    Forwarder m_Forwarder;
 };
 
 } // namespace ECS

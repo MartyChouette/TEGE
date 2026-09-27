@@ -3,6 +3,7 @@
 // timing, responsive canvas via ResizeObserver, all gameplay systems active.
 
 #include "Enjin/Platform/Platform.h"
+#include "Enjin/ECS/EntityEventBridge.h"
 #include "Enjin/ECS/PostProcessVolumeBlend.h"
 #include <filesystem>
 #include <set>
@@ -634,6 +635,8 @@ public:
                                              m_AISystem.GetPathfinder());
         m_ActionTriggerSystem.SetSubtitleSystem(&m_SubtitleSystem);
         m_ActionTriggerSystem.SetEventBus(&m_EntityEventBus);
+        // Engine events (ActionTrigger, dialogue, water, timers) reach scripts and visual scripts
+        Enjin::ECS::ForwardEntityEventsToScripts(m_EntityEventBus, &m_ScriptEventBus, &m_VisualScriptSystem);
 
         // Touches that land on interactive UI become real pointers (press,
         // drag, release). Without this the move stick owns the left half of the

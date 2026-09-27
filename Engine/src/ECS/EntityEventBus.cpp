@@ -32,13 +32,15 @@ void EntityEventBus::RemoveAllForEntity(Entity entity) {
 
 void EntityEventBus::Send(const std::string& eventName, const EntityEvent& event) {
     auto it = m_Listeners.find(eventName);
-    if (it == m_Listeners.end()) return;
-    // Copy the listener vector before iterating so that callbacks that modify
-    // the listener list (add/remove) don't invalidate iterators or references
-    auto listenersCopy = it->second;
-    for (const auto& listener : listenersCopy) {
-        listener.callback(event);
+    if (it != m_Listeners.end()) {
+        // Copy the listener vector before iterating so that callbacks that modify
+        // the listener list (add/remove) don't invalidate iterators or references
+        auto listenersCopy = it->second;
+        for (const auto& listener : listenersCopy) {
+            listener.callback(event);
+        }
     }
+    if (m_Forwarder) m_Forwarder(eventName, event);
 }
 
 void EntityEventBus::Broadcast(const EntityEvent& event) {

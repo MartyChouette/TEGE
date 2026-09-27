@@ -1,4 +1,5 @@
 #include "Enjin/Core/Application.h"
+#include "Enjin/ECS/EntityEventBridge.h"
 #include "Enjin/ECS/PostProcessVolumeBlend.h"
 #include <cstdio>
 #include "Enjin/Scripting/ScriptChecker.h"
@@ -3408,6 +3409,8 @@ private:
                                              m_AISystem.GetPathfinder());
         m_ActionTriggerSystem.SetSubtitleSystem(&m_SubtitleSystem);
         m_ActionTriggerSystem.SetEventBus(&m_EntityEventBus);
+        // Engine events (ActionTrigger, dialogue, water, timers) reach scripts and visual scripts
+        Enjin::ECS::ForwardEntityEventsToScripts(m_EntityEventBus, &m_ScriptEventBus, &m_VisualScriptSystem);
 
         // Touches that land on interactive UI become real pointers (press,
         // drag, release) instead of being claimed by the move stick.

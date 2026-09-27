@@ -817,6 +817,12 @@ static std::string Events_CurrentString(const std::string& key) {
     return d ? d->GetString(key) : "";
 }
 
+// Engine events carry "sender" and "target"; 0 when the key is absent.
+static u64 Events_CurrentEntity(const std::string& key) {
+    const Enjin::Scripting::EventData* d = Enjin::Scripting::GetCurrentDispatchEventData();
+    return d ? d->GetEntity(key) : 0;
+}
+
 // ============================================================================
 // REGISTRATION FUNCTIONS
 // ============================================================================
@@ -1173,6 +1179,9 @@ void RegisterEventBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction(
         "string Events_CurrentString(const string &in)",
         ENJIN_AS_FN(Events_CurrentString), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "uint64 Events_CurrentEntity(const string &in)",
+        ENJIN_AS_FN(Events_CurrentEntity), ENJIN_AS_CALL_CDECL));
 }
 
 // ---------------------------------------------------------------------------

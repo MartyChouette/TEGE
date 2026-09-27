@@ -472,7 +472,8 @@ geometry or image and stops the owning system rebuilding it.
 - **EventData** class: `SetFloat/GetFloat`, `SetInt/GetInt`, `SetString/GetString`, `SetEntity/GetEntity`
 - `Events_Listen(string, EventCallback@)` — returns listener ID
 - `Events_Send(string, EventData@)`, `Events_Broadcast(EventData@)`
-- `Events_CurrentFloat(string key)`, `Events_CurrentInt(string key)`, `Events_CurrentString(string key)` — read the payload of the event currently being dispatched (valid only inside an EventCallback). UI events bridge with keys `"value"` (slider), `"checked"` (toggle, 0/1), `"text"` (button label).
+- `Events_CurrentFloat(string key)`, `Events_CurrentInt(string key)`, `Events_CurrentString(string key)` — read the payload of the event currently being dispatched (valid only inside an EventCallback). UI events bridge with keys `"value"` (slider), `"checked"` (toggle, 0/1), `"text"` (button label). `Events_CurrentEntity(string key)` returns an entity id from the payload, 0 when absent.
+- Engine events reach `Events_Listen` too: ActionTrigger's Emit Event, dialogue node events (`Dialogue_<event>`), `water_enter`. Their payload carries `"sender"` and `"target"` entities, read with `Events_CurrentEntity`. Visual scripts get them as Custom Event nodes of the same name.
 
 ## Tweening
 
@@ -926,7 +927,7 @@ Per-entity (Braid-style) and scene-wide (Sands of Time-style) time rewind.
 
 ## Every registered binding
 
-1349 global functions, grouped by where they are registered. These lines are
+1351 global functions, grouped by where they are registered. These lines are
 GENERATED from the registration strings themselves, so a signature here is the
 one the engine accepts -- if it disagrees with the prose above, the prose is
 wrong. Regenerate with `python tools/gen_scripting_api.py` after adding a
@@ -1064,7 +1065,7 @@ merely absent.
 - `void RTPC_SetParameter(uint64, const string &in, float)`
 - `void Sidechain_SetEnabled(uint64, bool)`
 
-### Components  (350)
+### Components  (351)
 
 - `Vector3 BoxCollider_GetCenter(uint64)`
 - `Vector3 BoxCollider_GetSize(uint64)`
@@ -1326,7 +1327,7 @@ merely absent.
 - `void GameOver_SetMessages(uint64, const string &in, const string &in)`
 - `void GameOver_Trigger(uint64, bool)`
 - `void Health_Damage(uint64, float)`
-- `void Health_Damage(uint64, float, DamageType, uint64 = 0)`
+- `void Health_Damage(uint64, float, DamageType, uint64 source = 0)`
 - `void Health_Heal(uint64, float)`
 - `void Health_SetCurrent(uint64, float)`
 - `void Health_SetInvulnerable(uint64, bool)`
@@ -1418,7 +1419,7 @@ merely absent.
 - `void WaterVehicle_SetRudder(uint64, float)`
 - `void WaterVehicle_SetThrottle(uint64, float)`
 
-### Core, math, debug and entity  (67)
+### Core, math, debug and entity  (68)
 
 - `Quaternion Quaternion_FromEuler(const Vector3 &in)`
 - `Quaternion Quaternion_Identity()`
@@ -1473,6 +1474,7 @@ merely absent.
 - `uint Events_Listen(const string &in, EventCallback@)`
 - `uint StartCoroutine(const string &in)`
 - `uint Time_GetFrameCount()`
+- `uint64 Events_CurrentEntity(const string &in)`
 - `void Debug_Log(const string &in)`
 - `void Debug_LogError(const string &in)`
 - `void Debug_LogWarning(const string &in)`

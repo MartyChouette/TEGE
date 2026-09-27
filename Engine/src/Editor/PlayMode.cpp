@@ -1,4 +1,5 @@
 #include "Enjin/Editor/PlayMode.h"
+#include "Enjin/ECS/EntityEventBridge.h"
 #include "Enjin/Assets/Prefab.h"
 #include "Enjin/Input/TouchActionBridge.h"
 #include "Enjin/Effects/TreeRenderer.h"
@@ -597,6 +598,8 @@ void PlayMode::Play() {
     Scripting::SetBindingsNavmesh(m_AISystem.GetNavmesh(), m_AISystem.GetPathfinder());
     m_ActionTriggerSystem.SetSubtitleSystem(m_SubtitleSystem);
     m_ActionTriggerSystem.SetEventBus(&m_EntityEventBus);
+    // Engine events (ActionTrigger, dialogue, water, timers) reach scripts and visual scripts
+    ECS::ForwardEntityEventsToScripts(m_EntityEventBus, &m_EventBus, &m_VisualScriptSystem);
     m_DialogueSystem.SetQuestSystem(&m_QuestSystem);
     m_DialogueSystem.SetCinematicSystem(&m_CinematicSystem);
     m_DialogueSystem.SetTieredSaveSystem(&m_TieredSaveSystem);
