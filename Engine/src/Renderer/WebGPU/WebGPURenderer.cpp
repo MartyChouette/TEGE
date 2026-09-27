@@ -673,6 +673,41 @@ WebGPUTextureHandle WebGPURenderer::CreateColorCubemap(u32 size, const u8* const
     return handle;
 }
 
+WebGPUTextureHandle WebGPURenderer::CreateDepthArrayTexture(u32 size, u32 layers) {
+    WebGPUTextureHandle handle;
+    handle.width = size;
+    handle.height = size;
+    handle.format = WGPUTextureFormat_Depth32Float;
+
+    WGPUTextureDescriptor texDesc = {};
+    texDesc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding;
+    texDesc.dimension = WGPUTextureDimension_2D;
+    texDesc.size = { size, size, layers };
+    texDesc.format = handle.format;
+    texDesc.mipLevelCount = 1;
+    texDesc.sampleCount = 1;
+    handle.texture = wgpuDeviceCreateTexture(m_Device, &texDesc);
+    if (!handle.texture) return handle;
+
+    WGPUTextureViewDescriptor viewDesc = {};
+    viewDesc.format = handle.format;
+    viewDesc.dimension = WGPUTextureViewDimension_2DArray;
+    viewDesc.mipLevelCount = 1;
+    viewDesc.arrayLayerCount = layers;
+    handle.view = wgpuTextureCreateView(handle.texture, &viewDesc);
+
+    WGPUSamplerDescriptor samplerDesc = {};
+    samplerDesc.addressModeU = WGPUAddressMode_ClampToEdge;
+    samplerDesc.addressModeV = WGPUAddressMode_ClampToEdge;
+    samplerDesc.addressModeW = WGPUAddressMode_ClampToEdge;
+    samplerDesc.magFilter = WGPUFilterMode_Linear;
+    samplerDesc.minFilter = WGPUFilterMode_Linear;
+    samplerDesc.compare = WGPUCompareFunction_LessEqual;
+    samplerDesc.maxAnisotropy = 1;
+    handle.sampler = wgpuDeviceCreateSampler(m_Device, &samplerDesc);
+    return handle;
+}
+
 WGPUTextureView WebGPURenderer::CreateCubeFaceView(WGPUTexture texture, WGPUTextureFormat format, u32 faceIndex) {
     WGPUTextureViewDescriptor viewDesc = {};
     viewDesc.format = format;

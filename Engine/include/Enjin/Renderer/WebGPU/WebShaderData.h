@@ -91,14 +91,15 @@ struct BoneSSBO {
 // sampler of its own would buy nothing (every sampler here is linear).
 @group(2) @binding(12) var emissiveTex: texture_2d<f32>;
 
-struct ShadowViewProjection {
-    view: mat4x4<f32>,
-    proj: mat4x4<f32>,
-    lightPos: vec3<f32>,
-    _pad: f32,
+// The directional cascades (WebShadowCascadesUBO), fitted by the same
+// ComputeShadowCascades desktop uses
+struct ShadowCascades {
+    viewProj: array<mat4x4<f32>, 4>,
+    splits: vec4<f32>,      // view-space far distance of each cascade
+    params: vec4<f32>,      // x = softness (0 = 3x3 PCF), y = shadow distance, z = count
 };
-@group(3) @binding(0) var<uniform> shadowVP: ShadowViewProjection;
-@group(3) @binding(1) var shadowMap: texture_depth_2d;
+@group(3) @binding(0) var<uniform> shadowCascades: ShadowCascades;
+@group(3) @binding(1) var shadowMap: texture_depth_2d_array;
 @group(3) @binding(2) var shadowSampler: sampler_comparison;
 
 // Spot light shadows (max 2)
@@ -354,44 +355,80 @@ fn foamHash(p: vec2<f32>) -> f32 {
     return fract(sin(dot(p, vec2<f32>(127.1, 311.7))) * 43758.5453);
 }
 
-fn sampleShadow(worldPos: vec3<f32>) -> f32 {
-    let shadowMat = shadowVP.proj * shadowVP.view;
-    let lightClip = shadowMat * vec4<f32>(worldPos, 1.0);
-    let ndc = lightClip.xyz / lightClip.w;
-    let shadowUV = vec2<f32>(ndc.x * 0.5 + 0.5, ndc.y * -0.5 + 0.5);
-    let depth = ndc.z;
-    // Depth bias expressed in WORLD units, converted to this frame's NDC depth
-    // scale. The sun is orthographic, so the z-row of proj*view maps world
-    // distance to NDC depth and its length is 1/zRange. The old FIXED 0.002 NDC
-    // bias therefore grew with the shadow fit: at the ~162-unit zRange the
-    // caster-AABB fit produces in the playground it was a THIRD of a world unit,
-    // sliding every shadow away from its caster ("Peter Panning" - objects look
-    // like they float). Front-face culling in the shadow pass already keeps
-    // self-shadow acne away, so the world bias can stay small. Clamped so a
-    // degenerate fit can neither vanish the bias nor exceed the old value.
-    let depthScale = length(vec3<f32>(shadowMat[0][2], shadowMat[1][2], shadowMat[2][2]));
-    let bias = clamp(0.03 * depthScale, 0.00002, 0.002);
-    let texelSize = 1.0 / 2048.0;
-    var shadow = 0.0;
-    // 3x3 PCF kernel
-    shadow += textureSampleCompare(shadowMap, shadowSampler, shadowUV + vec2<f32>(-texelSize, -texelSize), depth - bias);
-    shadow += textureSampleCompare(shadowMap, shadowSampler, shadowUV + vec2<f32>(       0.0, -texelSize), depth - bias);
-    shadow += textureSampleCompare(shadowMap, shadowSampler, shadowUV + vec2<f32>( texelSize, -texelSize), depth - bias);
-    shadow += textureSampleCompare(shadowMap, shadowSampler, shadowUV + vec2<f32>(-texelSize,        0.0), depth - bias);
-    shadow += textureSampleCompare(shadowMap, shadowSampler, shadowUV,                                     depth - bias);
-    shadow += textureSampleCompare(shadowMap, shadowSampler, shadowUV + vec2<f32>( texelSize,        0.0), depth - bias);
-    shadow += textureSampleCompare(shadowMap, shadowSampler, shadowUV + vec2<f32>(-texelSize,  texelSize), depth - bias);
-    shadow += textureSampleCompare(shadowMap, shadowSampler, shadowUV + vec2<f32>(       0.0,  texelSize), depth - bias);
-    shadow += textureSampleCompare(shadowMap, shadowSampler, shadowUV + vec2<f32>( texelSize,  texelSize), depth - bias);
-    shadow = shadow / 9.0;
+// 16-tap Poisson disk, the same one triangle.frag uses for soft shadows
+const SHADOW_POISSON = array<vec2<f32>, 16>(
+    vec2<f32>(-0.94201624, -0.39906216), vec2<f32>( 0.94558609, -0.76890725),
+    vec2<f32>(-0.09418410, -0.92938870), vec2<f32>( 0.34495938,  0.29387760),
+    vec2<f32>(-0.91588581,  0.45771432), vec2<f32>(-0.81544232, -0.87912464),
+    vec2<f32>(-0.38277543,  0.27676845), vec2<f32>( 0.97484398,  0.75648379),
+    vec2<f32>( 0.44323325, -0.97511554), vec2<f32>( 0.53742981, -0.47373420),
+    vec2<f32>(-0.26496911, -0.41893023), vec2<f32>( 0.79197514,  0.19090188),
+    vec2<f32>(-0.24188840,  0.99706507), vec2<f32>(-0.81409955,  0.91437590),
+    vec2<f32>( 0.19984126,  0.78641367), vec2<f32>( 0.14383161, -0.14100790));
 
-    // Smooth fade at shadow map edges (avoids hard frustum boundary)
-    let fadeEdge = 0.15;
-    let fadeX = smoothstep(0.0, fadeEdge, shadowUV.x) * (1.0 - smoothstep(1.0 - fadeEdge, 1.0, shadowUV.x));
-    let fadeY = smoothstep(0.0, fadeEdge, shadowUV.y) * (1.0 - smoothstep(1.0 - fadeEdge, 1.0, shadowUV.y));
-    let fade = fadeX * fadeY;
-    let fadeZ = smoothstep(0.0, 0.01, depth) * (1.0 - smoothstep(0.99, 1.0, depth));
-    return mix(1.0, shadow, fade * fadeZ);
+// One cascade, PCF'd. textureSampleCompareLevel needs no derivatives and so
+// no uniform control flow, which is what lets the cascade be chosen per pixel.
+fn sampleShadowCascade(cascade: i32, worldPos: vec3<f32>, fragXY: vec2<f32>) -> f32 {
+    let clip = shadowCascades.viewProj[cascade] * vec4<f32>(worldPos, 1.0);
+    let ndc = clip.xyz / clip.w;
+    let uv = vec2<f32>(ndc.x * 0.5 + 0.5, ndc.y * -0.5 + 0.5);
+    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 || ndc.z < 0.0 || ndc.z > 1.0) {
+        return 1.0;
+    }
+    let texel = 1.0 / vec2<f32>(textureDimensions(shadowMap, 0));
+    let softness = shadowCascades.params.x;
+    var shadow = 0.0;
+    if (softness <= 0.0) {
+        for (var x = -1; x <= 1; x = x + 1) {
+            for (var y = -1; y <= 1; y = y + 1) {
+                shadow += textureSampleCompareLevel(shadowMap, shadowSampler,
+                    uv + vec2<f32>(f32(x), f32(y)) * texel, cascade, ndc.z);
+            }
+        }
+        return shadow / 9.0;
+    }
+    // Soft: the Poisson disk, rotated per pixel so the pattern does not band
+    let angle = fract(sin(dot(fragXY, vec2<f32>(12.9898, 78.233))) * 43758.5453) * 6.2831853;
+    let rs = sin(angle);
+    let rc = cos(angle);
+    for (var i = 0; i < 16; i = i + 1) {
+        let p = SHADOW_POISSON[i];
+        let offset = vec2<f32>(rc * p.x - rs * p.y, rs * p.x + rc * p.y) * softness * texel;
+        shadow += textureSampleCompareLevel(shadowMap, shadowSampler, uv + offset, cascade, ndc.z);
+    }
+    return shadow / 16.0;
+}
+
+// Cascaded sun shadow, ported from triangle.frag calcShadowCSM (WP-16): pick
+// the cascade by view depth, push the sample point off the surface (normal and
+// light-direction offset, as desktop), blend into the next cascade across the
+// second half of each, and fade out toward the shadow distance. The strength
+// is applied by the caller, as before.
+fn sampleShadow(worldPos: vec3<f32>, N: vec3<f32>, L: vec3<f32>, viewDepth: f32, fragXY: vec2<f32>) -> f32 {
+    let count = i32(shadowCascades.params.z);
+    var cascade = count - 1;
+    for (var i = 0; i < 4; i = i + 1) {
+        if (i < count && viewDepth < shadowCascades.splits[i]) { cascade = i; break; }
+    }
+    let texel = 1.0 / f32(textureDimensions(shadowMap, 0).x);
+    let NdotL = max(dot(N, L), 0.0);
+    let baseBias = texel * 3.0;
+    let biased = worldPos + N * baseBias * (1.0 - NdotL * 0.5) + L * baseBias * 0.5;
+
+    var shadow = sampleShadowCascade(cascade, biased, fragXY);
+    if (cascade < count - 1) {
+        let splitDist = shadowCascades.splits[cascade];
+        var prevSplit = 0.0;
+        if (cascade > 0) { prevSplit = shadowCascades.splits[cascade - 1]; }
+        let blendStart = prevSplit + (splitDist - prevSplit) * 0.5;
+        if (viewDepth > blendStart) {
+            let nextShadow = sampleShadowCascade(cascade + 1, biased, fragXY);
+            shadow = mix(shadow, nextShadow, smoothstep(blendStart, splitDist, viewDepth));
+        }
+    }
+    let maxDist = shadowCascades.params.y;
+    let fade = 1.0 - smoothstep(maxDist * 0.85, maxDist, viewDepth);
+    return mix(1.0, shadow, fade);
 }
 
 // Spot light shadow lookup (perspective projection, 3x3 PCF)
@@ -667,7 +704,14 @@ fn shadeSurface(in: VertexOutput) -> vec4<f32> {
     let pointShadowCasterCount = i32(lighting.shadowParams.z);
 
     // Pre-sample ALL shadow maps outside loops (WGSL uniform control flow requirement)
-    let shadowFactor = sampleShadow(in.world_pos);
+    // Sun shadow from the cascades. Receive Shadows off (flag bit 2) opts a
+    // surface out, as it does on desktop; web ignored the flag.
+    var shadowFactor = 1.0;
+    if ((object.flags & 4) != 0 && i32(lighting.lightCount.x) > 0) {
+        let sunL = normalize(-lighting.lightDir[0].xyz);
+        let viewDepth = -(viewProj.view * vec4<f32>(in.world_pos, 1.0)).z;
+        shadowFactor = sampleShadow(in.world_pos, N, sunL, viewDepth, in.clip_position.xy);
+    }
     // Only sample spot/point shadows if there are active shadow casters (otherwise textures contain garbage)
     var spotShadow0 = 1.0;
     var spotShadow1 = 1.0;

@@ -115,6 +115,10 @@ public:
     // RGBA8 colour cubemap, faces in +X -X +Y -Y +Z -Z order, each size*size*4
     // bytes, with a linear clamped sampler. For a skybox.
     WebGPUTextureHandle CreateColorCubemap(u32 size, const u8* const faces[6]);
+    // Depth32Float 2D array, sampled as texture_depth_2d_array through a
+    // comparison sampler, one layer rendered at a time via CreateCubeFaceView
+    // (which makes a view of any single layer). For shadow cascades.
+    WebGPUTextureHandle CreateDepthArrayTexture(u32 size, u32 layers);
     WGPUTextureView CreateCubeFaceView(WGPUTexture texture, WGPUTextureFormat format, u32 faceIndex);
     void UploadTexture(const WebGPUTextureHandle& texture, const void* data, u32 width, u32 height);
     void DestroyTexture(WebGPUTextureHandle& texture);

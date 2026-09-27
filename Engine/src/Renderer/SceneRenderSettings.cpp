@@ -495,10 +495,12 @@ void SceneRenderSettings::ApplyToRuntimeUnclamped(ECS::RenderSystem* rs, PostPro
     if (rs) {
         rs->SetShadowDistance(shadowDistance);  // both backends (web: single-cascade fit range)
         rs->SetOcclusionCullingEnabled(occlusionCulling);   // stored on web, acted on only by Vulkan
-#if !ENJIN_RENDERER_WEBGPU
-        rs->SetShadowResolution(shadowResolution);
+        // Both backends: web took neither, so a scene's shadow strength and
+        // softness never reached a browser (WP-16)
         rs->SetShadowStrength(shadowStrength);
         rs->SetShadowSoftness(shadowSoftness);
+#if !ENJIN_RENDERER_WEBGPU
+        rs->SetShadowResolution(shadowResolution);
         rs->SetCascadeProgressiveUpdate(cascadeProgressiveUpdate);
         rs->SetCascadeFarUpdateInterval(cascadeFarUpdateInterval);
         rs->SetWireframeEnabled(wireframe);

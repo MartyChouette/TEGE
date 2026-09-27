@@ -153,6 +153,7 @@ enum class GPUBindingType : u8 {
     DepthTexture,
     DepthTextureCube,
     SampledTextureCube,   // colour cubemap (a web skybox)
+    DepthTextureArray,    // depth 2D array (web shadow cascades)
 };
 
 enum class GPUIndexFormat : u8 {

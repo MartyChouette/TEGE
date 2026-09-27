@@ -213,6 +213,7 @@ enjin_add_test(TestShaderHotReload   Unit/Renderer/TestShaderHotReload.cpp)
 target_compile_definitions(TestShaderHotReload PRIVATE
     ENJIN_TEST_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/Fixtures")
 enjin_add_test(TestMeshFactory        Unit/Renderer/TestMeshFactory.cpp)
+enjin_add_test(TestShadowCascades     Unit/Renderer/TestShadowCascades.cpp)
 enjin_add_test(TestMeshSimplifier     Unit/Renderer/TestMeshSimplifier.cpp)
 enjin_add_test(TestMeshEdit           Unit/Renderer/TestMeshEdit.cpp)
 enjin_add_test(TestAdaptiveQuality    Unit/Renderer/TestAdaptiveQuality.cpp)

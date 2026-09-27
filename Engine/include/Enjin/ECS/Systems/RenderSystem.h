@@ -794,6 +794,9 @@ public:
     void SetShadowsEnabled(bool enabled) { m_ShadowsEnabled = enabled; }
     f32 GetShadowStrength() const;
     void SetShadowStrength(f32 s);
+    // Softness of the cascade PCF, as desktop's: 0 = hard, >0 = Poisson radius
+    f32 GetShadowSoftness() const { return m_WebShadowSoftness; }
+    void SetShadowSoftness(f32 s) { m_WebShadowSoftness = s > 0.0f ? s : 0.0f; }
 #endif
 
     // Memory profiling queries
@@ -2081,18 +2084,25 @@ private:
     // Default bone buffer (single identity matrix for non-skinned meshes)
     Renderer::GPUBufferHandle m_WebDefaultBoneBuffer;
 
-    // Shadow mapping (1-cascade directional)
+    // Directional shadow: WEB_SHADOW_CASCADES cascades in one depth array,
+    // fitted by the same ComputeShadowCascades desktop uses (WP-16). It was one
+    // map around a caster box. 2048 x 2048 x 4 layers x 4 bytes = 64 MB.
     static constexpr u32 WEB_SHADOW_MAP_SIZE = 2048;
+    static constexpr u32 WEB_SHADOW_CASCADES = 4;
+    // One WGPUTextureView per layer, to render into. Opaque here because this
+    // header carries no WebGPU types; RenderSystem.cpp casts them back.
+    void* m_WebShadowLayerView[WEB_SHADOW_CASCADES] = {};
+    Renderer::GPUBufferHandle m_WebShadowCascadeVPBuffer[WEB_SHADOW_CASCADES];
+    Renderer::GPUBindGroupHandle m_WebShadowCascadeFrameBG[WEB_SHADOW_CASCADES];
+    f32 m_WebShadowSoftness = 0.0f;     // 0 = 3x3 PCF, >0 = Poisson radius in texels
     Renderer::GPUPipelineHandle m_WebShadowPipeline;
     Renderer::GPUShaderHandle m_WebShadowShader;
     Renderer::GPUTextureHandle m_WebShadowMapTex;
-    // Directional shadow cache. The web shadow fit is built from the CASTER
-    // AABB, not the camera frustum, so for a scene of static geometry under a
-    // static sun the depth map is bit-identical every frame -- and redrawing it
-    // meant 100+ draw calls, each with its own uniform write and bind group,
-    // for a texture that never changes. m_WebShadowSignature folds the light
-    // direction and every caster's transform into one value during the fit loop
-    // that already walks them, so detecting "nothing moved" is free.
+    // Directional shadow cache. Redrawing four cascades of every caster for a
+    // depth array that has not changed is pure cost, so m_WebShadowSignature
+    // folds the light direction, the four cascade matrices (texel-snapped, so
+    // they hold still while the camera does) and every caster's transform into
+    // one value, and the passes run only when it moves.
     u64 m_WebShadowSignature = 0;
     bool m_WebShadowValid = false;      // false = must redraw (boot, resize, scene change)
     // World size of one shadow-map texel, from the last fit. The change
@@ -2117,7 +2127,6 @@ private:
     Renderer::GPUBindGroupLayoutHandle m_WebShadowObjectLayout;
     Renderer::GPUBufferHandle m_WebShadowVPBuffer;       // light VP UBO
     Renderer::GPUBufferHandle m_WebShadowObjectBuffer;   // per-entity model UBO
-    Renderer::GPUBindGroupHandle m_WebShadowFrameBG;
     Renderer::GPUBindGroupHandle m_WebShadowObjectBG;
 
     // Shadow sampling in main PBR pass (bind group 3)

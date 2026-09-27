@@ -1433,6 +1433,7 @@ bool RenderSystem::AllowIKFor(Entity entity) const {
 #include "Enjin/Renderer/WebGPU/WebGPURenderEncoder.h"
 #include "Enjin/Renderer/WebGPU/WebGPUTextureManager.h"
 #include "stb_image.h"   // sky cubemap faces (EnsureWebSkyCubemap)
+#include "Enjin/Renderer/ShadowCascades.h"
 #include <array>
 #include "Enjin/Renderer/WebGPU/WebGPUPipelineManager.h"
 #include "Enjin/Renderer/WebGPU/WebGPUBufferManager.h"
@@ -1546,6 +1547,14 @@ static_assert(sizeof(WebObjectDataUBO) == 160,
               "WebObjectDataLayout.h (the shaders follow automatically), keep the "
               "struct 16-byte aligned, and move this number.");
 static constexpr f32 kWebObjectLayoutCanary = ENJIN_WEB_OBJECT_LAYOUT_CANARY;
+
+// The directional cascades as the PBR pass reads them (group 3 binding 0)
+struct WebShadowCascadesUBO {
+    alignas(16) Math::Matrix4 viewProj[4];    // light proj * view per cascade
+    alignas(16) f32 splits[4];                // view-space far distance of each
+    alignas(16) f32 params[4];                // x = softness, y = shadow distance, z = cascade count
+};
+static_assert(sizeof(WebShadowCascadesUBO) == 288, "matches ShadowCascades in PBR_WGSL");
 
 // Spot shadow VP UBO: 2 lights x (view + proj) = 4 matrices
 struct WebSpotShadowVPUBO {
@@ -2234,8 +2243,8 @@ void RenderSystem::Initialize() {
     // Group 3: Shadow sampling (directional + spot + point shadow maps)
     Renderer::GPUBindGroupLayoutDesc shadowSampleLayoutDesc;
     shadowSampleLayoutDesc.entries = {
-        {0, BType::UniformBuffer, SStage::Vertex | SStage::Fragment, sizeof(WebViewProjectionUBO)},  // dir shadow VP
-        {1, BType::DepthTexture, SStage::Fragment, 0},              // dir shadow map
+        {0, BType::UniformBuffer, SStage::Vertex | SStage::Fragment, sizeof(WebShadowCascadesUBO)},  // dir shadow cascades
+        {1, BType::DepthTextureArray, SStage::Fragment, 0},         // dir shadow cascades (one layer each)
         {2, BType::ComparisonSampler, SStage::Fragment, 0},         // shared comparison sampler
         {3, BType::UniformBuffer, SStage::Fragment, sizeof(WebSpotShadowVPUBO)},   // spot shadow VPs
         {4, BType::DepthTexture, SStage::Fragment, 0},              // spot shadow map 0
@@ -2357,13 +2366,20 @@ void RenderSystem::Initialize() {
 
     // Create shadow map depth texture (non-fatal — rendering works without shadows)
     {
-        Renderer::GPUTextureDesc smDesc;
-        smDesc.width = WEB_SHADOW_MAP_SIZE;
-        smDesc.height = WEB_SHADOW_MAP_SIZE;
-        smDesc.format = Renderer::GPUTextureFormat::Depth32Float;
-        smDesc.usage = Renderer::GPUTextureUsage::RenderAttachment | Renderer::GPUTextureUsage::Sampled;
-        smDesc.label = "ShadowMap";
-        m_WebShadowMapTex = texMgr->CreateTexture(smDesc);
+        // One layer per cascade, sampled as a texture_depth_2d_array: one
+        // binding for all four, which matters because the PBR fragment stage
+        // is already at WebGPU's 16-texture default limit
+        auto* webRendererSm = static_cast<Renderer::WebGPURenderer*>(m_Renderer);
+        auto* webTexMgrSm = static_cast<Renderer::WebGPUTextureManager*>(texMgr);
+        const Renderer::WebGPUTextureHandle smNative =
+            webRendererSm->CreateDepthArrayTexture(WEB_SHADOW_MAP_SIZE, WEB_SHADOW_CASCADES);
+        if (smNative.texture && smNative.view) {
+            m_WebShadowMapTex = webTexMgrSm->RegisterNativeTexture(smNative);
+            for (u32 c = 0; c < WEB_SHADOW_CASCADES; ++c) {
+                m_WebShadowLayerView[c] = webRendererSm->CreateCubeFaceView(
+                    smNative.texture, WGPUTextureFormat_Depth32Float, c);
+            }
+        }
         m_WebShadowValid = false;   // fresh texture: the cache must redraw once
         if (!m_WebShadowMapTex.IsValid()) {
             ENJIN_LOG_WARN(Renderer, "RenderSystem: Shadow map texture creation failed — shadows disabled");
@@ -2424,13 +2440,22 @@ void RenderSystem::Initialize() {
 
         m_WebShadowPipeline = pipeMgr->CreateRenderPipeline(shadowPipeDesc);
 
-        // Shadow UBOs
+        // Shadow UBOs. m_WebShadowVPBuffer is the cascade block the PBR pass
+        // samples with; each cascade's depth pass has its own VP buffer.
         Renderer::GPUBufferDesc svpDesc;
-        svpDesc.size = sizeof(WebViewProjectionUBO);
+        svpDesc.size = sizeof(WebShadowCascadesUBO);
         svpDesc.usage = Renderer::GPUBufferUsage::Uniform | Renderer::GPUBufferUsage::CopyDst;
         svpDesc.hostVisible = true;
-        svpDesc.label = "ShadowVP_UBO";
+        svpDesc.label = "ShadowCascades_UBO";
         m_WebShadowVPBuffer = bufMgr->CreateBuffer(svpDesc);
+        for (u32 c = 0; c < WEB_SHADOW_CASCADES; ++c) {
+            Renderer::GPUBufferDesc cd;
+            cd.size = sizeof(WebViewProjectionUBO);
+            cd.usage = Renderer::GPUBufferUsage::Uniform | Renderer::GPUBufferUsage::CopyDst;
+            cd.hostVisible = true;
+            cd.label = "ShadowCascadeVP_UBO";
+            m_WebShadowCascadeVPBuffer[c] = bufMgr->CreateBuffer(cd);
+        }
 
         // The caster matrix array is sized and filled per frame (see
         // webShadowObjects in the web Update); one row is enough to start.
@@ -2439,11 +2464,13 @@ void RenderSystem::Initialize() {
         svpDesc.label = "ShadowObjArray";
         m_WebShadowObjectBuffer = bufMgr->CreateBuffer(svpDesc);
 
-        // Shadow bind groups
-        Renderer::GPUBindGroupDesc sfbg;
-        sfbg.layout = m_WebShadowFrameLayout;
-        sfbg.entries = {{0, m_WebShadowVPBuffer, 0, sizeof(WebViewProjectionUBO), {}, {}}};
-        m_WebShadowFrameBG = bindMgr->CreateBindGroup(sfbg);
+        // Shadow bind groups: one frame group per cascade pass
+        for (u32 c = 0; c < WEB_SHADOW_CASCADES; ++c) {
+            Renderer::GPUBindGroupDesc sfbg;
+            sfbg.layout = m_WebShadowFrameLayout;
+            sfbg.entries = {{0, m_WebShadowCascadeVPBuffer[c], 0, sizeof(WebViewProjectionUBO), {}, {}}};
+            m_WebShadowCascadeFrameBG[c] = bindMgr->CreateBindGroup(sfbg);
+        }
 
         Renderer::GPUBindGroupDesc sobg;
         sobg.layout = m_WebShadowObjectLayout;
@@ -2592,8 +2619,8 @@ void RenderSystem::Initialize() {
         Renderer::GPUBindGroupDesc shadowSampleBGDesc;
         shadowSampleBGDesc.layout = m_WebShadowSampleLayout;
         shadowSampleBGDesc.entries = {
-            {0, m_WebShadowVPBuffer, 0, sizeof(WebViewProjectionUBO), {}, {}},     // dir shadow VP
-            {1, {}, 0, 0, m_WebShadowMapTex, {}},                                  // dir shadow depth
+            {0, m_WebShadowVPBuffer, 0, sizeof(WebShadowCascadesUBO), {}, {}},     // dir shadow cascades
+            {1, {}, 0, 0, m_WebShadowMapTex, {}},                                  // dir shadow depth array
             {2, {}, 0, 0, {}, m_WebShadowMapTex},                                  // comparison sampler
             {3, m_WebSpotShadowVPBuffer, 0, sizeof(WebSpotShadowVPUBO), {}, {}},   // spot shadow VPs
             {4, {}, 0, 0, m_WebSpotShadowTex[0], {}},                              // spot shadow 0
@@ -3161,7 +3188,8 @@ void RenderSystem::Shutdown() {
     if (bindMgr) {
         if (m_WebShadowSampleBG.IsValid()) bindMgr->DestroyBindGroup(m_WebShadowSampleBG);
         if (m_WebShadowSampleLayout.IsValid()) bindMgr->DestroyBindGroupLayout(m_WebShadowSampleLayout);
-        if (m_WebShadowFrameBG.IsValid()) bindMgr->DestroyBindGroup(m_WebShadowFrameBG);
+        for (u32 c = 0; c < WEB_SHADOW_CASCADES; ++c)
+            if (m_WebShadowCascadeFrameBG[c].IsValid()) bindMgr->DestroyBindGroup(m_WebShadowCascadeFrameBG[c]);
         if (m_WebShadowObjectBG.IsValid()) bindMgr->DestroyBindGroup(m_WebShadowObjectBG);
         if (m_WebShadowFrameLayout.IsValid()) bindMgr->DestroyBindGroupLayout(m_WebShadowFrameLayout);
         if (m_WebShadowObjectLayout.IsValid()) bindMgr->DestroyBindGroupLayout(m_WebShadowObjectLayout);
@@ -3169,6 +3197,14 @@ void RenderSystem::Shutdown() {
     if (bufMgr) {
         if (m_WebShadowVPBuffer.IsValid()) bufMgr->DestroyBuffer(m_WebShadowVPBuffer);
         if (m_WebShadowObjectBuffer.IsValid()) bufMgr->DestroyBuffer(m_WebShadowObjectBuffer);
+        for (u32 c = 0; c < WEB_SHADOW_CASCADES; ++c)
+            if (m_WebShadowCascadeVPBuffer[c].IsValid()) bufMgr->DestroyBuffer(m_WebShadowCascadeVPBuffer[c]);
+    }
+    for (u32 c = 0; c < WEB_SHADOW_CASCADES; ++c) {
+        if (m_WebShadowLayerView[c]) {
+            wgpuTextureViewRelease(static_cast<WGPUTextureView>(m_WebShadowLayerView[c]));
+            m_WebShadowLayerView[c] = nullptr;
+        }
     }
     if (texMgr && m_WebShadowMapTex.IsValid()) texMgr->DestroyTexture(m_WebShadowMapTex);
     if (pipeMgr && m_WebShadowPipeline.IsValid()) pipeMgr->DestroyPipeline(m_WebShadowPipeline);
@@ -4479,316 +4515,146 @@ void RenderSystem::Update(f32 deltaTime) {
             }
         }
 
-        // Compute light view-projection (single cascade covering shadow distance)
-        f32 cameraNear = 0.1f;
-        f32 shadowDistance = std::max(m_ShadowDistance, 1.0f);  // scene-configurable (was hardcoded 80)
-        Math::Matrix4 camView = m_Camera->GetViewMatrix();
-        Math::Matrix4 camProj = m_Camera->GetProjectionMatrix();
-        Math::Matrix4 invViewProj = (camProj * camView).Inverse();
+        // Four cascades, fitted exactly as desktop fits them (WP-16). This was
+        // one map around a box built from each caster's position +- scale, with
+        // the ground assumed at y = 0 and wide flat meshes dropped as casters,
+        // so a slope, a raised floor or a big flat roof cast wrong or nothing.
+        const f32 shadowDistance = std::max(m_ShadowDistance, 1.0f);
+        Renderer::ShadowCascadeInput cin;
+        cin.cameraView = m_Camera->GetViewMatrix();
+        cin.cameraProj = m_Camera->GetProjectionMatrix();
+        cin.cameraNear = m_Camera->GetNearPlane();
+        cin.cameraFar = m_Camera->GetFarPlane();
+        cin.shadowDistance = shadowDistance;
+        cin.cascadeCount = WEB_SHADOW_CASCADES;
+        cin.resolution = WEB_SHADOW_MAP_SIZE;
+        cin.lightDir = shadowLightDir;
+        f32 splits[WEB_SHADOW_CASCADES] = {};
+        Math::Matrix4 cascadeVP[WEB_SHADOW_CASCADES];
+        Renderer::ComputeShadowCascades(cin, splits, cascadeVP);
 
-        // Unproject frustum corners at near/far planes
-        Math::Vector3 nearCorners[4], farCorners[4];
-        {
-            int idx = 0;
-            for (int y = 0; y < 2; ++y) {
-                for (int x = 0; x < 2; ++x) {
-                    Math::Vector4 nearNdc(x * 2.0f - 1.0f, y * 2.0f - 1.0f, 0.0f, 1.0f);
-                    Math::Vector4 farNdc(x * 2.0f - 1.0f, y * 2.0f - 1.0f, 1.0f, 1.0f);
-                    Math::Vector4 nw = invViewProj * nearNdc;
-                    Math::Vector4 fw = invViewProj * farNdc;
-                    nearCorners[idx] = Math::Vector3(nw.x / nw.w, nw.y / nw.w, nw.z / nw.w);
-                    farCorners[idx]  = Math::Vector3(fw.x / fw.w, fw.y / fw.w, fw.z / fw.w);
-                    idx++;
-                }
-            }
+        WebShadowCascadesUBO cascadesUBO{};
+        for (u32 c = 0; c < WEB_SHADOW_CASCADES; ++c) {
+            cascadesUBO.viewProj[c] = cascadeVP[c];
+            cascadesUBO.splits[c] = splits[c];
+            // The depth pass multiplies proj * view; the cascade matrix is the
+            // whole of it, so it rides in proj
+            WebViewProjectionUBO passVP{};
+            passVP.view = Math::Matrix4::Identity();
+            passVP.proj = cascadeVP[c];
+            bufMgr->UploadData(m_WebShadowCascadeVPBuffer[c], &passVP, sizeof(passVP));
         }
+        cascadesUBO.params[0] = m_WebShadowSoftness;
+        cascadesUBO.params[1] = shadowDistance;
+        cascadesUBO.params[2] = static_cast<f32>(WEB_SHADOW_CASCADES);
+        bufMgr->UploadData(m_WebShadowVPBuffer, &cascadesUBO, sizeof(cascadesUBO));
 
-        // Compute world-space frustum corners clamped to shadow distance
-        f32 cameraFar = m_Camera->GetFarPlane();
-        f32 farT = std::min(shadowDistance, cameraFar) / cameraFar;
-        Math::Vector3 corners[8];
-        for (int i = 0; i < 4; ++i) {
-            Math::Vector3 ray = farCorners[i] - nearCorners[i];
-            corners[i]     = nearCorners[i];           // near plane
-            corners[i + 4] = nearCorners[i] + ray * farT;  // shadow distance
-        }
-
-        // Fit the shadow map to the actual shadow CASTERS, not the whole camera
-        // frustum. Fitting the frustum-at-shadow-distance spread the 2048^2 map
-        // over a ~240-unit box for a ~15-unit scene, so small objects got a
-        // handful of texels -> blocky, acne'd shadows. Approximate each caster's
-        // world AABB from its transform (position +- scale, meshes are ~unit
-        // cubes) and skip large flat receivers (ground planes: wide XZ, thin Y)
-        // which receive shadows but cast none. Shadows fall on the ground near
-        // the casters, so a margin around the caster AABB (plus the ground
-        // plane at y=0) is exactly the region that needs coverage.
-        Math::Vector3 casterMin(1e9f, 1e9f, 1e9f), casterMax(-1e9f, -1e9f, -1e9f);
-        bool haveCasters = false;
-        // FNV-1a over the light direction and every caster transform. Cheap
-        // enough to run unconditionally; it rides the loop that already reads
-        // each transform for the AABB.
+        // Change signature. The cascade matrices are texel-snapped, so they are
+        // bit-stable while the camera and sun hold still; casters are quantised
+        // to the finest cascade's texel, below which the depth cannot change.
         u64 shadowSig = 1469598103934665603ull;
-        // Per-entity hashes are COMBINED WITH ADDITION, not chained, so the
-        // signature does not depend on the order casters come back in. A
-        // sequential chain made a stable scene look like it changed whenever the
-        // iteration order shifted.
         auto shadowHashF = [](u64 h, f32 v) {
             u32 bits;
             std::memcpy(&bits, &v, sizeof(bits));
             return (h ^ bits) * 1099511628211ull;
         };
-        auto shadowSigMix = [&shadowSig, &shadowHashF](f32 v) { shadowSig = shadowHashF(shadowSig, v); };
-        shadowSigMix(shadowLightDir.x); shadowSigMix(shadowLightDir.y); shadowSigMix(shadowLightDir.z);
+        for (u32 c = 0; c < WEB_SHADOW_CASCADES; ++c)
+            for (int k = 0; k < 16; ++k) shadowSig = shadowHashF(shadowSig, cascadeVP[c].m[k]);
+        const f32 cascade0Extent = (cascadeVP[0].m[0] != 0.0f) ? 2.0f / std::abs(cascadeVP[0].m[0]) : 1.0f;
+        m_WebShadowTexelWorld = cascade0Extent / static_cast<f32>(WEB_SHADOW_MAP_SIZE);
+        const f32 texel = std::max(m_WebShadowTexelWorld, 1e-4f);
         u64 casterSigSum = 0;
-        // World size of one shadow texel, from the PREVIOUS frame's fit (this
-        // frame's is not known until the AABB is built, and it barely changes).
-        const f32 shadowTexelWorld = m_WebShadowTexelWorld > 0.0f ? m_WebShadowTexelWorld : 0.05f;
-        {
-            for (Entity fe : webShadowCasters()) {
-                auto* mx = m_CachedTransformStorage ? m_CachedTransformStorage->Get(fe) : nullptr;
-                auto* mm = m_CachedMeshStorage ? m_CachedMeshStorage->Get(fe) : nullptr;
-                if (!mx || !mm) continue;
-                if (mm->indices.empty()) continue;
-                Math::Vector3 he(std::abs(mx->scale.x), std::abs(mx->scale.y), std::abs(mx->scale.z));
-                if (std::max(he.x, he.z) * 2.0f > 30.0f && he.y * 2.0f < 1.0f) continue;  // ground-like receiver
-                Math::Vector3 lo = mx->position - he, hi = mx->position + he;
-                casterMin = Math::Vector3(std::min(casterMin.x, lo.x), std::min(casterMin.y, lo.y), std::min(casterMin.z, lo.z));
-                casterMax = Math::Vector3(std::max(casterMax.x, hi.x), std::max(casterMax.y, hi.y), std::max(casterMax.z, hi.z));
-                haveCasters = true;
-                // Fold this caster into the change signature (see m_WebShadowSignature),
-                // quantised to the SHADOW MAP's own resolution. A movement smaller
-                // than one texel cannot change the rendered depth map, so treating
-                // it as a change just redraws an identical texture. Physics
-                // writeback jitters resting bodies by tiny amounts every step, and
-                // at finer quantisation that alone kept the map dirty on every
-                // other frame with a completely static scene (measured: caster
-                // count and fit AABB both dead stable, redraws still 150/300).
-                const f32 texel = std::max(shadowTexelWorld, 1e-4f);
-                auto qp = [texel](f32 v) { return std::round(v / texel); };
-                auto qr = [](f32 v) { return std::round(v * 256.0f); };
-                u64 eh = 1469598103934665603ull;
-                eh = shadowHashF(eh, qp(mx->position.x)); eh = shadowHashF(eh, qp(mx->position.y)); eh = shadowHashF(eh, qp(mx->position.z));
-                eh = shadowHashF(eh, qr(mx->rotation.x)); eh = shadowHashF(eh, qr(mx->rotation.y));
-                eh = shadowHashF(eh, qr(mx->rotation.z)); eh = shadowHashF(eh, qr(mx->rotation.w));
-                eh = shadowHashF(eh, qp(mx->scale.x)); eh = shadowHashF(eh, qp(mx->scale.y)); eh = shadowHashF(eh, qp(mx->scale.z));
-                casterSigSum += eh;
-            }
+        for (Entity fe : webShadowCasters()) {
+            auto* mx = m_CachedTransformStorage ? m_CachedTransformStorage->Get(fe) : nullptr;
+            if (!mx) continue;
+            // Per-entity hashes are ADDED, so the order casters come back in
+            // does not change the signature
+            auto qp = [texel](f32 v) { return std::round(v / texel); };
+            auto qr = [](f32 v) { return std::round(v * 256.0f); };
+            u64 eh = 1469598103934665603ull;
+            eh = shadowHashF(eh, qp(mx->position.x)); eh = shadowHashF(eh, qp(mx->position.y)); eh = shadowHashF(eh, qp(mx->position.z));
+            eh = shadowHashF(eh, qr(mx->rotation.x)); eh = shadowHashF(eh, qr(mx->rotation.y));
+            eh = shadowHashF(eh, qr(mx->rotation.z)); eh = shadowHashF(eh, qr(mx->rotation.w));
+            eh = shadowHashF(eh, qp(mx->scale.x)); eh = shadowHashF(eh, qp(mx->scale.y)); eh = shadowHashF(eh, qp(mx->scale.z));
+            casterSigSum += eh;
         }
-
-        // Fit volume: caster AABB (margin for shadow falloff + ground plane) when
-        // we have casters, else the frustum corners (empty/receiver-only scene).
-        Math::Vector3 fitCorners[8];
-        Math::Vector3 center(0.0f);
-        if (haveCasters) {
-            const f32 margin = 4.0f;                 // catch shadows cast onto nearby ground
-            casterMin = casterMin - Math::Vector3(margin, margin, margin);
-            casterMax = casterMax + Math::Vector3(margin, margin, margin);
-            casterMin.y = std::min(casterMin.y, 0.0f);  // include the ground plane (receiver)
-            int ci = 0;
-            for (int zz = 0; zz < 2; ++zz)
-                for (int yy = 0; yy < 2; ++yy)
-                    for (int xx = 0; xx < 2; ++xx)
-                        fitCorners[ci++] = Math::Vector3(xx ? casterMax.x : casterMin.x,
-                                                         yy ? casterMax.y : casterMin.y,
-                                                         zz ? casterMax.z : casterMin.z);
-            center = (casterMin + casterMax) * 0.5f;
-        } else {
-            for (int i = 0; i < 8; ++i) { fitCorners[i] = corners[i]; center = center + corners[i]; }
-            center = center * (1.0f / 8.0f);
-        }
-
-        // Build light view matrix
-        Math::Vector3 lightDirN = shadowLightDir.Normalized();
-        Math::Vector3 lightUp(0.0f, 1.0f, 0.0f);
-        if (std::abs(lightDirN.Dot(lightUp)) > 0.99f)
-            lightUp = Math::Vector3(0.0f, 0.0f, 1.0f);
-        Math::Matrix4 lightView = Math::Matrix4::LookAt(center - lightDirN * 50.0f, center, lightUp);
-
-        // Light-space AABB of the fit volume
-        f32 minX = 1e9f, maxX = -1e9f;
-        f32 minY = 1e9f, maxY = -1e9f;
-        f32 minZ = 1e9f, maxZ = -1e9f;
-        for (int i = 0; i < 8; ++i) {
-            Math::Vector4 ls = lightView * Math::Vector4(fitCorners[i].x, fitCorners[i].y, fitCorners[i].z, 1.0f);
-            minX = std::min(minX, ls.x); maxX = std::max(maxX, ls.x);
-            minY = std::min(minY, ls.y); maxY = std::max(maxY, ls.y);
-            minZ = std::min(minZ, ls.z); maxZ = std::max(maxZ, ls.z);
-        }
-        // Pull the near plane toward the light so off-fit casters still cast in.
-        minZ -= 20.0f;
-
-        // Texel-size snapping (prevents shadow swimming)
-        f32 sizeX = maxX - minX, sizeY = maxY - minY;
-        f32 worldUnitsPerTexel = std::max(sizeX, sizeY) / static_cast<f32>(WEB_SHADOW_MAP_SIZE);
-        if (worldUnitsPerTexel > 0.0f) {
-            sizeX = std::ceil(sizeX / worldUnitsPerTexel) * worldUnitsPerTexel;
-            sizeY = std::ceil(sizeY / worldUnitsPerTexel) * worldUnitsPerTexel;
-            f32 cx = std::floor((minX + maxX) * 0.5f / worldUnitsPerTexel) * worldUnitsPerTexel;
-            f32 cy = std::floor((minY + maxY) * 0.5f / worldUnitsPerTexel) * worldUnitsPerTexel;
-            minX = cx - sizeX * 0.5f; maxX = cx + sizeX * 0.5f;
-            minY = cy - sizeY * 0.5f; maxY = cy + sizeY * 0.5f;
-        }
-
-        // Orthographic projection (depth [0,1])
-        Math::Matrix4 lightProj = Math::Matrix4::Identity();
-        lightProj.m[0]  =  2.0f / (maxX - minX);
-        lightProj.m[5]  =  2.0f / (maxY - minY);
-        lightProj.m[10] = -1.0f / (maxZ - minZ);
-        lightProj.m[12] = -(maxX + minX) / (maxX - minX);
-        lightProj.m[13] = -(maxY + minY) / (maxY - minY);
-        lightProj.m[14] =  maxZ / (maxZ - minZ);
-
-        // Feeds next frame's signature quantisation.
-        m_WebShadowTexelWorld = std::max(maxX - minX, maxY - minY) / static_cast<f32>(WEB_SHADOW_MAP_SIZE);
-
-        static int s_ShadowFitLog = 0;
-        if (s_ShadowFitLog++ < 3) {
-            EM_ASM({
-                console.log('[SHADOW_FIT] box=' + $0.toFixed(1) + 'x' + $1.toFixed(1) +
-                    ' zRange=' + $2.toFixed(1) + ' unitsPerTexel=' + $3.toFixed(3) +
-                    ' center=(' + $4.toFixed(1) + ',' + $5.toFixed(1) + ',' + $6.toFixed(1) + ')' +
-                    ' camFar=' + $7.toFixed(0) + ' dist=' + $8.toFixed(0));
-            }, maxX - minX, maxY - minY, maxZ - minZ,
-               std::max(maxX - minX, maxY - minY) / static_cast<f32>(WEB_SHADOW_MAP_SIZE),
-               center.x, center.y, center.z, cameraFar, shadowDistance);
-        }
-
-        // Upload light VP to shadow UBO (used by both shadow pass and PBR pass group 3)
-        WebViewProjectionUBO shadowVP{};
-        shadowVP.view = lightView;
-        shadowVP.proj = lightProj;
-        shadowVP.viewPos = center - lightDirN * 50.0f;
-        shadowVP.time = 0.0f;
-        bufMgr->UploadData(m_WebShadowVPBuffer, &shadowVP, sizeof(shadowVP));
-
-        // Execute shadow depth pass via raw WebGPU encoder
-        auto* webRenderer = static_cast<Renderer::WebGPURenderer*>(m_Renderer);
-        auto* texMgr = static_cast<Renderer::WebGPUTextureManager*>(m_Renderer->GetTextureManager());
-        auto* pipeMgr = static_cast<Renderer::WebGPUPipelineManager*>(m_Renderer->GetPipelineManager());
-        auto* webBufMgr = static_cast<Renderer::WebGPUBufferManager*>(bufMgr);
-        auto* webBindMgr = static_cast<Renderer::WebGPUBindGroupManager*>(m_Renderer->GetBindGroupManager());
-
-        // Nothing that feeds the shadow map moved: keep the texture we already
-        // have. It is only ever written by this pass, and it was cleared to far
-        // depth at creation, so the contents stay valid indefinitely.
         shadowSig ^= casterSigSum;
         // Whatever the shadow-pass hook draws (web vegetation) is not a
-        // MeshComponent, so none of the above can see it move or appear.
+        // MeshComponent, so none of the above can see it move or appear
         shadowSig ^= m_WebShadowExtraSig;
         const bool shadowDirty = !m_WebShadowValid || shadowSig != m_WebShadowSignature;
         m_WebShadowSignature = shadowSig;
 
-        // Periodic proof the cache is holding: redraws should fall to 0 once a
-        // static scene settles. A number that keeps climbing means something is
-        // perturbing a caster transform every frame.
+        // Periodic proof the cache is holding: redraws fall to 0 in a still
+        // scene with a still camera
         {
             static u32 s_Frames = 0, s_Redraws = 0;
-            static u32 s_MinCasters = 0xFFFFFFFFu, s_MaxCasters = 0;
-            static f32 s_MinFitY = 1e9f, s_MaxFitY = -1e9f;
             if (shadowDirty) ++s_Redraws;
-            {   // membership vs movement: does the caster SET change, or just transforms?
-                const u32 nc = static_cast<u32>(webShadowCasters().size());
-                if (nc < s_MinCasters) s_MinCasters = nc;
-                if (nc > s_MaxCasters) s_MaxCasters = nc;
-                if (casterMax.y < s_MinFitY) s_MinFitY = casterMax.y;
-                if (casterMax.y > s_MaxFitY) s_MaxFitY = casterMax.y;
-            }
             if (++s_Frames % 300 == 0) {
-                EM_ASM({ console.log('[SHADOW] redraws=' + $0 + '/300  casters min=' + $1 + ' max=' + $2
-                         + '  fitY min=' + $3.toFixed(1) + ' max=' + $4.toFixed(1)); },
-                       s_Redraws, s_MinCasters, s_MaxCasters, s_MinFitY, s_MaxFitY);
-                s_Redraws = 0; s_MinCasters = 0xFFFFFFFFu; s_MaxCasters = 0;
-                s_MinFitY = 1e9f; s_MaxFitY = -1e9f;
+                EM_ASM({ console.log('[SHADOW] redraws=' + $0 + '/300  casters=' + $1); },
+                       s_Redraws, static_cast<int>(webShadowCasters().size()));
+                s_Redraws = 0;
             }
         }
 
-        const auto* shadowNative = texMgr->GetNativeTexture(m_WebShadowMapTex);
-        if (shadowDirty && shadowNative && shadowNative->view) {
-            WGPURenderPassEncoder shadowPass = webRenderer->BeginDepthOnlyPass(
-                shadowNative->view, WEB_SHADOW_MAP_SIZE, WEB_SHADOW_MAP_SIZE);
+        auto* webRenderer = static_cast<Renderer::WebGPURenderer*>(m_Renderer);
+        auto* pipeMgr = static_cast<Renderer::WebGPUPipelineManager*>(m_Renderer->GetPipelineManager());
+        auto* webBufMgr = static_cast<Renderer::WebGPUBufferManager*>(bufMgr);
+        auto* webBindMgr = static_cast<Renderer::WebGPUBindGroupManager*>(m_Renderer->GetBindGroupManager());
 
-            if (shadowPass) {
-                WGPURenderPipeline nativeShadowPipeline = pipeMgr->GetNativePipeline(m_WebShadowPipeline);
-                WGPUBindGroup nativeShadowFrameBG = webBindMgr->GetNativeGroup(m_WebShadowFrameBG);
-
+        if (shadowDirty) {
+            bool shadowIncomplete = false;
+            u32 shadowDrawCount = 0;
+            const bool shadowObjOK = webShadowObjects();
+            const auto& dirCasters = webShadowCasters();
+            WGPURenderPipeline nativeShadowPipeline = pipeMgr->GetNativePipeline(m_WebShadowPipeline);
+            for (u32 c = 0; c < WEB_SHADOW_CASCADES; ++c) {
+                if (!m_WebShadowLayerView[c]) continue;
+                WGPURenderPassEncoder shadowPass = webRenderer->BeginDepthOnlyPass(
+                    static_cast<WGPUTextureView>(m_WebShadowLayerView[c]), WEB_SHADOW_MAP_SIZE, WEB_SHADOW_MAP_SIZE);
+                if (!shadowPass) continue;
                 wgpuRenderPassEncoderSetPipeline(shadowPass, nativeShadowPipeline);
                 wgpuRenderPassEncoderSetViewport(shadowPass, 0, 0,
                     static_cast<f32>(WEB_SHADOW_MAP_SIZE), static_cast<f32>(WEB_SHADOW_MAP_SIZE), 0.0f, 1.0f);
-                wgpuRenderPassEncoderSetBindGroup(shadowPass, 0, nativeShadowFrameBG, 0, nullptr);
-
-                // Draw each mesh entity into the shadow map. One bind group for
-                // the whole pass; the caster's row is its index in the list.
-                bool shadowIncomplete = false;
-                u32 shadowDrawCount = 0;
-                const bool shadowObjOK = webShadowObjects();
+                wgpuRenderPassEncoderSetBindGroup(shadowPass, 0,
+                    webBindMgr->GetNativeGroup(m_WebShadowCascadeFrameBG[c]), 0, nullptr);
                 if (shadowObjOK) {
                     wgpuRenderPassEncoderSetBindGroup(shadowPass, 1,
                         webBindMgr->GetNativeGroup(m_WebShadowObjectBG), 0, nullptr);
                 }
-                const auto& dirCasters = webShadowCasters();
+                // Every caster, the ground included: no mesh is dropped for being
+                // wide and thin, which is what left big flat roofs shadowless.
+                // The row is the caster's index in the list (the object array).
                 for (usize ci = 0; shadowObjOK && ci < dirCasters.size(); ci++) {
                     Entity entity = dirCasters[ci];
                     auto* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity) : nullptr;
-                    auto* xf = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
-                    if (!mesh || !xf) continue;
-                    if (mesh->indices.empty()) continue;
-
-                    // Skip large flat receivers (ground planes) as shadow casters — same
-                    // heuristic as the shadow FIT above. A big flat plane rendered into the
-                    // shadow map self-shadows at the grazing light angle, producing the
-                    // triangular acne wedges seen across the open ground. The ground
-                    // receives shadows; it never needs to cast one.
-                    {
-                        Math::Vector3 she(std::abs(xf->scale.x), std::abs(xf->scale.y), std::abs(xf->scale.z));
-                        if (std::max(she.x, she.z) * 2.0f > 30.0f && she.y * 2.0f < 1.0f) continue;
-                    }
-
-                    u64 eid = EntityIndex(entity);  // dense index: low 32 bits (raw handle has generation in high bits)
-                    // Not ready YET is not the same as nothing to draw. The web path
-                    // creates entity buffers lazily in the main draw loop, which runs
-                    // AFTER this pass, so on the first frame every caster lands here.
+                    if (!mesh || mesh->indices.empty()) continue;
+                    const u64 eid = EntityIndex(entity);
+                    // Not ready YET is not the same as nothing to draw: entity
+                    // buffers are made lazily in the main loop, after this pass
                     if (eid >= m_EntityRenderData.size()) { shadowIncomplete = true; continue; }
                     auto& rd = m_EntityRenderData[eid];
                     if (!rd.valid || !rd.vertexBuffer.IsValid() || !rd.indexBuffer.IsValid()) { shadowIncomplete = true; continue; }
-
-                    WGPUBuffer vb = webBufMgr->GetNativeBuffer(rd.vertexBuffer);
-                    WGPUBuffer ib = webBufMgr->GetNativeBuffer(rd.indexBuffer);
-                    wgpuRenderPassEncoderSetVertexBuffer(shadowPass, 0, vb, 0, WGPU_WHOLE_SIZE);
-                    wgpuRenderPassEncoderSetIndexBuffer(shadowPass, ib, WGPUIndexFormat_Uint32, 0, WGPU_WHOLE_SIZE);
-                    wgpuRenderPassEncoderDrawIndexed(shadowPass, rd.indexCount, 1, 0, 0,
-                                                     static_cast<u32>(ci));
+                    wgpuRenderPassEncoderSetVertexBuffer(shadowPass, 0, webBufMgr->GetNativeBuffer(rd.vertexBuffer), 0, WGPU_WHOLE_SIZE);
+                    wgpuRenderPassEncoderSetIndexBuffer(shadowPass, webBufMgr->GetNativeBuffer(rd.indexBuffer),
+                                                        WGPUIndexFormat_Uint32, 0, WGPU_WHOLE_SIZE);
+                    wgpuRenderPassEncoderDrawIndexed(shadowPass, rd.indexCount, 1, 0, 0, static_cast<u32>(ci));
                     shadowDrawCount++;
                 }
-
-                // Procedural geometry that has no MeshComponent to walk --
-                // grass, shrubs and trees are a volume plus a scatter hash, so
-                // the loop above cannot see them and a whole grove cast no
-                // shadow while every crate beside it did.
-                if (m_WebShadowPassHook) {
-                    m_WebShadowPassHook(shadowPass, lightProj * lightView);
-                }
-
-                static int s_ShadowLog = 0;
-                if (s_ShadowLog++ < 5) {
-                    EM_ASM({ console.log('[SHADOW] drew ' + $0 + ' entities into shadow map (cached until something moves)'); }, shadowDrawCount);
-                }
-
+                // Procedural geometry with no MeshComponent (grass, shrubs, trees)
+                if (m_WebShadowPassHook) m_WebShadowPassHook(shadowPass, cascadeVP[c]);
                 wgpuRenderPassEncoderEnd(shadowPass);
                 wgpuRenderPassEncoderRelease(shadowPass);
-                // The map now matches m_WebShadowSignature: reuse it until
-                // a caster or the sun moves.
-                //
-                // Unless a caster was skipped for having no GPU buffers yet. The
-                // signature is built from transforms, so it does not change when the
-                // buffers later appear, and caching here gave that frame the only
-                // chance the map would ever get: in a STATIC scene it stayed empty for
-                // the life of the process. Every tree in FoliageDemo stood in full sun
-                // casting nothing, while ShadowCheck looked correct purely because its
-                // player moves and dirtied the signature again a frame later
-                // (measured 2026-09-15: casters=4 drew=0, all four skipped for having
-                // no render-data slot yet).
-                m_WebShadowValid = !shadowIncomplete;
             }
+            static int s_ShadowLog = 0;
+            if (s_ShadowLog++ < 3) {
+                EM_ASM({ console.log('[SHADOW] drew ' + $0 + ' caster draws across ' + $1 + ' cascades'); },
+                       shadowDrawCount, static_cast<int>(WEB_SHADOW_CASCADES));
+            }
+            // A caster skipped for having no buffers yet leaves the map
+            // incomplete; the signature would not change when they appear, so
+            // the cache must not hold it (a static scene kept an empty map)
+            m_WebShadowValid = !shadowIncomplete;
         }
     }
 
@@ -5623,6 +5489,10 @@ void RenderSystem::Update(f32 deltaTime) {
                 obj.scrollReflStrength = mat->scrollReflectionStrength;
             }
             if (animComp && rd.boneBuffer.IsValid()) obj.flags |= (1 << 3);  // FLAG_SKINNED
+            // Bit 2: receives the sun's shadow. Same bit and meaning as the
+            // Vulkan word; web had no reader for Receive Shadows until the
+            // cascades (WP-16), so every surface took the shadow
+            if (!mat || mat->receiveShadows) obj.flags |= (1 << 2);
             // Wind sway (bit 4): a VegetationComponent mesh bends in the wind. The web
             // vertex shader height-weights the sway so the trunk stays planted. Without
             // this the imported trees rendered but never moved (reported 2026-09-02).
