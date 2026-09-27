@@ -84,6 +84,20 @@ inline bool EntityPicker(UndoRedoManager& undo, const char* label, ECS::World* w
     return true;
 }
 
+// The common case: an Entity member of a component on `self`. The setter
+// looks the component up again when undo runs it, so a component moved by a
+// later add is still found.
+template <typename C>
+inline bool EntityField(UndoRedoManager& undo, const char* label, ECS::World* world,
+                        ECS::Entity self, ECS::Entity C::*member) {
+    auto* comp = world ? world->GetComponent<C>(self) : nullptr;
+    if (!comp) return false;
+    return EntityPicker(undo, label, world, self, comp->*member,
+        [world, self, member](ECS::Entity t) {
+            if (auto* c = world->GetComponent<C>(self)) c->*member = t;
+        });
+}
+
 } // namespace InspectorUndo
 } // namespace Editor
 } // namespace Enjin

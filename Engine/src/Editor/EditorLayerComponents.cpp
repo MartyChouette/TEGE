@@ -6798,11 +6798,8 @@ void EditorLayer::DrawGameOverComponent(ECS::Entity entity) {
         ImGui::SetItemTooltip("Win when all entities with Damage+Health (non-player) are dead");
 
         // Victory trigger entity
-        u64 triggerID = static_cast<u64>(go->victoryTriggerEntity);
-        if (ImGui::InputScalar("Victory Trigger Entity", ImGuiDataType_U64, &triggerID)) {
-            go->victoryTriggerEntity = static_cast<ECS::Entity>(triggerID);
-        }
-        ImGui::SetItemTooltip("Entity ID of a TriggerZone that triggers victory when a player enters (0 = disabled)");
+        InspectorUndo::EntityField<ECS::GameOverComponent>(m_UndoRedo, "Victory Trigger Entity", m_World, entity, &ECS::GameOverComponent::victoryTriggerEntity);
+        ImGui::SetItemTooltip("A trigger zone that wins the game when a player enters it. (none) switches it off.");
 
         // Runtime status
         ImGui::Separator();
@@ -7178,7 +7175,8 @@ void EditorLayer::DrawWaypointComponent(ECS::Entity entity) {
         }
 
         ImGui::InputInt("Index", &wp->index);
-        ImGui::Text("Next Waypoint: %llu", (unsigned long long)wp->nextWaypoint);
+        InspectorUndo::EntityField<ECS::WaypointComponent>(m_UndoRedo, "Next Waypoint", m_World, entity,
+                                                           &ECS::WaypointComponent::nextWaypoint);
         InspectorUndo::DragFloat(m_UndoRedo, "Wait Time", &wp->waitTime, 0.1f, 0.0f, 60.0f);
         InspectorUndo::DragFloat(m_UndoRedo, "Radius", &wp->radius, 0.05f, 0.01f, 10.0f);
 
@@ -7342,22 +7340,8 @@ void EditorLayer::DrawCamera2DBoundsComponent(ECS::Entity entity) {
 
         // Follow section
         if (ImGui::TreeNode("Follow")) {
-            ImGui::Text("Target: %llu", (unsigned long long)bounds->followTarget);
-            // Entity picker for follow target
-            if (ImGui::BeginCombo("##FollowTarget", bounds->followTarget ? "Selected" : "None")) {
-                if (ImGui::Selectable("None", bounds->followTarget == 0)) {
-                    bounds->followTarget = 0;
-                }
-                for (ECS::Entity e : m_World->GetAllEntities()) {
-                    if (e == entity) continue;
-                    auto* name = m_World->GetComponent<ECS::NameComponent>(e);
-                    std::string label = name ? name->name : ("Entity " + std::to_string(e));
-                    if (ImGui::Selectable(label.c_str(), bounds->followTarget == e)) {
-                        bounds->followTarget = e;
-                    }
-                }
-                ImGui::EndCombo();
-            }
+            InspectorUndo::EntityField<ECS::Camera2DBoundsComponent>(m_UndoRedo, "Target##cam2d", m_World, entity,
+                                                                     &ECS::Camera2DBoundsComponent::followTarget);
             if (bounds->followTarget == 0) {
                 ECS::Entity player = FindPlayerEntity();
                 if (player != ECS::INVALID_ENTITY && player != entity) {
@@ -11496,7 +11480,8 @@ void EditorLayer::DrawDynamicDifficultyComponent(ECS::Entity entity) {
             if (dd->trackHealth) {
                 ImGui::Indent();
                 InspectorUndo::DragFloat(m_UndoRedo, "Health Weight##DD", &dd->healthWeight, 0.05f, 0.0f, 5.0f);
-                ImGui::Text("Player Entity: %llu", static_cast<unsigned long long>(dd->playerEntity));
+                InspectorUndo::EntityField<ECS::DynamicDifficultyComponent>(m_UndoRedo, "Player Entity##DD", m_World, entity,
+                                                                         &ECS::DynamicDifficultyComponent::playerEntity);
                 ImGui::Unindent();
             }
 
@@ -11880,18 +11865,7 @@ void EditorLayer::DrawBoneAttachmentComponent(ECS::Entity entity) {
     DrawComponentHelp("boneAttachment", m_World, entity);
 
     // Target entity picker
-    u64 targetId = static_cast<u64>(ba->targetEntity);
-    if (ImGui::InputScalar("Target Entity##BA", ImGuiDataType_U64, &targetId)) {
-        ba->targetEntity = static_cast<ECS::Entity>(targetId);
-    }
-    // Show target entity name if valid
-    if (ba->targetEntity != ECS::INVALID_ENTITY && m_World->IsValid(ba->targetEntity)) {
-        auto* targetName = m_World->GetComponent<ECS::NameComponent>(ba->targetEntity);
-        if (targetName) {
-            ImGui::SameLine();
-            ImGui::TextDisabled("(%s)", targetName->name.c_str());
-        }
-    }
+    InspectorUndo::EntityField<ECS::BoneAttachmentComponent>(m_UndoRedo, "Target Entity##BA", m_World, entity, &ECS::BoneAttachmentComponent::targetEntity);
 
     // Bone name dropdown: populate from target entity's skeleton
     const Animation::Skeleton* skeleton = nullptr;

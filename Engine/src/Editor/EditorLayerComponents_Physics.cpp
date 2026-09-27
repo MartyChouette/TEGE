@@ -1,6 +1,7 @@
 // EditorLayerComponents_Physics.cpp — Physics component inspector draw functions
 // Split from EditorLayerComponents.cpp for faster incremental builds.
 #include "Enjin/Editor/EditorLayer.h"
+#include "Enjin/Editor/EntityPicker.h"
 #include "Enjin/Editor/EditorTheme.h"
 #include "Enjin/Editor/InspectorUndo.h"
 #include "Enjin/Logging/Log.h"
@@ -252,18 +253,7 @@ void EditorLayer::DrawJoint2DComponent(ECS::Entity entity) {
         }
 
         // Connected entity
-        u64 connId = static_cast<u64>(joint->connectedEntity);
-        if (ImGui::InputScalar("Connected Entity", ImGuiDataType_U64, &connId)) {
-            joint->connectedEntity = static_cast<ECS::Entity>(connId);
-        }
-        // Show name if valid
-        if (joint->connectedEntity != 0 && m_World->IsValid(joint->connectedEntity)) {
-            auto* name = m_World->GetComponent<ECS::NameComponent>(joint->connectedEntity);
-            if (name) {
-                ImGui::SameLine();
-                ImGui::TextDisabled("(%s)", name->name.c_str());
-            }
-        }
+        InspectorUndo::EntityField<Physics::Joint2DComponent>(m_UndoRedo, "Connected Entity", m_World, entity, &Physics::Joint2DComponent::connectedEntity);
 
         // Anchors
         f32 ancA[2] = { joint->anchorA.x, joint->anchorA.y };
@@ -757,14 +747,8 @@ void EditorLayer::DrawDistanceJointComponent(ECS::Entity entity) {
 
         DrawComponentHelp("distanceJoint", m_World, entity);
 
-        u64 eA = static_cast<u64>(j->entityA);
-        u64 eB = static_cast<u64>(j->entityB);
-        if (ImGui::InputScalar("Entity A##DistJoint", ImGuiDataType_U64, &eA)) {
-            j->entityA = static_cast<ECS::Entity>(eA);
-        }
-        if (ImGui::InputScalar("Entity B##DistJoint", ImGuiDataType_U64, &eB)) {
-            j->entityB = static_cast<ECS::Entity>(eB);
-        }
+        InspectorUndo::EntityField<ECS::DistanceJointComponent>(m_UndoRedo, "Entity A##DistJoint", m_World, entity, &ECS::DistanceJointComponent::entityA);
+        InspectorUndo::EntityField<ECS::DistanceJointComponent>(m_UndoRedo, "Entity B##DistJoint", m_World, entity, &ECS::DistanceJointComponent::entityB);
         if ((j->entityA == 0 || j->entityB == 0) && m_SelectedEntities.size() == 2) {
             if (ImGui::SmallButton("Auto-assign from selection##DistJoint")) {
                 ECS::Entity other = ECS::INVALID_ENTITY;
@@ -805,14 +789,8 @@ void EditorLayer::DrawHingeJointComponent(ECS::Entity entity) {
 
         DrawComponentHelp("hingeJoint", m_World, entity);
 
-        u64 eA = static_cast<u64>(j->entityA);
-        u64 eB = static_cast<u64>(j->entityB);
-        if (ImGui::InputScalar("Entity A##HingeJoint", ImGuiDataType_U64, &eA)) {
-            j->entityA = static_cast<ECS::Entity>(eA);
-        }
-        if (ImGui::InputScalar("Entity B##HingeJoint", ImGuiDataType_U64, &eB)) {
-            j->entityB = static_cast<ECS::Entity>(eB);
-        }
+        InspectorUndo::EntityField<ECS::HingeJointComponent>(m_UndoRedo, "Entity A##HingeJoint", m_World, entity, &ECS::HingeJointComponent::entityA);
+        InspectorUndo::EntityField<ECS::HingeJointComponent>(m_UndoRedo, "Entity B##HingeJoint", m_World, entity, &ECS::HingeJointComponent::entityB);
         if ((j->entityA == 0 || j->entityB == 0) && m_SelectedEntities.size() == 2) {
             if (ImGui::SmallButton("Auto-assign from selection##HingeJoint")) {
                 ECS::Entity other = ECS::INVALID_ENTITY;
@@ -863,14 +841,8 @@ void EditorLayer::DrawBallSocketJointComponent(ECS::Entity entity) {
 
         DrawComponentHelp("ballSocketJoint", m_World, entity);
 
-        u64 eA = static_cast<u64>(j->entityA);
-        u64 eB = static_cast<u64>(j->entityB);
-        if (ImGui::InputScalar("Entity A##BallSocket", ImGuiDataType_U64, &eA)) {
-            j->entityA = static_cast<ECS::Entity>(eA);
-        }
-        if (ImGui::InputScalar("Entity B##BallSocket", ImGuiDataType_U64, &eB)) {
-            j->entityB = static_cast<ECS::Entity>(eB);
-        }
+        InspectorUndo::EntityField<ECS::BallSocketJointComponent>(m_UndoRedo, "Entity A##BallSocket", m_World, entity, &ECS::BallSocketJointComponent::entityA);
+        InspectorUndo::EntityField<ECS::BallSocketJointComponent>(m_UndoRedo, "Entity B##BallSocket", m_World, entity, &ECS::BallSocketJointComponent::entityB);
         if ((j->entityA == 0 || j->entityB == 0) && m_SelectedEntities.size() == 2) {
             if (ImGui::SmallButton("Auto-assign from selection##BallSocket")) {
                 ECS::Entity other = ECS::INVALID_ENTITY;
@@ -918,14 +890,8 @@ void EditorLayer::DrawSpringJointComponent(ECS::Entity entity) {
 
         DrawComponentHelp("springJoint", m_World, entity);
 
-        u64 eA = static_cast<u64>(j->entityA);
-        u64 eB = static_cast<u64>(j->entityB);
-        if (ImGui::InputScalar("Entity A##SpringJoint", ImGuiDataType_U64, &eA)) {
-            j->entityA = static_cast<ECS::Entity>(eA);
-        }
-        if (ImGui::InputScalar("Entity B##SpringJoint", ImGuiDataType_U64, &eB)) {
-            j->entityB = static_cast<ECS::Entity>(eB);
-        }
+        InspectorUndo::EntityField<ECS::SpringJointComponent>(m_UndoRedo, "Entity A##SpringJoint", m_World, entity, &ECS::SpringJointComponent::entityA);
+        InspectorUndo::EntityField<ECS::SpringJointComponent>(m_UndoRedo, "Entity B##SpringJoint", m_World, entity, &ECS::SpringJointComponent::entityB);
         if ((j->entityA == 0 || j->entityB == 0) && m_SelectedEntities.size() == 2) {
             if (ImGui::SmallButton("Auto-assign from selection##SpringJoint")) {
                 ECS::Entity other = ECS::INVALID_ENTITY;
@@ -968,14 +934,8 @@ void EditorLayer::DrawFixedJointComponent(ECS::Entity entity) {
 
         DrawComponentHelp("fixedJoint", m_World, entity);
 
-        u64 eA = static_cast<u64>(j->entityA);
-        u64 eB = static_cast<u64>(j->entityB);
-        if (ImGui::InputScalar("Entity A##FixedJoint", ImGuiDataType_U64, &eA)) {
-            j->entityA = static_cast<ECS::Entity>(eA);
-        }
-        if (ImGui::InputScalar("Entity B##FixedJoint", ImGuiDataType_U64, &eB)) {
-            j->entityB = static_cast<ECS::Entity>(eB);
-        }
+        InspectorUndo::EntityField<ECS::FixedJointComponent>(m_UndoRedo, "Entity A##FixedJoint", m_World, entity, &ECS::FixedJointComponent::entityA);
+        InspectorUndo::EntityField<ECS::FixedJointComponent>(m_UndoRedo, "Entity B##FixedJoint", m_World, entity, &ECS::FixedJointComponent::entityB);
         if ((j->entityA == 0 || j->entityB == 0) && m_SelectedEntities.size() == 2) {
             if (ImGui::SmallButton("Auto-assign from selection##FixedJoint")) {
                 ECS::Entity other = ECS::INVALID_ENTITY;
@@ -1017,14 +977,8 @@ void EditorLayer::DrawSliderJointComponent(ECS::Entity entity) {
 
         DrawComponentHelp("sliderJoint", m_World, entity);
 
-        u64 eA = static_cast<u64>(j->entityA);
-        u64 eB = static_cast<u64>(j->entityB);
-        if (ImGui::InputScalar("Entity A##SliderJoint", ImGuiDataType_U64, &eA)) {
-            j->entityA = static_cast<ECS::Entity>(eA);
-        }
-        if (ImGui::InputScalar("Entity B##SliderJoint", ImGuiDataType_U64, &eB)) {
-            j->entityB = static_cast<ECS::Entity>(eB);
-        }
+        InspectorUndo::EntityField<ECS::SliderJointComponent>(m_UndoRedo, "Entity A##SliderJoint", m_World, entity, &ECS::SliderJointComponent::entityA);
+        InspectorUndo::EntityField<ECS::SliderJointComponent>(m_UndoRedo, "Entity B##SliderJoint", m_World, entity, &ECS::SliderJointComponent::entityB);
         if ((j->entityA == 0 || j->entityB == 0) && m_SelectedEntities.size() == 2) {
             if (ImGui::SmallButton("Auto-assign from selection##SliderJoint")) {
                 ECS::Entity other = ECS::INVALID_ENTITY;
@@ -1141,9 +1095,14 @@ void EditorLayer::DrawRagdollComponent(ECS::Entity entity) {
                         bj.jointType = static_cast<ECS::JointType>(jt);
                     }
 
-                    u64 je = static_cast<u64>(bj.jointEntity);
-                    if (ImGui::InputScalar("Joint Entity##BJ", ImGuiDataType_U64, &je)) {
-                        bj.jointEntity = static_cast<ECS::Entity>(je);
+                    {
+                        // Inside a list: the setter finds the bone by index again
+                        ECS::World* world = m_World;
+                        InspectorUndo::EntityPicker(m_UndoRedo, "Joint Entity##BJ", m_World, entity, bj.jointEntity,
+                            [world, entity, i](ECS::Entity t) {
+                                auto* rc = world->GetComponent<ECS::RagdollComponent>(entity);
+                                if (rc && i < rc->boneJoints.size()) rc->boneJoints[i].jointEntity = t;
+                            });
                     }
 
                     ImGui::DragFloat("Mass##BJ", &bj.mass, 0.1f, 0.001f, 1000.0f);
