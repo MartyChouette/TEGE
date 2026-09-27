@@ -79,7 +79,9 @@ private:
     void UpdateMusicZones(f32 deltaTime);
     void UpdateSnapshotTriggers();
     void UpdateAudioFidelity();
-    bool m_LoFiOn = false;   // so leaving a scene with fidelity switches it off once
+    bool m_LoFiOn = false;
+    Math::Vector3 m_LastPlayerPos;       // for the conductor's stealth speed
+    bool m_HasLastPlayerPos = false;   // so leaving a scene with fidelity switches it off once
 
     void ApplyValueToTarget(ECS::Entity entity, ECS::AudioTargetProperty target, f32 value);
 

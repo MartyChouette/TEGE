@@ -538,6 +538,7 @@ public:
         // Accessibility: dialogue lines flow into the subtitle overlay (rendered
         // via the ImGui UI overlay -- unblocked by the web UI unification).
         m_DialogueSystem.SetSubtitleSystem(&m_SubtitleSystem);
+        m_DialogueSystem.SetAudioEngine(&m_AudioEngine);
         m_FootstepSystem.SetEnabled(true);
         m_TieredSaveSystem.LoadMeta();
         m_AudioEngine.Initialize();

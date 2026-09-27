@@ -1,4 +1,5 @@
 #include "Enjin/ECS/Systems/DialogueSystem.h"
+#include "Enjin/Audio/AudioEngine.h"
 #include "Enjin/Platform/Input.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Accessibility/SubtitleSystem.h"
@@ -259,9 +260,19 @@ void DialogueSystem::ProcessLegacy(World* world, Entity entity, DialogueComponen
     // Advance typewriter
     if (d.isTyping && d.currentLine < d.dialogueLines.size()) {
         d.charTimer += deltaTime;
+        bool typedLetter = false;
         while (d.charTimer >= d.charDelay && d.currentChar < d.dialogueLines[d.currentLine].size()) {
+            const char c = d.dialogueLines[d.currentLine][d.currentChar];
+            if (c != ' ' && c != '\n' && c != '\t') typedLetter = true;
             d.currentChar++;
             d.charTimer -= d.charDelay;
+        }
+        // The typewriter blip, at most once a frame and never for a space.
+        // Type Sound and Play Type Sound were in the inspector and no dialogue
+        // ever made a sound (SD-27).
+        if (typedLetter && d.playTypeSound && !d.typeSound.empty() && m_Audio) {
+            const Audio::AudioClipHandle clip = m_Audio->LoadClip(d.typeSound);
+            if (clip != Audio::INVALID_AUDIO_CLIP) m_Audio->Play(clip, 1.0f, 1.0f, false, Audio::AudioChannel::UI);
         }
         if (d.currentChar >= d.dialogueLines[d.currentLine].size()) {
             d.isTyping = false;

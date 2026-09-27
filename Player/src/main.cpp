@@ -3461,6 +3461,7 @@ private:
         m_UISystem.SetInputActionMap(&m_InputMap);
         m_InteractiveWaterSystem.SetEventBus(&m_EntityEventBus);  // water_enter events
         m_DialogueSystem.SetSubtitleSystem(&m_SubtitleSystem);
+        m_DialogueSystem.SetAudioEngine(&m_AudioEngine);
         m_DialogueSystem.SetQuestSystem(&m_QuestSystem);
         m_DialogueSystem.SetCinematicSystem(&m_CinematicSystem);
         m_DialogueSystem.SetTieredSaveSystem(&m_TieredSaveSystem);

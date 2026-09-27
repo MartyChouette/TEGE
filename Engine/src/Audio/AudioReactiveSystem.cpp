@@ -380,16 +380,22 @@ void AudioReactiveSystem::UpdateConductor(f32 deltaTime) {
         if (cond->autoDetect) {
             ECS::ConductorComponent::GameplayState detected = ECS::ConductorComponent::GameplayState::Explore;
 
-            // Check for nearby enemies → Combat
+            // Enemies are counted around the PLAYER when there is one. This
+            // measured from the conductor's own entity, which is usually a
+            // manager placed anywhere, so combat music followed where that
+            // manager stood rather than where the fight was.
+            const ECS::Entity player = ECS::FindCameraZonePlayer(m_World);
+            auto* playerTransform = m_World->GetComponent<ECS::TransformComponent>(player);
+            auto* centreTransform = playerTransform ? playerTransform
+                                                    : m_World->GetComponent<ECS::TransformComponent>(entity);
             bool enemiesNearby = false;
-            auto* listenerTransform = m_World->GetComponent<ECS::TransformComponent>(entity);
-            if (listenerTransform) {
+            if (centreTransform) {
                 for (auto e : m_World->GetEntitiesWithComponent<ECS::HealthComponent>()) {
-                    if (e == entity || !m_World->IsValid(e)) continue;
+                    if (e == entity || e == player || !m_World->IsValid(e)) continue;
                     auto* hp = m_World->GetComponent<ECS::HealthComponent>(e);
                     auto* et = m_World->GetComponent<ECS::TransformComponent>(e);
                     if (hp && !hp->isDead && et) {
-                        f32 dist = (et->position - listenerTransform->position).Length();
+                        f32 dist = (et->position - centreTransform->position).Length();
                         if (dist < cond->combatRadius) {
                             // Only count as combat if the entity has a DamageComponent (it's hostile)
                             if (m_World->HasComponent<ECS::DamageComponent>(e)) {
@@ -401,6 +407,22 @@ void AudioReactiveSystem::UpdateConductor(f32 deltaTime) {
                 }
             }
             if (enemiesNearby) detected = ECS::ConductorComponent::GameplayState::Combat;
+
+            // Stealth: enemies near and the player creeping (slower than
+            // Stealth Threshold) or crouched. The field was saved and never
+            // read, and Stealth was never detected (SD-27). Speed comes from
+            // the player's movement since the last frame.
+            if (playerTransform && deltaTime > 0.0f) {
+                const f32 speed = m_HasLastPlayerPos
+                    ? (playerTransform->position - m_LastPlayerPos).Length() / deltaTime : 0.0f;
+                m_LastPlayerPos = playerTransform->position;
+                m_HasLastPlayerPos = true;
+                const auto* fp = m_World->GetComponent<ECS::FirstPersonController>(player);
+                const bool crouched = fp && fp->isCrouching;
+                if (enemiesNearby && (crouched || speed < cond->stealthThreshold)) {
+                    detected = ECS::ConductorComponent::GameplayState::Stealth;
+                }
+            }
 
             // State change with delay (prevents flicker)
             if (detected != cond->currentState) {

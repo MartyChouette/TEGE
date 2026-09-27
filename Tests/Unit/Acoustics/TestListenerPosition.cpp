@@ -25,6 +25,7 @@
 #include "Enjin/ECS/Components/Camera.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/Audio/LoFi.h"
+#include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include "Enjin/ECS/Components/ArtStyle.h"
 #include <cmath>
 #include <vector>
@@ -315,6 +316,41 @@ ENJIN_TEST(LoFi, AutoMatchPicksThePresetFromTheCamerasArtStyle) {
     h.world.AddComponent<ECS::AudioFidelityComponent>(mgr, ECS::AudioFidelityComponent{});
     h.system.Update(0.016f);
     ENJIN_EXPECT_TRUE(h.world.GetComponent<ECS::AudioFidelityComponent>(mgr)->mode == ECS::AudioFidelityMode::Retro8Bit);
+}
+
+// ===========================================================================
+// Conductor stealth: the threshold was never read, Stealth never detected (SD-27)
+// ===========================================================================
+
+ENJIN_TEST(ConductorStealth, CreepingNearAnEnemyIsStealthRunningIsCombat) {
+    Harness h;
+    h.AddCamera(Vector3(0.0f));
+    ECS::Entity player = h.world.CreateEntity();
+    h.world.AddComponent<ECS::TransformComponent>(player);
+    h.world.AddComponent<ECS::FirstPersonController>(player);
+    ECS::Entity enemy = h.world.CreateEntity();
+    h.world.AddComponent<ECS::TransformComponent>(enemy).position = Vector3(5.0f, 0.0f, 0.0f);
+    h.world.AddComponent<ECS::HealthComponent>(enemy);
+    h.world.AddComponent<ECS::DamageComponent>(enemy);
+    ECS::Entity mgr = h.world.CreateEntity();
+    h.world.AddComponent<ECS::TransformComponent>(mgr).position = Vector3(500.0f, 0.0f, 0.0f);   // far from the fight
+    ECS::ConductorComponent c;
+    c.stateChangeDelay = 0.0f;
+    h.world.AddComponent<ECS::ConductorComponent>(mgr, c);
+
+    // Standing still next to the enemy
+    h.system.Update(0.1f);
+    h.system.Update(0.1f);
+    ENJIN_EXPECT_TRUE(h.world.GetComponent<ECS::ConductorComponent>(mgr)->currentState ==
+                      ECS::ConductorComponent::GameplayState::Stealth);
+
+    // Running: a unit every tenth of a second is 10 units a second
+    for (int i = 0; i < 3; ++i) {
+        h.world.GetComponent<ECS::TransformComponent>(player)->position.z += 1.0f;
+        h.system.Update(0.1f);
+    }
+    ENJIN_EXPECT_TRUE(h.world.GetComponent<ECS::ConductorComponent>(mgr)->currentState ==
+                      ECS::ConductorComponent::GameplayState::Combat);
 }
 
 ENJIN_TEST_MAIN()

@@ -903,6 +903,8 @@ void EditorLayer::DrawConductorComponent(ECS::Entity entity) {
         if (cond->autoDetect) {
             InspectorUndo::DragFloat(m_UndoRedo, "Combat Radius##Cond", &cond->combatRadius, 1.0f, 1.0f, 100.0f);
             InspectorUndo::DragFloat(m_UndoRedo, "State Change Delay##Cond", &cond->stateChangeDelay, 0.1f, 0.0f, 10.0f);
+            InspectorUndo::DragFloat(m_UndoRedo, "Stealth Threshold##Cond", &cond->stealthThreshold, 0.05f, 0.0f, 10.0f);
+            ImGui::SetItemTooltip("With enemies near, the player moving slower than this (units a second), or crouched, is Stealth.");
         }
 
         // Current state

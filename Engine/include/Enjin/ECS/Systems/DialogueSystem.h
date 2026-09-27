@@ -20,6 +20,7 @@ namespace Enjin::Gameplay {
 }
 
 namespace Enjin {
+namespace Audio { class AudioEngine; }
 namespace ECS {
 
 class ENJIN_API DialogueSystem {
@@ -69,6 +70,8 @@ public:
 
     // SubtitleSystem integration (routes text to accessibility subtitles)
     void SetSubtitleSystem(Accessibility::SubtitleSystem* subs) { m_SubtitleSystem = subs; }
+    // For the typewriter's Type Sound (DialogueComponent)
+    void SetAudioEngine(Audio::AudioEngine* audio) { m_Audio = audio; }
 
     // Narrative integration — quest, cinematic, and game flag systems
     void SetQuestSystem(Gameplay::QuestSystem* qs) { m_QuestSystem = qs; }
@@ -89,6 +92,7 @@ private:
     EventCallback m_EventCallback;
     EntityEventBus* m_EventBus = nullptr;
     Accessibility::SubtitleSystem* m_SubtitleSystem = nullptr;
+    Audio::AudioEngine* m_Audio = nullptr;
     Gameplay::QuestSystem* m_QuestSystem = nullptr;
     Gameplay::CinematicSystem* m_CinematicSystem = nullptr;
     Gameplay::TieredSaveSystem* m_TieredSaveSystem = nullptr;

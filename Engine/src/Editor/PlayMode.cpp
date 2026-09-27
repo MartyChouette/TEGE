@@ -581,6 +581,7 @@ void PlayMode::Play() {
     // Water-enter events (splash VFX / sound / score) go through the same bus.
     m_InteractiveWaterSystem.SetEventBus(&m_EntityEventBus);
     m_DialogueSystem.SetSubtitleSystem(m_SubtitleSystem);
+    m_DialogueSystem.SetAudioEngine(&m_AudioEngine);
     // Same place, same pointers: these are injected by the editor and are not
     // set yet where the save point system is otherwise configured.
     m_SavePointSystem.SetAnnouncer(m_Announcer);
