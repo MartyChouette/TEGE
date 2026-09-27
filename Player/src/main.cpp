@@ -793,17 +793,9 @@ public:
                 }
             };
 
-            // Schemas first: an asset names the schema it belongs to.
-            for (const auto& file : fileList) {
-                if (fs::path(file).extension() != ".enjschema") continue;
-                std::string str = readFileContent(file);
-                if (!str.empty() && registry.LoadSchemaFromString(str, file)) schemaCount++;
-            }
-            for (const auto& file : fileList) {
-                if (fs::path(file).extension() != ".enjdata") continue;
-                std::string str = readFileContent(file);
-                if (!str.empty() && registry.LoadAssetFromString(str, file)) assetCount++;
-            }
+            const auto counts = registry.LoadAllFromFiles(fileList, readFileContent);
+            schemaCount = counts.schemas;
+            assetCount = counts.assets;
             ENJIN_LOG_INFO(Player, "Loaded %u schemas and %u data assets from %zu files",
                            schemaCount, assetCount, fileList.size());
         }

@@ -20,6 +20,7 @@
 // the folklore, so nobody has to take a comment's word for it again.
 
 #include "EnjinTest.h"
+#include <unordered_map>
 #include "Enjin/Assets/DataAsset.h"
 
 #include <cstdio>
@@ -223,6 +224,26 @@ ENJIN_TEST(SchemaTypeNames, ArraysSurviveARoundTripWhichIsTheFolkloreDisproved) 
     ENJIN_ASSERT_TRUE(registry.LoadAssetFromString(asset, "first_evening.enjdata"));
     ENJIN_EXPECT_EQ(registry.GetArrayLength("first_evening", "beats"), usize{3});
     ENJIN_EXPECT_TRUE(registry.GetStringAt("first_evening", "beats", 2) == "wait");
+}
+
+ENJIN_TEST(DataAssetBoot, LoadAllFromFilesReadsSchemasBeforeAssets) {
+    // What both players do at boot. The asset is listed BEFORE its schema, so a
+    // loader that took files in list order would reject it. Web never loaded
+    // data assets at all (WP-3); it now shares this with the desktop player.
+    DataAssetRegistry& registry = DataAssetRegistry::Get();
+    registry.Clear();
+    std::unordered_map<std::string, std::string> files = {
+        {"data/memo.enjdata", R"({"name": "memo", "schema": "Doc", "values": {"type": 4}})"},
+        {"data/doc.enjschema", R"({"name": "Doc", "fields": [{"name": "type", "type": "int"}]})"},
+        {"data/readme.txt", "not data"},
+        {"data/missing.enjdata", ""},
+    };
+    const std::vector<std::string> list = {"data/memo.enjdata", "data/doc.enjschema",
+                                           "data/readme.txt", "data/missing.enjdata"};
+    const auto counts = registry.LoadAllFromFiles(list, [&files](const std::string& f) { return files[f]; });
+    ENJIN_EXPECT_EQ(counts.schemas, 1u);
+    ENJIN_EXPECT_EQ(counts.assets, 1u);
+    ENJIN_EXPECT_EQ(registry.GetInt("memo", "type", -1), 4);
 }
 
 ENJIN_TEST_MAIN()

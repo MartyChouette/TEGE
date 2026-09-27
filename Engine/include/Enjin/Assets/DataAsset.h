@@ -8,6 +8,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <variant>
+#include <functional>
 
 namespace Enjin {
 namespace Assets {
@@ -191,6 +192,13 @@ public:
     bool SaveAsset(const DataAsset& asset, const std::string& path);
     bool LoadAsset(const std::string& path);
     bool LoadAssetFromString(const std::string& text, const std::string& sourcePath);
+    // Every .enjschema then every .enjdata in `files` (schemas first: an asset
+    // names its schema), read through `read`, which returns "" for a file it
+    // cannot read. What a built game does at boot, from the pak or from loose
+    // files; shared so the desktop and web players load the same way.
+    struct LoadCounts { u32 schemas = 0; u32 assets = 0; };
+    LoadCounts LoadAllFromFiles(const std::vector<std::string>& files,
+                                const std::function<std::string(const std::string&)>& read);
     DataAssetScanResult ScanAssetDirectory(const std::string& directory);
 
     // Typed getters (with fallback defaults)

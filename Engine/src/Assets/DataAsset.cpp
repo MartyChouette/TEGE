@@ -439,6 +439,26 @@ bool DataAssetRegistry::LoadAsset(const std::string& path) {
     return LoadAssetFromString(text, path);
 }
 
+DataAssetRegistry::LoadCounts DataAssetRegistry::LoadAllFromFiles(
+        const std::vector<std::string>& files, const std::function<std::string(const std::string&)>& read) {
+    LoadCounts counts;
+    auto hasExt = [](const std::string& f, const char* ext) {
+        const usize n = std::char_traits<char>::length(ext);
+        return f.size() >= n && f.compare(f.size() - n, n, ext) == 0;
+    };
+    for (const auto& file : files) {
+        if (!hasExt(file, ".enjschema")) continue;
+        const std::string text = read(file);
+        if (!text.empty() && LoadSchemaFromString(text, file)) counts.schemas++;
+    }
+    for (const auto& file : files) {
+        if (!hasExt(file, ".enjdata")) continue;
+        const std::string text = read(file);
+        if (!text.empty() && LoadAssetFromString(text, file)) counts.assets++;
+    }
+    return counts;
+}
+
 bool DataAssetRegistry::LoadAssetFromString(const std::string& text, const std::string& sourcePath) {
     try {
         DataAsset asset = Assets::DeserializeAsset(json::parse(text));

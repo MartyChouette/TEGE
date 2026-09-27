@@ -14,6 +14,7 @@ namespace Audio { class AudioEngine; }
 namespace Accessibility { class SubtitleSystem; class AccessibilityAnnouncer; struct RuntimeAccessibilitySettings; }
 namespace Scene { class SceneManager; class StreamingManager; }
 namespace Renderer { class PostProcessing; class Camera; }
+namespace Build { class AssetReader; }
 namespace Gameplay { class TieredSaveSystem; class QuestSystem; class CinematicSystem; class ObjectPool; class RecordRewindSystem; class CameraDirector; }
 namespace Effects { class WeatherSystem; class WindSystem; class DestructibleSystem; class ElementalSystem; class WorldTimeSystem; class SeasonalWeatherSystem; }
 namespace Procedural { class LevelGenerator; }
@@ -139,6 +140,9 @@ void SetBindingsWind(Effects::WindSystem* wind);
 // exe's folder in a built game. Set by SceneManager::LoadProject and by the
 // desktop player, next to the font root. Empty means File_* reads nothing.
 void SetBindingsFileRoot(const std::string& absoluteRoot);
+// The game's pak, read by File_* when there is no loose file at the path. Web
+// has no folder beside an exe, so this is where File_* finds anything there.
+void SetBindingsFileAssetReader(const Build::AssetReader* reader);
 // Drops every document Json_Parse handed out. Called when the scripts shut
 // down, so a handle does not outlive the run that parsed it.
 void ClearBindingsJsonDocuments();

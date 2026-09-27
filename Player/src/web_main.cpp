@@ -135,6 +135,7 @@
 #include "Enjin/ECS/Systems/WFCSystem.h"
 #include "Enjin/ECS/Systems/RandomBagSystem.h"
 #include "Enjin/Assets/Prefab.h"
+#include "Enjin/Assets/DataAsset.h"
 #include "Enjin/Physics/IPhysicsBackend.h"
 #include "Enjin/Physics/IPhysicsBackend2D.h"
 #include "Enjin/Physics/PhysicsBackendFactory.h"
@@ -417,6 +418,9 @@ public:
             // Web has no loose script files — sources come from the pak
             // (desktop wires this too, main.cpp "packed script loading").
             m_ScriptEngine.SetAssetReader(&m_AssetReader);
+            // File_* reads the pak here: there is no folder beside an exe on
+            // web, and the desktop player's exe-folder root never existed (WP-3)
+            Enjin::Scripting::SetBindingsFileAssetReader(&m_AssetReader);
             m_ScriptSystem.SetWorld(m_World.get());
             m_ScriptSystem.SetScriptEngine(&m_ScriptEngine);
             m_ScriptSystem.SetCoroutineScheduler(&m_CoroutineScheduler);
@@ -560,6 +564,18 @@ public:
         Enjin::Scripting::SetBindingsStreaming(&m_StreamingManager);
         m_SceneManager.SetWorld(m_World.get());
         m_SceneManager.SetAssetReader(&m_AssetReader);
+
+        // Data assets (.enjschema / .enjdata) from the pak, as the desktop
+        // player loads them. Web never loaded any, so DataAsset_* found
+        // nothing in a browser that it found on desktop (WP-3).
+        if (m_HasPack) {
+            const auto counts = Enjin::Assets::DataAssetRegistry::Get().LoadAllFromFiles(
+                m_AssetReader.ListFiles(), [this](const std::string& path) {
+                    const std::vector<Enjin::u8> bytes = m_AssetReader.ReadFile(path);
+                    return std::string(bytes.begin(), bytes.end());
+                });
+            printf("[DATA] %u schemas, %u data assets\n", counts.schemas, counts.assets);
+        }
 
         m_FlowerSystem.SetWorld(m_World.get());
         m_FlowerSystem.SetCamera(m_Camera.get());

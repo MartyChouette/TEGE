@@ -19,6 +19,7 @@
 #include "Enjin/Scripting/ASCallConv.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Platform/Paths.h"
+#include "Enjin/Build/AssetReader.h"
 #include <nlohmann/json.hpp>
 #include <angelscript.h>
 #include <fstream>
@@ -37,6 +38,7 @@ extern bool ValidateScriptAssetPath(const std::string& path, const char* funcNam
 namespace {
 
 std::string s_FileRoot;
+const Build::AssetReader* s_FileReader = nullptr;
 
 // A year file is a few tens of kilobytes. This is a ceiling on a mistake, not a
 // budget: someone pointing a script at a video should get a warning, not a hang.
@@ -45,12 +47,30 @@ constexpr std::streamoff kMaxFileBytes = 8 * 1024 * 1024;
 // stops a script that parses in a loop from eating memory silently.
 constexpr size_t kMaxLiveDocuments = 256;
 
+// The pak copy of a path, for when no loose file answers. The same path rules
+// as a loose read; a pak path is always forward-slashed and root-relative.
+bool ReadFromPak(const std::string& path, const char* func, std::string* out) {
+    if (!s_FileReader || !s_FileReader->IsOpen()) return false;
+    if (!ValidateScriptAssetPath(path, func)) return false;
+    std::string key = path;
+    for (char& c : key) if (c == '\\') c = '/';
+    if (!s_FileReader->HasFile(key)) return false;
+    if (out) {
+        const std::vector<u8> bytes = s_FileReader->ReadFile(key);
+        if (static_cast<std::streamoff>(bytes.size()) > kMaxFileBytes) return false;
+        out->assign(bytes.begin(), bytes.end());
+    }
+    return true;
+}
+
 std::unordered_map<int, json> s_Documents;
 int s_NextDocument = 1;
 
 std::string Resolve(const std::string& path, const char* func) {
     if (s_FileRoot.empty()) {
-        ENJIN_LOG_WARN(Script, "%s: no game root is set, so there is nowhere to read from", func);
+        if (!s_FileReader) {
+            ENJIN_LOG_WARN(Script, "%s: no game root is set, so there is nowhere to read from", func);
+        }
         return "";
     }
     if (!ValidateScriptAssetPath(path, func)) return "";
@@ -79,18 +99,23 @@ const json* Find(int doc, const std::string& pointer) {
 
 static bool File_Exists(const std::string& path) {
     const std::string full = Resolve(path, "File_Exists");
-    if (full.empty()) return false;
-    std::ifstream f(full, std::ios::binary);
-    return f.good();
+    if (!full.empty()) {
+        std::ifstream f(full, std::ios::binary);
+        if (f.good()) return true;
+    }
+    return ReadFromPak(path, "File_Exists", nullptr);
 }
 
 // The whole file as a string, or "" when it is missing, unreadable, too big or
 // outside the root. File_Exists tells a missing file from an empty one.
 static std::string File_ReadText(const std::string& path) {
     const std::string full = Resolve(path, "File_ReadText");
-    if (full.empty()) return "";
-    std::ifstream f(full, std::ios::binary | std::ios::ate);
-    if (!f) return "";
+    std::ifstream f;
+    if (!full.empty()) f.open(full, std::ios::binary | std::ios::ate);
+    if (!f) {
+        std::string text;
+        return ReadFromPak(path, "File_ReadText", &text) ? text : std::string();
+    }
     const std::streamoff size = f.tellg();
     if (size > kMaxFileBytes) {
         ENJIN_LOG_WARN(Script, "File_ReadText: %s is %lld bytes, over the %lld byte limit",
@@ -186,6 +211,10 @@ namespace Scripting {
 
 void SetBindingsFileRoot(const std::string& absoluteRoot) {
     s_FileRoot = absoluteRoot;
+}
+
+void SetBindingsFileAssetReader(const Build::AssetReader* reader) {
+    s_FileReader = reader;
 }
 
 void ClearBindingsJsonDocuments() {
