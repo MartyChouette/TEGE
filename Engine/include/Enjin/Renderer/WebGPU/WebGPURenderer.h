@@ -67,6 +67,8 @@ public:
 
     // Begin a new frame — acquires swapchain + creates command encoder. No render pass yet.
     bool BeginFrameWebGPU();
+    // Between BeginFrameWebGPU and EndFrame: the encoder exists only then
+    bool IsFrameOpen() const { return m_CommandEncoder != nullptr; }
 
     // Begin the main swapchain render pass (call after BeginFrameWebGPU and any pre-passes)
     void BeginMainRenderPass();

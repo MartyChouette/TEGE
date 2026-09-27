@@ -3794,6 +3794,15 @@ void RenderSystem::Update(f32 deltaTime) {
             gpuLogAccum = 0.0f;
         }
     }
+    // The web player calls this twice a frame: World::Update runs every
+    // registered system with the frame's dt, outside any frame, and the player
+    // calls it again with dt 0 inside BeginFrameWebGPU to draw. Both ran the
+    // whole body, so all of it happened twice and the first time had no frame
+    // to draw into (WP-4). The clocks above need the dt and take it from the
+    // first call; everything below needs a frame and runs only in the second.
+    if (auto* wr = static_cast<Renderer::WebGPURenderer*>(m_Renderer); wr && !wr->IsFrameOpen()) {
+        return;
+    }
     if (!m_Renderer || !m_Initialized || !m_MainPipeline.IsValid()) {
         return;
     }
