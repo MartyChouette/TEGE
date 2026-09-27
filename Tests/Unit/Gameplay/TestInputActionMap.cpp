@@ -455,4 +455,41 @@ ENJIN_TEST(InputLabels, PromptsFollowTheLastDevice) {
     Input::SetLastDevice(Input::InputDevice::KeyboardMouse);
 }
 
+// IN-12: a project sets the defaults of built-in actions too, one input kind
+// at a time, and a reset comes back to them
+ENJIN_TEST(InputActionMap, ProjectDefaultsForBuiltInActions) {
+    InputActionMap map;
+    InputProjectSettings project;
+    ActionDefaultDef jump;
+    jump.action = "Jump";
+    jump.key = static_cast<i32>(KeyCode::K);   // key replaced, pad kept
+    project.actionDefaults.push_back(jump);
+    ActionDefaultDef attack;
+    attack.action = "Attack";
+    attack.mouse = -1;                          // mouse removed
+    project.actionDefaults.push_back(attack);
+    project.ApplyTo(map);
+
+    ENJIN_EXPECT_TRUE(HasKey(map, GameAction::Jump, KeyCode::K));
+    ENJIN_EXPECT_FALSE(HasKey(map, GameAction::Jump, KeyCode::Space));
+    bool jumpPad = false, attackMouse = false;
+    for (const auto& b : map.GetActionConfig(GameAction::Jump).bindings) jumpPad |= b.type == BindingType::GamepadButton;
+    for (const auto& b : map.GetActionConfig(GameAction::Attack).bindings) attackMouse |= b.type == BindingType::MouseButton;
+    ENJIN_EXPECT_TRUE(jumpPad);
+    ENJIN_EXPECT_FALSE(attackMouse);
+
+    // A reset is back to the game's defaults, not the engine's
+    map.RebindAction(static_cast<i32>(GameAction::Jump), static_cast<i32>(KeyCode::J));
+    map.ResetToDefaults();
+    ENJIN_EXPECT_TRUE(HasKey(map, GameAction::Jump, KeyCode::K));
+
+    // And the block survives the .enjinproject round trip
+    InputProjectSettings loaded;
+    ENJIN_ASSERT_TRUE(loaded.FromJson(project.ToJson()));
+    ENJIN_ASSERT_EQ(loaded.actionDefaults.size(), static_cast<usize>(2));
+    ENJIN_EXPECT_EQ(loaded.actionDefaults[0].key, static_cast<i32>(KeyCode::K));
+    ENJIN_EXPECT_EQ(loaded.actionDefaults[0].gamepad, kKeepDefault);
+    ENJIN_EXPECT_EQ(loaded.actionDefaults[1].mouse, -1);
+}
+
 ENJIN_TEST_MAIN()

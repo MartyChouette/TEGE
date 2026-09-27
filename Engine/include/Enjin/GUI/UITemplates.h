@@ -40,7 +40,9 @@ namespace UITemplates {
             Checkbox,    // self-labelled box, dispatches boolValue
             Dropdown,    // label + named choices, dispatches intValue + stringValue
             Button,      // dispatches onClickEvent
-            Spacer       // blank gap
+            Spacer,      // blank gap
+            Binding,     // label + two buttons: `event`/`text` and `event2`/`text2`
+            Note         // a line of smaller text under the row above (a warning)
         };
 
         Kind kind = Kind::Checkbox;
@@ -55,6 +57,11 @@ namespace UITemplates {
 
         std::vector<std::string> options;  // Dropdown choices
         i32 selected = 0;                  // Dropdown initial index
+
+        // Binding: the two buttons' text and the second button's event
+        std::string text;
+        std::string event2;
+        std::string text2;
     };
 
     // Row constructors, so a row is one line at the call site.
@@ -68,6 +75,10 @@ namespace UITemplates {
                                      std::vector<std::string> options, i32 selected = 0);
         ENJIN_API OptionRow Button(const std::string& label, const std::string& event);
         ENJIN_API OptionRow Spacer();
+        ENJIN_API OptionRow Binding(const std::string& label,
+                                    const std::string& event, const std::string& text,
+                                    const std::string& event2, const std::string& text2);
+        ENJIN_API OptionRow Note(const std::string& text);
     }
 
     struct OptionsMenuSpec {
@@ -114,16 +125,20 @@ namespace UITemplates {
     //   controls_back, controls_reset
     //   controls_sensitivity (float), controls_invert_y (bool)
     //   controls_sprint_mode (int), controls_crouch_mode (int)
-    //   controls_rebind_<index> (button) -- <index> is the action ordinal
+    //   controls_rebind_<index> (key button), controls_rebind_pad_<index> (pad
+    //   button) -- <index> is the action ordinal
+    //   controls_preset_left_hand, controls_preset_right_hand, controls_preset_gamepad
     //
-    // rebindingIndex >= 0 marks that action as awaiting a key press, so the
-    // caller re-builds the canvas to show "press a key" and again once bound.
+    // rebindingIndex >= 0 marks that action as awaiting input (on its pad
+    // button when rebindingPad), so the caller re-builds the canvas to show
+    // the prompt and again once bound. GUI::ControlsScreen does all of this.
     ENJIN_API UICanvasComponent CreateControlsMenu(const InputSystem::InputActionMap& map,
-                                                   i32 rebindingIndex = -1);
+                                                   i32 rebindingIndex = -1, bool rebindingPad = false);
 
     // The event name a rebind row dispatches, and the inverse. Kept here so the
     // producer and the consumer cannot disagree about the format.
     ENJIN_API std::string ControlsRebindEvent(i32 actionIndex);
+    ENJIN_API std::string ControlsRebindPadEvent(i32 actionIndex);
     ENJIN_API i32 ControlsRebindIndexFromEvent(const std::string& event);
 
     // Create a victory/defeat screen: dark overlay, colored message, optional

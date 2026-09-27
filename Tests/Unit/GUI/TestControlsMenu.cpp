@@ -10,12 +10,15 @@
 // binary the whole time.
 #include "EnjinTest.h"
 #include "Enjin/GUI/UITemplates.h"
+#include "Enjin/GUI/ControlsScreen.h"
+#include "Enjin/ECS/Components/Name.h"
 #include "Enjin/GUI/UISystem.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/Platform/Input.h"
 #include "Enjin/Input/InputAction.h"
 
 #include <string>
+#include <algorithm>
 #include <cstdio>
 
 using namespace Enjin;
@@ -57,13 +60,113 @@ ENJIN_TEST(ControlsMenu, HasOneRebindRowPerAction) {
     // Act
     const UICanvasComponent canvas = UITemplates::CreateControlsMenu(map);
 
-    // Assert: an action without a row cannot be rebound by anyone.
+    // Assert: an action without a row cannot be rebound by anyone, and an
+    // action the game does not have gets no row. Every slot has a name (the
+    // table's "Custom 1"), which is how the web screen listed eight phantom
+    // rows when it checked the name instead of IsActionListed (IN-16).
     for (i32 i = 0; i < map.GetActionCount(); ++i) {
-        const char* name = map.GetActionName(i);
-        if (!name || !*name) continue;
-        ENJIN_EXPECT_TRUE(HasEvent(canvas, UITemplates::ControlsRebindEvent(i)));
+        const bool listed = map.IsActionListed(i);
+        ENJIN_EXPECT_EQ(HasEvent(canvas, UITemplates::ControlsRebindEvent(i)), listed);
+        ENJIN_EXPECT_EQ(HasEvent(canvas, UITemplates::ControlsRebindPadEvent(i)), listed);
     }
+    ENJIN_EXPECT_FALSE(AnyTextContains(canvas, "Custom 1"));
 }
+
+ENJIN_TEST(ControlsMenu, ThePadButtonPromptsForAButton) {
+    InputSystem::InputActionMap map;
+    const UICanvasComponent canvas = UITemplates::CreateControlsMenu(map, 4, true);
+    ENJIN_EXPECT_TRUE(AnyTextContains(canvas, "press a button"));
+    ENJIN_EXPECT_FALSE(AnyTextContains(canvas, "press a key"));
+}
+
+ENJIN_TEST(ControlsMenu, OffersThePresetsAndMarksTheOneInUse) {
+    InputSystem::InputActionMap map;
+    map.ApplyGamepadOnly();
+    const UICanvasComponent canvas = UITemplates::CreateControlsMenu(map);
+    ENJIN_EXPECT_TRUE(HasEvent(canvas, "controls_preset_left_hand"));
+    ENJIN_EXPECT_TRUE(HasEvent(canvas, "controls_preset_right_hand"));
+    ENJIN_EXPECT_TRUE(HasEvent(canvas, "controls_preset_gamepad"));
+    ENJIN_EXPECT_TRUE(AnyTextContains(canvas, "Gamepad Only  (on)"));
+}
+
+// IN-9: Left Shift is Sprint AND Dash by default, and nothing said so
+ENJIN_TEST(ControlsMenu, AClashIsNamedUnderTheRow) {
+    InputSystem::InputActionMap map;
+    const i32 sprint = static_cast<i32>(InputSystem::GameAction::Sprint);
+    const i32 dash = static_cast<i32>(InputSystem::GameAction::Dash);
+    const auto clashes = map.FindConflicts(sprint);
+    ENJIN_EXPECT_TRUE(std::find(clashes.begin(), clashes.end(), dash) != clashes.end());
+    // Jump and Confirm share Space, but one is gameplay and one is a menu
+    const auto jumpClashes = map.FindConflicts(static_cast<i32>(InputSystem::GameAction::Jump));
+    ENJIN_EXPECT_TRUE(std::find(jumpClashes.begin(), jumpClashes.end(),
+                                static_cast<i32>(InputSystem::GameAction::UIConfirm)) == jumpClashes.end());
+
+    const UICanvasComponent canvas = UITemplates::CreateControlsMenu(map);
+    ENJIN_EXPECT_TRUE(AnyTextContains(canvas, "L.Shift is also Dash"));
+}
+
+// IN-17: the pad side can be rebound, and doing so keeps the key
+ENJIN_TEST(ControlsMenu, APadRebindKeepsTheKey) {
+    InputSystem::InputActionMap map;
+    const i32 jump = static_cast<i32>(InputSystem::GameAction::Jump);
+    InputSystem::InputBinding pad;
+    pad.type = InputSystem::BindingType::GamepadButton;
+    pad.code = static_cast<i32>(GamepadButton::Y);
+    map.RebindGamepad(jump, pad);
+    bool hasSpace = false, hasY = false, hasA = false;
+    for (const auto& b : map.GetActionConfig(InputSystem::GameAction::Jump).bindings) {
+        if (b.type == InputSystem::BindingType::Key && b.code == static_cast<i32>(KeyCode::Space)) hasSpace = true;
+        if (b.type == InputSystem::BindingType::GamepadButton && b.code == static_cast<i32>(GamepadButton::Y)) hasY = true;
+        if (b.type == InputSystem::BindingType::GamepadButton && b.code == static_cast<i32>(GamepadButton::A)) hasA = true;
+    }
+    ENJIN_EXPECT_TRUE(hasSpace);
+    ENJIN_EXPECT_TRUE(hasY);
+    ENJIN_EXPECT_FALSE(hasA);   // replaced, not added
+}
+
+// The shared screen, driven through its own events the way a click would
+static ECS::Entity FindControlsCanvas(ECS::World& world) {
+    for (ECS::Entity e : world.GetEntitiesWithComponent<ECS::NameComponent>()) {
+        if (!world.IsValid(e)) continue;
+        const auto* n = world.GetComponent<ECS::NameComponent>(e);
+        if (n && n->name == "Controls Menu UI") return e;
+    }
+    return ECS::INVALID_ENTITY;
+}
+
+ENJIN_TEST(ControlsMenu, TheSharedScreenOpensArmsAndGoesBack) {
+    ECS::World world;
+    UISystem ui;
+    InputSystem::InputActionMap map;
+    ControlsScreen screen;
+    bool wentBack = false;
+    screen.onBack = [&]() { wentBack = true; };
+    screen.Attach(&world, &ui, &map);
+
+    screen.Open();
+    ENJIN_ASSERT_TRUE(screen.IsOpen());
+    ENJIN_ASSERT_TRUE(FindControlsCanvas(world) != ECS::INVALID_ENTITY);
+
+    // The pad button of Jump arms that row
+    UIEventData click;
+    click.eventName = UITemplates::ControlsRebindPadEvent(static_cast<i32>(InputSystem::GameAction::Jump));
+    ui.GetEventBus().Dispatch(click);
+    ENJIN_EXPECT_TRUE(screen.IsCapturing());
+    world.Update(0.0f);   // flush the deferred destroy of the old canvas
+    const ECS::Entity armed = FindControlsCanvas(world);
+    ENJIN_ASSERT_TRUE(armed != ECS::INVALID_ENTITY);
+    ENJIN_EXPECT_TRUE(AnyTextContains(*world.GetComponent<UICanvasComponent>(armed), "press a button"));
+
+    // Back closes it (from inside its own listener) and hands back
+    UIEventData back;
+    back.eventName = "controls_back";
+    ui.GetEventBus().Dispatch(back);
+    ENJIN_EXPECT_FALSE(screen.IsOpen());
+    ENJIN_EXPECT_TRUE(wentBack);
+    world.Update(0.0f);
+    ENJIN_EXPECT_TRUE(FindControlsCanvas(world) == ECS::INVALID_ENTITY);
+}
+
 
 ENJIN_TEST(ControlsMenu, ShowsTheActionNameAndItsCurrentBinding) {
     InputSystem::InputActionMap map;

@@ -345,6 +345,12 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
 
     // Initialize in-game pause menu system
     m_GameMenu.SetInputMap(&m_InputMap);
+    // Options > Controls opens the same UICanvas screen the players do (IN-16)
+    m_GameMenu.SetOpenControlsCallback([this]() {
+        m_ControlsScreen.Attach(m_World, &m_UISystem, &m_InputMap);
+        m_ControlsScreen.Open();
+    });
+    m_ControlsScreen.onBack = [this]() { m_GameMenu.ShowScreen(GUI::MenuScreen::Options); };
     // Touches (View > Simulate Touch Controls) that land on interactive UI
     // become real pointers instead of being claimed by the move stick.
     InputSystem::SetUIHitTestSystem(&m_UISystem);
@@ -2619,7 +2625,16 @@ void EditorLayer::Update(f32 deltaTime) {
             Input::SetMouseCaptured(false);
         }
     }
-    if (Input::IsKeyPressed(KeyCode::Escape)) {
+    // The controls screen captures before Escape is read: Escape cancels an
+    // armed row rather than leaving the screen
+    m_ControlsScreen.Attach(m_World, &m_UISystem, &m_InputMap);
+    m_ControlsScreen.Update(deltaTime);
+    if (m_ControlsScreen.IsOpen()) {
+        if (Input::IsKeyPressed(KeyCode::Escape) && !m_ControlsScreen.IsCapturing()) {
+            m_ControlsScreen.Close();
+            m_GameMenu.ShowScreen(GUI::MenuScreen::Options);
+        }
+    } else if (Input::IsKeyPressed(KeyCode::Escape)) {
         // Same shape as the desktop player's Escape handling: a GameMenus
         // sub-screen backs out to the pause canvas, the pause canvas resumes,
         // and gameplay pauses. Keeping the two in step is the point of the
@@ -2858,6 +2873,7 @@ void EditorLayer::Update(f32 deltaTime) {
     // destroyed — destroying a restored id would hit a different entity.
     if (m_PlayMode.IsStopped()) {
         if (m_GameMenu.IsMenuOpen()) m_GameMenu.HideAll();
+        if (m_ControlsScreen.IsOpen()) m_ControlsScreen.Drop();
         m_PauseMenuEntity = 0;
     }
 

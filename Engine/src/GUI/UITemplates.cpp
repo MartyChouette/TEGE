@@ -194,6 +194,25 @@ OptionRow Spacer() {
     return MakeRow(OptionRow::Kind::Spacer, "", "");
 }
 
+OptionRow Binding(const std::string& label, const std::string& event, const std::string& text,
+                  const std::string& event2, const std::string& text2) {
+    OptionRow r;
+    r.kind = OptionRow::Kind::Binding;
+    r.label = label;
+    r.event = event;
+    r.text = text;
+    r.event2 = event2;
+    r.text2 = text2;
+    return r;
+}
+
+OptionRow Note(const std::string& text) {
+    OptionRow r;
+    r.kind = OptionRow::Kind::Note;
+    r.label = text;
+    return r;
+}
+
 } // namespace Options
 
 namespace {
@@ -216,6 +235,7 @@ f32 RowHeight(const OptionRow& row) {
     switch (row.kind) {
         case OptionRow::Kind::Heading: return kHeadingH;
         case OptionRow::Kind::Spacer:  return kSpacerH;
+        case OptionRow::Kind::Note:    return kHeadingH;
         default:                       return kRowH;
     }
 }
@@ -451,6 +471,53 @@ UICanvasComponent CreateOptionsMenu(const OptionsMenuSpec& spec) {
                 e->accessibleLabel = row.label;
                 break;
             }
+            case OptionRow::Kind::Note: {
+                u32 id = canvas.AddElement(UIWidgetType::Label, name, list);
+                auto* e = canvas.GetElement(id);
+                SetRowBox(e, height);
+                e->data.text = row.label;
+                e->data.textAlignH = 0;
+                e->style.fontSize = 14.0f;
+                e->style.textColor = Math::Vector3(1.0f, 0.75f, 0.35f);
+                e->focusable = false;
+                break;
+            }
+            case OptionRow::Kind::Binding: {
+                // Action name, then its key button, then its pad button
+                u32 rowId = canvas.AddElement(UIWidgetType::Panel, name + "Row", list);
+                {
+                    auto* e = canvas.GetElement(rowId);
+                    SetRowBox(e, height);
+                    e->style.bgAlpha = 0.0f;
+                    e->style.borderWidth = 0.0f;
+                    e->focusable = false;
+                }
+                u32 labelId = canvas.AddElement(UIWidgetType::Label, name + "Label", rowId);
+                {
+                    auto* e = canvas.GetElement(labelId);
+                    SetBand(e, 0.0f, 0.36f, height);
+                    e->data.text = row.label;
+                    e->data.textAlignH = 0;
+                    e->focusable = false;
+                }
+                u32 keyId = canvas.AddElement(UIWidgetType::Button, name + "Key", rowId);
+                {
+                    auto* e = canvas.GetElement(keyId);
+                    SetBand(e, 0.38f, 0.68f, height - 4.0f);
+                    e->data.text = row.text;
+                    e->onClickEvent = row.event;
+                    e->accessibleLabel = row.label + " key: " + row.text;
+                }
+                u32 padId = canvas.AddElement(UIWidgetType::Button, name + "Pad", rowId);
+                {
+                    auto* e = canvas.GetElement(padId);
+                    SetBand(e, 0.70f, 1.0f, height - 4.0f);
+                    e->data.text = row.text2;
+                    e->onClickEvent = row.event2;
+                    e->accessibleLabel = row.label + " controller: " + row.text2;
+                }
+                break;
+            }
             case OptionRow::Kind::Slider:
             case OptionRow::Kind::Dropdown: {
                 // Label on the left, control on the right, inside a transparent
@@ -585,6 +652,10 @@ std::string ControlsRebindEvent(i32 actionIndex) {
     return "controls_rebind_" + std::to_string(actionIndex);
 }
 
+std::string ControlsRebindPadEvent(i32 actionIndex) {
+    return "controls_rebind_pad_" + std::to_string(actionIndex);
+}
+
 i32 ControlsRebindIndexFromEvent(const std::string& event) {
     constexpr const char* kPrefix = "controls_rebind_";
     constexpr usize kPrefixLen = 16;   // strlen(kPrefix)
@@ -598,7 +669,8 @@ i32 ControlsRebindIndexFromEvent(const std::string& event) {
     return out;
 }
 
-UICanvasComponent CreateControlsMenu(const InputSystem::InputActionMap& map, i32 rebindingIndex) {
+UICanvasComponent CreateControlsMenu(const InputSystem::InputActionMap& map, i32 rebindingIndex,
+                                     bool rebindingPad) {
     OptionsMenuSpec spec;
     spec.title = "Controls";
     spec.backEvent = "controls_back";
@@ -616,14 +688,29 @@ UICanvasComponent CreateControlsMenu(const InputSystem::InputActionMap& map, i32
     spec.rows.push_back(Options::Dropdown("Crouch", "controls_crouch_mode",
                                           {"Hold", "Toggle"}, map.IsCrouchToggle() ? 1 : 0));
 
-    // One row per action, grouped by the category the action table already
-    // declares. Headings are emitted lazily so a category with no actions does
-    // not leave an empty title behind.
+    // The presets, the same three on every runtime. The one in use says so,
+    // and pressing it again takes it off.
+    spec.rows.push_back(Options::Heading("Presets"));
+    const auto preset = map.GetPreset();
+    auto presetLabel = [preset](const char* label, InputSystem::BindingPreset p) {
+        return std::string(label) + (preset == p ? "  (on)" : "");
+    };
+    spec.rows.push_back(Options::Button(presetLabel("Left Hand Only", InputSystem::BindingPreset::LeftHand),
+                                        "controls_preset_left_hand"));
+    spec.rows.push_back(Options::Button(presetLabel("Right Hand Only", InputSystem::BindingPreset::RightHand),
+                                        "controls_preset_right_hand"));
+    spec.rows.push_back(Options::Button(presetLabel("Gamepad Only", InputSystem::BindingPreset::GamepadOnly),
+                                        "controls_preset_gamepad"));
+
+    // One row per action the game has, grouped by the category the action
+    // table declares. IsActionListed, not a name check: every slot has a name
+    // (the table's "Custom 1"), and the web screen listed eight phantom rows.
+    const auto family = InputSystem::GetActiveGamepadFamily();
     i32 lastCategory = -1;
     const i32 count = map.GetActionCount();
     for (i32 i = 0; i < count; ++i) {
+        if (!map.IsActionListed(i)) continue;
         const char* name = map.GetActionName(i);
-        if (!name || !*name) continue;
 
         const i32 category = map.GetActionCategory(i);
         if (category != lastCategory) {
@@ -631,18 +718,43 @@ UICanvasComponent CreateControlsMenu(const InputSystem::InputActionMap& map, i32
             lastCategory = category;
         }
 
-        const char* binding = map.GetBindingDisplayName(i);
-        std::string label = name;
-        label += "     ";
-        if (i == rebindingIndex) {
-            // The row IS the prompt: a separate modal would have to be dismissed
-            // on touch, and there is nothing to dismiss it with while every key
-            // is being captured.
-            label += "< press a key or mouse button - Esc cancels >";
-        } else {
-            label += (binding && *binding) ? binding : "unbound";
+        // The row IS the prompt: a separate modal would have to be dismissed
+        // on touch, and there is nothing to dismiss it with while every key is
+        // being captured
+        const bool armed = i == rebindingIndex;
+        const char* key = map.GetKeyboardBindingDisplayName(i);
+        const char* pad = map.GetGamepadBindingDisplayName(i);
+        const std::string keyText = armed && !rebindingPad ? "press a key"
+                                  : (key && *key) ? key : "unbound";
+        const std::string padText = armed && rebindingPad ? "press a button"
+                                  : (pad && *pad) ? pad : "unbound";
+        spec.rows.push_back(Options::Binding(name ? name : "", ControlsRebindEvent(i), keyText,
+                                             ControlsRebindPadEvent(i), padText));
+        if (armed) {
+            spec.rows.push_back(Options::Note(rebindingPad ? "    Esc cancels, or wait a few seconds"
+                                                           : "    Esc cancels"));
         }
-        spec.rows.push_back(Options::Button(label, ControlsRebindEvent(i)));
+
+        // A clash with another action in the same context, named under the row
+        // (IN-9). Both rows say it, so whichever one the player looks at explains it.
+        for (const auto& b : map.GetActionConfig(static_cast<InputSystem::GameAction>(i)).bindings) {
+            const auto clashes = map.FindConflicts(i, b);
+            if (clashes.empty()) continue;
+            std::string input;
+            switch (b.type) {
+                case InputSystem::BindingType::Key:           input = InputSystem::GetKeyDisplayName(b.code); break;
+                case InputSystem::BindingType::MouseButton:   input = InputSystem::GetMouseButtonDisplayName(b.code); break;
+                case InputSystem::BindingType::GamepadButton: input = InputSystem::GetGamepadButtonDisplayName(b.code, family); break;
+                default: input = InputSystem::GetGamepadAxisDisplayName(b.code, b.axisPositive, family); break;
+            }
+            std::string note = "    " + input + " is also " ;
+            for (usize c = 0; c < clashes.size(); ++c) {
+                if (c) note += ", ";
+                const char* other = map.GetActionName(clashes[c]);
+                note += other ? other : "?";
+            }
+            spec.rows.push_back(Options::Note(note));
+        }
     }
 
     spec.rows.push_back(Options::Spacer());

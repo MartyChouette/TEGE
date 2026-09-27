@@ -42,6 +42,35 @@ void ApplyCustomActions(InputActionMap& map, const std::vector<CustomActionDef>&
     }
 }
 
+// The game's defaults for built-in actions, one input kind at a time
+void ApplyActionDefaults(InputActionMap& map, const std::vector<ActionDefaultDef>& defaults) {
+    for (const auto& def : defaults) {
+        i32 id = -1;
+        for (u32 i = 0; i < static_cast<u32>(kFirstProjectAction); ++i) {
+            if (def.action == GetActionIdentifier(static_cast<GameAction>(i))) { id = static_cast<i32>(i); break; }
+        }
+        if (id < 0) continue;
+        auto& cfg = map.GetActionConfig(static_cast<GameAction>(id));
+        auto replace = [&cfg](BindingType type, i32 code) {
+            if (code == kKeepDefault) return;
+            std::vector<InputBinding> kept;
+            for (const auto& b : cfg.bindings) if (b.type != type) kept.push_back(b);
+            if (code >= 0 && InputActionMap::IsBindingCodeValid(type, code)) {
+                InputBinding b;
+                b.type = type;
+                b.code = code;
+                // Keyboard first, so prompts and hints prefer the key
+                if (type == BindingType::Key) kept.insert(kept.begin(), b);
+                else kept.push_back(b);
+            }
+            cfg.bindings.swap(kept);
+        };
+        replace(BindingType::Key, def.key);
+        replace(BindingType::MouseButton, def.mouse);
+        replace(BindingType::GamepadButton, def.gamepad);
+    }
+}
+
 } // namespace
 
 void InputProjectSettings::ApplyTo(InputActionMap& map) const {
@@ -51,10 +80,16 @@ void InputProjectSettings::ApplyTo(InputActionMap& map) const {
     SetControlsHintEnabled(showControlsHint);
 
     map.ClearProjectActionNames();   // what this project does not name stops existing
-    ApplyCustomActions(map, customActions);
-    // And again on every reset or preset, which start from the engine table:
-    // these ARE the game's defaults for its custom actions (IN-10).
-    map.SetProjectDefaults([defs = customActions](InputActionMap& m) { ApplyCustomActions(m, defs); });
+    // The project layer, re-applied by every reset and preset, which start
+    // from the engine table: these ARE the game's defaults (IN-10, IN-12)
+    map.SetProjectDefaults([defs = customActions, overrides = actionDefaults](InputActionMap& m) {
+        ApplyCustomActions(m, defs);
+        ApplyActionDefaults(m, overrides);
+    });
+    // Rebuild from the layers, so a default set back to the engine's takes
+    // effect now. Every runtime applies the project before the player's
+    // bindings.json, so this costs a player nothing.
+    map.LoadDefaults();
 }
 
 std::string InputProjectSettings::ToJson() const {
@@ -71,6 +106,18 @@ std::string InputProjectSettings::ToJson() const {
         actions.push_back(a);
     }
     j["customActions"] = actions;
+
+    json defaults = json::array();
+    for (const auto& d : actionDefaults) {
+        if (d.IsEmpty()) continue;
+        json dj;
+        dj["action"] = d.action;
+        dj["key"] = d.key;
+        dj["mouse"] = d.mouse;
+        dj["gamepad"] = d.gamepad;
+        defaults.push_back(dj);
+    }
+    j["actionDefaults"] = defaults;
 
     json touch;
     touch["customLayout"] = customTouchLayout;
@@ -117,6 +164,19 @@ bool InputProjectSettings::FromJson(const std::string& jsonStr) {
                 // the eight numbered slots (IN-0)
                 if (def.slot < 0 || def.slot >= static_cast<i32>(kMaxProjectActions)) continue;
                 customActions.push_back(def);
+            }
+        }
+
+        actionDefaults.clear();
+        if (j.contains("actionDefaults") && j["actionDefaults"].is_array()) {
+            for (const auto& dj : j["actionDefaults"]) {
+                if (!dj.is_object() || !dj.contains("action") || !dj["action"].is_string()) continue;
+                ActionDefaultDef d;
+                d.action = dj["action"].get<std::string>();
+                d.key = dj.value("key", kKeepDefault);
+                d.mouse = dj.value("mouse", kKeepDefault);
+                d.gamepad = dj.value("gamepad", kKeepDefault);
+                if (!d.IsEmpty()) actionDefaults.push_back(d);
             }
         }
 

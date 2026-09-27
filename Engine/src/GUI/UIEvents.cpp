@@ -26,11 +26,14 @@ void UIEventBus::Dispatch(const UIEventData& event) {
 
     if (m_Forwarder) m_Forwarder(event);
 
+    // Over a copy of the matching callbacks: a listener may add or remove
+    // listeners (a screen that closes itself from its own Back handler), and
+    // either would invalidate an iterator into m_Listeners
+    std::vector<Callback> matching;
     for (const auto& listener : m_Listeners) {
-        if (listener.eventName == event.eventName) {
-            listener.callback(event);
-        }
+        if (listener.eventName == event.eventName) matching.push_back(listener.callback);
     }
+    for (const auto& cb : matching) cb(event);
 }
 
 void UIEventBus::Clear() {

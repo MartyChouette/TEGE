@@ -137,6 +137,10 @@ public:
     // reset or preset, sensitivity, invert, hold-or-toggle), so the runtime can
     // save it then rather than only when Options is left by Back.
     void SetBindingsChangedCallback(std::function<void()> cb) { m_BindingsChanged = std::move(cb); }
+    // Opens the runtime's GUI::ControlsScreen. Options shows a Controls button
+    // only when this is set, and ShowScreen(Controls) goes here.
+    void SetOpenControlsCallback(std::function<void()> cb) { m_OpenControls = std::move(cb); }
+    void OpenControls();
 
     void ShowScreen(MenuScreen screen);
     void HideAll();
@@ -223,7 +227,7 @@ private:
     std::function<void()> m_BindingsChanged;
     std::string m_GameTitle = "My Game";
     bool m_QuitAvailable = true;
-    i32 m_RebindingAction = -1;
+    std::function<void()> m_OpenControls;
     // Where Back goes from Options / How to Play. Defaults to None, NOT
     // PauseMenu: the pause root is UITemplates::CreatePauseMenu() spawned as a
     // UICanvas in all three runtimes, and that canvas stays alive underneath a
@@ -246,7 +250,6 @@ private:
     void RenderGraphics(f32 w, f32 h);
     void RenderAudio(f32 w, f32 h);
     void RenderAccessibility(f32 w, f32 h);
-    void RenderControls(f32 w, f32 h);
     void RenderHowToPlay(f32 w, f32 h);
     void RenderGameOver(f32 w, f32 h);
     bool RenderMenuButton(const char* label, f32 width, bool selected = false,

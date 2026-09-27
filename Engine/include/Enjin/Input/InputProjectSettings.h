@@ -31,6 +31,19 @@ struct CustomActionDef {
     u32 mode = 2;              // ActionMode ordinal (2 = Press)
 };
 
+// A project's own default for a built-in action (IN-12): Project Settings >
+// Input sets these for any action, not only the ones the game adds. Each input
+// kind is separate: kKeepDefault leaves it as the engine table has it, -1
+// removes it, anything else replaces it.
+constexpr i32 kKeepDefault = -2;
+struct ActionDefaultDef {
+    std::string action;        // the action's identifier, "Jump"
+    i32 key = kKeepDefault;
+    i32 mouse = kKeepDefault;
+    i32 gamepad = kKeepDefault;
+    bool IsEmpty() const { return key == kKeepDefault && mouse == kKeepDefault && gamepad == kKeepDefault; }
+};
+
 // One on-screen touch button in a hand-authored layout.
 struct TouchButtonLayout {
     i32 action = -1;           // GameAction ordinal
@@ -45,6 +58,8 @@ enum class TouchLookMode : u32 { Auto = 0, AlwaysOn, AlwaysOff };
 struct InputProjectSettings {
     // Custom actions (naming + default bindings)
     std::vector<CustomActionDef> customActions;
+    // The game's defaults for built-in actions
+    std::vector<ActionDefaultDef> actionDefaults;
 
     // Touch layout. Auto (the default) derives buttons from the scene's
     // controller and its ActionTrigger components. Custom uses `touchButtons`
@@ -65,7 +80,7 @@ struct InputProjectSettings {
     bool showControlsHint = true;
 
     bool IsEmpty() const {
-        return customActions.empty() && !customTouchLayout && touchStick &&
+        return customActions.empty() && actionDefaults.empty() && !customTouchLayout && touchStick &&
                touchLook == TouchLookMode::Auto && touchButtonScale == 1.0f &&
                !touchLeftHanded && showControlsHint;
     }

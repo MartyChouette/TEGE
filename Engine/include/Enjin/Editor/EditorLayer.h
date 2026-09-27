@@ -21,6 +21,7 @@
 #include "Enjin/Input/InputAction.h"
 #include "Enjin/ECS/Components/BrushSolid.h"
 #include "Enjin/GUI/GameMenus.h"
+#include "Enjin/GUI/ControlsScreen.h"
 #include "Enjin/GUI/UISystem.h"
 #include "Enjin/Accessibility/SubtitleSystem.h"
 #include "Enjin/Accessibility/AudioVisualIndicator.h"
@@ -2036,6 +2037,9 @@ private:
 
     // Runtime UI system
     GUI::UISystem m_UISystem;
+    // The controls screen both players use, opened from Options in play.
+    // After m_UISystem so it is destroyed first and can take its listeners off.
+    GUI::ControlsScreen m_ControlsScreen;
 
     // Subtitle system (accessibility)
     Accessibility::SubtitleSystem m_SubtitleSystem;

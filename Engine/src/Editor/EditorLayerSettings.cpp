@@ -2372,6 +2372,36 @@ namespace {
         return choices;
     }
 
+    const std::vector<KeyChoice>& MouseChoices() {
+        static std::vector<std::string> names;
+        static std::vector<KeyChoice> choices;
+        if (choices.empty()) {
+            const Enjin::i32 codes[] = {0, 1, 2, 3, 4};
+            for (Enjin::i32 c : codes) names.emplace_back(Enjin::InputSystem::GetMouseButtonDisplayName(c));
+            choices.push_back({"(none)", -1});
+            for (Enjin::usize i = 0; i < names.size(); ++i) choices.push_back({names[i].c_str(), codes[i]});
+        }
+        return choices;
+    }
+
+    // A pick-list for a built-in action's default: first "engine default"
+    // (kKeepDefault, naming what that is), then the list itself
+    bool DefaultCombo(const char* label, const std::vector<KeyChoice>& choices, Enjin::i32& code,
+                      const std::string& engineName) {
+        const std::string keep = "Engine (" + (engineName.empty() ? std::string("none") : engineName) + ")";
+        std::vector<const char*> names;
+        names.push_back(keep.c_str());
+        for (const auto& c : choices) names.push_back(c.name);
+        int cur = 0;
+        for (Enjin::usize i = 0; i < choices.size(); ++i) if (choices[i].code == code) cur = static_cast<int>(i) + 1;
+        if (code == Enjin::InputSystem::kKeepDefault) cur = 0;
+        if (ImGui::Combo(label, &cur, names.data(), static_cast<int>(names.size()))) {
+            code = cur == 0 ? Enjin::InputSystem::kKeepDefault : choices[static_cast<Enjin::usize>(cur - 1)].code;
+            return true;
+        }
+        return false;
+    }
+
     // A combo over one of the pick-lists. Returns true when the value changed.
     bool ChoiceCombo(const char* label, const std::vector<KeyChoice>& choices, Enjin::i32& code) {
         int cur = 0;
@@ -2577,6 +2607,9 @@ void EditorLayer::DrawSettingsSection_InputTouch() {
         ImGui::SetNextItemWidth(110);
         if (ChoiceCombo("##key", KeyChoices(), def.key)) changed = true;
         ImGui::SameLine();
+        ImGui::SetNextItemWidth(80);
+        if (ChoiceCombo("##mouse", MouseChoices(), def.mouse)) changed = true;
+        ImGui::SameLine();
         ImGui::SetNextItemWidth(130);
         if (ChoiceCombo("##pad", PadChoices(), def.gamepad)) changed = true;
         ImGui::SameLine();
@@ -2614,6 +2647,65 @@ void EditorLayer::DrawSettingsSection_InputTouch() {
             settings.customActions.push_back(def);
             changed = true;
         }
+    }
+
+    // ---- Built-in actions ---------------------------------------------------
+    // The game's own defaults for the engine's actions (IN-12). A player's
+    // rebinds and presets sit on top of these, and Reset comes back to them.
+    ImGui::Spacing();
+    if (ImGui::TreeNode("Default Bindings for Built-in Actions")) {
+        ImGui::TextWrapped("Change what a built-in action is bound to in this game. "
+                           "\"Engine\" keeps the engine's own default, named in brackets.");
+        InputSystem::InputActionMap engineMap;   // the table alone, for the names
+        if (ImGui::BeginTable("##actionDefaults", 4, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_RowBg)) {
+            ImGui::TableSetupColumn("Action");
+            ImGui::TableSetupColumn("Key");
+            ImGui::TableSetupColumn("Mouse");
+            ImGui::TableSetupColumn("Pad");
+            ImGui::TableHeadersRow();
+            for (u32 i = 0; i < static_cast<u32>(InputSystem::kFirstProjectAction); ++i) {
+                const auto action = static_cast<InputSystem::GameAction>(i);
+                const std::string ident = InputSystem::GetActionIdentifier(action);
+                auto it = std::find_if(settings.actionDefaults.begin(), settings.actionDefaults.end(),
+                                       [&](const InputSystem::ActionDefaultDef& d) { return d.action == ident; });
+                InputSystem::ActionDefaultDef row;
+                row.action = ident;
+                if (it != settings.actionDefaults.end()) row = *it;
+
+                std::string engineKey, engineMouse, enginePad;
+                for (const auto& b : engineMap.GetActionConfig(action).bindings) {
+                    if (b.type == InputSystem::BindingType::Key && engineKey.empty()) engineKey = InputSystem::GetKeyDisplayName(b.code);
+                    if (b.type == InputSystem::BindingType::MouseButton && engineMouse.empty()) engineMouse = InputSystem::GetMouseButtonDisplayName(b.code);
+                    if (b.type == InputSystem::BindingType::GamepadButton && enginePad.empty())
+                        enginePad = InputSystem::GetGamepadButtonDisplayName(b.code, Input::GamepadFamily::Xbox);
+                }
+
+                ImGui::PushID(static_cast<int>(i));
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn();
+                ImGui::TextUnformatted(InputSystem::GetActionInfo(action).name);
+                bool rowChanged = false;
+                ImGui::TableNextColumn(); ImGui::SetNextItemWidth(-1);
+                rowChanged |= DefaultCombo("##k", KeyChoices(), row.key, engineKey);
+                ImGui::TableNextColumn(); ImGui::SetNextItemWidth(-1);
+                rowChanged |= DefaultCombo("##m", MouseChoices(), row.mouse, engineMouse);
+                ImGui::TableNextColumn(); ImGui::SetNextItemWidth(-1);
+                rowChanged |= DefaultCombo("##p", PadChoices(), row.gamepad, enginePad);
+                ImGui::PopID();
+
+                if (rowChanged) {
+                    if (it != settings.actionDefaults.end()) {
+                        if (row.IsEmpty()) settings.actionDefaults.erase(it);
+                        else *it = row;
+                    } else if (!row.IsEmpty()) {
+                        settings.actionDefaults.push_back(row);
+                    }
+                    changed = true;
+                }
+            }
+            ImGui::EndTable();
+        }
+        ImGui::TreePop();
     }
 
     // ---- Touch --------------------------------------------------------------

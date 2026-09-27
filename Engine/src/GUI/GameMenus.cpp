@@ -110,12 +110,17 @@ void GameMenuSystem::ShowScreen(MenuScreen screen) {
     }
 
     m_CurrentScreen = screen;
-    m_RebindingAction = -1;
 }
 
 void GameMenuSystem::HideAll() {
     m_CurrentScreen = MenuScreen::None;
-    m_RebindingAction = -1;
+}
+
+void GameMenuSystem::OpenControls() {
+    // This menu steps aside; the runtime's ControlsScreen brings it back to
+    // Options when its Back is pressed
+    m_CurrentScreen = MenuScreen::None;
+    if (m_OpenControls) m_OpenControls();
 }
 
 MenuScreen GameMenuSystem::GetCurrentScreen() const {
@@ -166,7 +171,7 @@ void GameMenuSystem::Render(f32 screenW, f32 screenH) {
         case MenuScreen::Options:    RenderOptions(screenW, screenH);   break;
         case MenuScreen::Graphics:   RenderGraphics(screenW, screenH);  break;
         case MenuScreen::Audio:      RenderAudio(screenW, screenH);     break;
-        case MenuScreen::Controls:   RenderControls(screenW, screenH);  break;
+        case MenuScreen::Controls:   OpenControls();                    break;
         case MenuScreen::HowToPlay:  RenderHowToPlay(screenW, screenH); break;
         case MenuScreen::GameOver:   RenderGameOver(screenW, screenH);  break;
         case MenuScreen::LoadGame:   RenderLoadGame(screenW, screenH);  break;
@@ -468,14 +473,18 @@ void GameMenuSystem::RenderOptions(f32 w, f32 h) {
             RenderAccessibility(w, h);
             ImGui::EndTabItem();
         }
-        if (ImGui::BeginTabItem("Controls")) {
-            RenderControls(w, h);
-            ImGui::EndTabItem();
-        }
         ImGui::EndTabBar();
     }
 
     ImGui::Dummy(ImVec2(0, 10));
+    // Controls is the one UICanvas screen every runtime shares (IN-16), not a
+    // tab here: this page's ImGui copy rebound keys only and disagreed with
+    // the web's about which actions exist
+    if (m_OpenControls && ImGui::Button("Controls", ImVec2(120, 32))) {
+        if (m_SettingsCallback) m_SettingsCallback(m_Graphics, m_Audio);
+        OpenControls();
+    }
+    if (m_OpenControls) ImGui::SameLine();
     if (ImGui::Button("Back", ImVec2(100, 32))) {
         // Notify the host application to apply changed settings
         if (m_SettingsCallback) m_SettingsCallback(m_Graphics, m_Audio);
@@ -855,140 +864,6 @@ void GameMenuSystem::RenderAudio(f32 w, f32 h) {
         ImGui::SliderFloat("Voice Volume", &m_Audio.voiceVolume, 0.0f, 1.0f, "%.2f");
         if (disabled) ImGui::EndDisabled();
     }
-}
-
-// ---------------------------------------------------------------------------
-// Controls
-// ---------------------------------------------------------------------------
-
-void GameMenuSystem::RenderControls(f32 w, f32 h) {
-    (void)w;
-    (void)h;
-
-    ImGui::Dummy(ImVec2(0, 4));
-
-    if (!m_InputMap) {
-        ImGui::TextColored(TC(Theme().error), "No InputActionMap assigned.");
-        return;
-    }
-
-    // Anything below that changes the map is saved when it happens, not when
-    // the menu is left by Back: Escape, including during key capture, closed
-    // it without saving and the rebind was gone on the next launch (IN-14).
-    bool changed = false;
-
-    // Mouse sensitivity
-    f32 sensitivity = m_InputMap->GetMouseSensitivity();
-    if (ImGui::SliderFloat("Mouse Sensitivity", &sensitivity, 0.05f, 5.0f, "%.2f")) {
-        m_InputMap->SetMouseSensitivity(sensitivity);
-    }
-    if (ImGui::IsItemDeactivatedAfterEdit()) changed = true;   // once per drag, not per frame
-
-    bool invertY = m_InputMap->GetInvertY();
-    if (ImGui::Checkbox("Invert Look Y", &invertY)) {
-        m_InputMap->SetInvertY(invertY);
-        changed = true;
-    }
-
-    // Sprint / Crouch mode
-    static const char* toggleModes[] = { "Hold", "Toggle" };
-
-    i32 sprintMode = m_InputMap->IsSprintToggle() ? 1 : 0;
-    if (ImGui::Combo("Sprint Mode", &sprintMode, toggleModes, 2)) {
-        m_InputMap->SetSprintToggle(sprintMode == 1);
-        changed = true;
-    }
-
-    i32 crouchMode = m_InputMap->IsCrouchToggle() ? 1 : 0;
-    if (ImGui::Combo("Crouch Mode", &crouchMode, toggleModes, 2)) {
-        m_InputMap->SetCrouchToggle(crouchMode == 1);
-        changed = true;
-    }
-
-    ImGui::Separator();
-    ImGui::Text("Key Bindings");
-    ImGui::Dummy(ImVec2(0, 4));
-
-    // Rebinding prompt
-    if (m_RebindingAction >= 0) {
-        ImGui::TextColored(TC(Theme().primary), "Press any key to rebind...");
-        ImGui::SameLine();
-        if (ImGui::SmallButton("Cancel")) {
-            m_RebindingAction = -1;
-        }
-
-        // Poll for key press
-        i32 pressedKey = m_InputMap->PollNextKeyPress();
-        if (pressedKey >= 0) {
-            m_InputMap->RebindAction(m_RebindingAction, pressedKey);
-            m_RebindingAction = -1;
-            changed = true;
-        }
-    }
-
-    // Action list
-    if (ImGui::BeginChild("##BindingsList", ImVec2(0, -50), true)) {
-        i32 actionCount = m_InputMap->GetActionCount();
-        for (i32 i = 0; i < actionCount; ++i) {
-            if (!m_InputMap->IsActionListed(i)) continue;   // unnamed Custom slots
-            const char* actionName = m_InputMap->GetActionName(i);
-            const char* bindingName = m_InputMap->GetBindingDisplayName(i);
-
-            ImGui::PushID(i);
-
-            // Action label
-            ImGui::Text("%-24s", actionName);
-            ImGui::SameLine(250);
-
-            // Binding button - click to rebind
-            bool isRebinding = (m_RebindingAction == i);
-            if (isRebinding) {
-                ImGui::PushStyleColor(ImGuiCol_Button, TC(Theme().primary));
-            }
-
-            const char* displayText = isRebinding ? "..." : bindingName;
-            if (ImGui::Button(displayText, ImVec2(140, 0))) {
-                m_RebindingAction = i;
-            }
-
-            if (isRebinding) {
-                ImGui::PopStyleColor();
-            }
-
-            // Show gamepad binding if available
-            const char* gamepadBinding = m_InputMap->GetGamepadBindingDisplayName(i);
-            if (gamepadBinding && gamepadBinding[0] != '\0') {
-                ImGui::SameLine();
-                ImGui::TextDisabled("[%s]", gamepadBinding);
-            }
-
-            ImGui::PopID();
-        }
-    }
-    ImGui::EndChild();
-
-    // Preset buttons
-    if (ImGui::Button("Reset Defaults", ImVec2(130, 28))) {
-        m_InputMap->ResetToDefaults();
-        m_RebindingAction = -1;
-        changed = true;
-    }
-    ImGui::SameLine();
-    auto presetButton = [&](const char* label, InputSystem::BindingPreset p) {
-        const bool on = m_InputMap->GetPreset() == p;
-        if (on) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
-        if (ImGui::Button(label, ImVec2(100, 28))) {
-            m_InputMap->TogglePreset(p);   // pressing the lit one takes it off
-            m_RebindingAction = -1;
-            changed = true;
-        }
-        if (on) ImGui::PopStyleColor();
-    };
-    presetButton("Left Hand", InputSystem::BindingPreset::LeftHand);
-    ImGui::SameLine();
-    presetButton("Right Hand", InputSystem::BindingPreset::RightHand);
-
-    if (changed && m_BindingsChanged) m_BindingsChanged();
 }
 
 // ---------------------------------------------------------------------------

@@ -103,6 +103,7 @@ static bool IsCaptureRun() {
 }
 #include "Enjin/Input/MIDIInput.h"
 #include "Enjin/GUI/GameMenus.h"
+#include "Enjin/GUI/ControlsScreen.h"
 #include "Enjin/GUI/ImGuiLayer.h"
 #include "Enjin/GUI/UIFontRegistry.h"
 #include "Enjin/GUI/UITemplates.h"
@@ -522,6 +523,14 @@ public:
         m_GameMenu.SetPostProcessing(m_PostProcessing.get());
         // Controls-screen changes are saved as they happen (IN-14).
         m_GameMenu.SetBindingsChangedCallback([this]() { SaveInputBindings(); });
+        // Options > Controls opens the one UICanvas controls screen (IN-16);
+        // its Back returns to Options
+        m_GameMenu.SetOpenControlsCallback([this]() {
+            m_ControlsScreen.Attach(m_World.get(), &m_UISystem, &m_InputMap);
+            m_ControlsScreen.Open();
+        });
+        m_ControlsScreen.onBack = [this]() { m_GameMenu.ShowScreen(Enjin::GUI::MenuScreen::Options); };
+        m_ControlsScreen.onSave = [this]() { SaveInputBindings(); };
         m_GameMenu.SetAccessibilityChangedCallback([this]() {
             ApplyAccessibilitySettings();
             SaveAccessibilitySettings();
@@ -1351,12 +1360,21 @@ public:
         // opens the menu; inside a menu Cancel (always live) backs out, and so
         // does whatever Pause is bound to, which is why that one is read past
         // the focus gate.
-        const bool inMenu = m_Paused || m_GameMenu.IsMenuOpen();
+        // The controls screen captures first: a row armed for a key must get
+        // that key, and Escape cancels the capture rather than the screen
+        m_ControlsScreen.Attach(m_World.get(), &m_UISystem, &m_InputMap);
+        m_ControlsScreen.Update(deltaTime);
+        const bool inMenu = m_Paused || m_GameMenu.IsMenuOpen() || m_ControlsScreen.IsOpen();
         const bool pauseOrBack = inMenu
             ? (m_InputMap.IsActionPressed(Enjin::InputSystem::GameAction::UICancel) ||
                m_InputMap.IsActionPressedAnyFocus(Enjin::InputSystem::GameAction::Pause))
             : m_InputMap.IsActionPressed(Enjin::InputSystem::GameAction::Pause);
-        if (pauseOrBack) {
+        if (m_ControlsScreen.IsOpen()) {
+            if (pauseOrBack && !m_ControlsScreen.IsCapturing()) {
+                m_ControlsScreen.Close();
+                m_GameMenu.ShowScreen(Enjin::GUI::MenuScreen::Options);
+            }
+        } else if (pauseOrBack) {
             auto screen = m_GameMenu.GetCurrentScreen();
             if (screen == Enjin::GUI::MenuScreen::MainMenu) {
                 // On title screen — ESC does nothing
@@ -1426,7 +1444,7 @@ public:
         {
             Enjin::Input::InputFocus focus = Enjin::Input::InputFocus::Gameplay;
             if (m_ShowConsole)                                   focus = Enjin::Input::InputFocus::Console;
-            else if (m_GameMenu.IsMenuOpen() || m_Paused ||
+            else if (m_GameMenu.IsMenuOpen() || m_ControlsScreen.IsOpen() || m_Paused ||
                      !m_GameStarted || m_ContentWarnings.IsVisible())
                                                                  focus = Enjin::Input::InputFocus::Menu;
             else if (m_ActiveDialogueEntity != 0)                focus = Enjin::Input::InputFocus::Dialogue;
@@ -1436,7 +1454,7 @@ public:
         // Skip gameplay updates when paused, on title screen, in the console, or
         // content warning is shown. The console reads ImGui keyboard but gameplay
         // reads GLFW directly, so without this gate typing "wasd" walks the player.
-        if (m_GameMenu.IsMenuOpen() || m_Paused || !m_GameStarted || m_ShowConsole) return;
+        if (m_GameMenu.IsMenuOpen() || m_ControlsScreen.IsOpen() || m_Paused || !m_GameStarted || m_ShowConsole) return;
         if (m_ContentWarnings.IsVisible()) return;
 
         // Touch overlay + controls hint follow the scene's controller type.
@@ -4451,6 +4469,8 @@ private:
 
     // Runtime UI system
     Enjin::GUI::UISystem m_UISystem;
+    // After m_UISystem, so it is destroyed first: it removes its listeners from that bus
+    Enjin::GUI::ControlsScreen m_ControlsScreen;   // opened from Options, shared with web and editor play
 
     // Scripting
     Enjin::Scripting::ScriptEngine m_ScriptEngine;

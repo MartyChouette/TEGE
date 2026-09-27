@@ -793,8 +793,15 @@ void InputActionMap::RebindAction(i32 actionIndex, i32 keyCode) {
 
 void InputActionMap::RebindAction(i32 actionIndex, BindingType type, i32 code) {
     if (!IsValidAction(actionIndex)) return;
-    // Only Key and MouseButton are rebindable from a controls screen; a gamepad
-    // binding is captured differently and is not what this path feeds.
+    // A pad button goes to the pad side. An axis needs a direction, so it
+    // comes through RebindGamepad with a whole binding.
+    if (type == BindingType::GamepadButton) {
+        InputBinding b;
+        b.type = type;
+        b.code = code;
+        RebindGamepad(actionIndex, b);
+        return;
+    }
     if (type != BindingType::Key && type != BindingType::MouseButton) return;
     // A code that cannot fire is worse than no rebind: the screen would show it
     // and the action would be silently dead.
@@ -825,6 +832,89 @@ void InputActionMap::RebindAction(i32 actionIndex, BindingType type, i32 code) {
     nb.code = code;
     kept.insert(kept.begin(), nb);
     cfg.bindings.swap(kept);
+}
+
+void InputActionMap::RebindGamepad(i32 actionIndex, const InputBinding& binding) {
+    if (!IsValidAction(actionIndex)) return;
+    if (binding.type != BindingType::GamepadButton && binding.type != BindingType::GamepadAxis) return;
+    if (!IsBindingCodeValid(binding.type, binding.code)) {
+        ENJIN_LOG_WARN(Core, "Refused pad rebind: code %d is not valid for that input kind", binding.code);
+        return;
+    }
+    auto& cfg = m_Actions[actionIndex];
+    std::vector<InputBinding> kept;
+    for (const auto& b : cfg.bindings) {
+        if (b.type == BindingType::Key || b.type == BindingType::MouseButton) kept.push_back(b);
+    }
+    kept.push_back(binding);
+    cfg.bindings.swap(kept);
+}
+
+bool InputActionMap::PollNextGamepadInput(InputBinding& out) const {
+    for (i32 gp = 0; gp < 4; ++gp) {
+        if (!Input::IsGamepadConnected(gp)) continue;
+        for (i32 b = 0; b <= static_cast<i32>(GamepadButton::DPadLeft); ++b) {
+            if (!Input::IsGamepadButtonPressed(static_cast<GamepadButton>(b), gp)) continue;
+            out = InputBinding{};
+            out.type = BindingType::GamepadButton;
+            out.code = b;
+            return true;
+        }
+        // Triggers rest at -1: past half pulled counts
+        for (i32 a = 4; a <= 5; ++a) {
+            if (Input::GetGamepadAxis(static_cast<GamepadAxis>(a), gp) <= 0.5f) continue;
+            out = InputBinding{};
+            out.type = BindingType::GamepadAxis;
+            out.code = a;
+            out.axisPositive = true;
+            out.axisThreshold = 0.3f;
+            return true;
+        }
+        for (i32 a = 0; a <= 3; ++a) {
+            const f32 v = Input::GetGamepadAxis(static_cast<GamepadAxis>(a), gp);
+            if (std::fabs(v) <= 0.7f) continue;
+            out = InputBinding{};
+            out.type = BindingType::GamepadAxis;
+            out.code = a;
+            out.axisPositive = v > 0.0f;
+            out.axisThreshold = 0.5f;
+            return true;
+        }
+    }
+    return false;
+}
+
+namespace {
+    bool SameInput(const InputBinding& a, const InputBinding& b) {
+        if (a.type != b.type || a.code != b.code) return false;
+        return a.type != BindingType::GamepadAxis || a.axisPositive == b.axisPositive;
+    }
+    bool IsMenuCategory(i32 category) { return category == static_cast<i32>(ActionCategory::UI); }
+}
+
+std::vector<i32> InputActionMap::FindConflicts(i32 actionIndex, const InputBinding& binding) const {
+    std::vector<i32> out;
+    if (!IsValidAction(actionIndex)) return out;
+    const bool menu = IsMenuCategory(GetActionCategory(actionIndex));
+    for (i32 i = 0; i < GetActionCount(); ++i) {
+        if (i == actionIndex || !IsActionListed(i)) continue;
+        if (IsMenuCategory(GetActionCategory(i)) != menu) continue;
+        for (const auto& b : m_Actions[static_cast<u32>(i)].bindings) {
+            if (SameInput(b, binding)) { out.push_back(i); break; }
+        }
+    }
+    return out;
+}
+
+std::vector<i32> InputActionMap::FindConflicts(i32 actionIndex) const {
+    std::vector<i32> out;
+    if (!IsValidAction(actionIndex)) return out;
+    for (const auto& b : m_Actions[static_cast<u32>(actionIndex)].bindings) {
+        for (i32 other : FindConflicts(actionIndex, b)) {
+            if (std::find(out.begin(), out.end(), other) == out.end()) out.push_back(other);
+        }
+    }
+    return out;
 }
 
 i32 InputActionMap::GetActionCount() const {

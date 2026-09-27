@@ -260,6 +260,21 @@ public:
     // rebind its effect.
     i32 PollNextMouseButton() const;
 
+    // Pad rebinding (IN-17). Replaces the action's pad bindings and keeps its
+    // keys and mouse buttons, the mirror of a keyboard rebind.
+    void RebindGamepad(i32 actionIndex, const InputBinding& binding);
+    // A pad button pressed this frame, or a trigger or stick pushed well past
+    // half, on any connected pad. Axes have no edge: a screen capturing one
+    // should wait for the pad to be at rest first.
+    bool PollNextGamepadInput(InputBinding& out) const;
+
+    // Other actions that share an input with this one in the same context
+    // (IN-9): gameplay actions (movement, actions, camera, the project's own)
+    // with each other, menu actions with menu actions. Space on Jump and on
+    // Confirm is fine; Left Shift on Sprint and on Dash is not.
+    std::vector<i32> FindConflicts(i32 actionIndex, const InputBinding& binding) const;
+    std::vector<i32> FindConflicts(i32 actionIndex) const;   // over all its bindings
+
     // Whether a code can ever match a real input of that kind.
     static bool IsBindingCodeValid(BindingType type, i32 code);
     // Drop bindings that can never fire and restore defaults for any action left
