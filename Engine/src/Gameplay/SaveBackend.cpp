@@ -90,7 +90,11 @@ bool LocalSaveBackend::Delete(const std::string& key) {
     std::string path = GetFilePath(key);
     if (!std::filesystem::exists(path)) return true;
     std::error_code ec;
-    return std::filesystem::remove(path, ec);
+    const bool removed = std::filesystem::remove(path, ec);
+    // A delete is a write to IndexedDB too. Without the flush the file went
+    // from memory only, and the next reload restored the deleted slot (WP-5).
+    if (removed) PersistWebSaves();
+    return removed;
 }
 
 bool LocalSaveBackend::Exists(const std::string& key) {
