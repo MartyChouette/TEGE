@@ -2202,9 +2202,10 @@ void RenderSystem::Initialize() {
     };
     m_WebObjectLayout = bindMgr->CreateBindGroupLayout(objectLayoutDesc);
 
-    // Group 2: Textures (6 texture + 6 sampler: baseColor/normal/MR +
+    // Group 2: Textures (7 texture + 6 sampler: baseColor/normal/MR +
     // matcap + scrolling-reflection for the hand-crafted reflection styles +
-    // height for parallax occlusion mapping)
+    // height for parallax occlusion mapping + emissive, which shares the
+    // baseColor sampler)
     //
     // Every entry here has to match WebShaderData.h's @group(2) bindings and
     // the entries list in the per-material bind group below, or the draw fails
@@ -2224,6 +2225,7 @@ void RenderSystem::Initialize() {
         {9, BType::Sampler, SStage::Fragment, 0},
         {10, BType::SampledTexture, SStage::Fragment, 0},   // height (parallax)
         {11, BType::Sampler, SStage::Fragment, 0},
+        {12, BType::SampledTexture, SStage::Fragment, 0},   // emissive (baseColor's sampler)
     };
     m_WebTextureLayout = bindMgr->CreateBindGroupLayout(texLayoutDesc);
 
@@ -2579,6 +2581,7 @@ void RenderSystem::Initialize() {
         {9, {}, 0, 0, {}, m_WebDefaultBlackTex},
         {10, {}, 0, 0, m_WebDefaultBlackTex, {}},  // height (gated by flag bit 10)
         {11, {}, 0, 0, {}, m_WebDefaultBlackTex},
+        {12, {}, 0, 0, m_WebDefaultWhiteTex, {}},  // emissive: white leaves the colour as authored
     };
     m_WebDefaultTexBindGroup = bindMgr->CreateBindGroup(defTexBGDesc);
 
@@ -5359,6 +5362,8 @@ void RenderSystem::Update(f32 deltaTime) {
                 // Height map for parallax occlusion mapping -- the last
                 // capability Vulkan had and WebGPU did not.
                 auto heightT = WebGetOrLoadTexture(mat ? mat->heightTexturePath : std::string());
+                // Emissive map: loaded by desktop and never bound on web (WP-12)
+                auto emissiveT = WebGetOrLoadTexture(mat ? mat->emissiveTexturePath : std::string());
                 rd.hasMatcap = matcapT.IsValid();
                 rd.hasScrollRefl = scrollT.IsValid();
                 // Recorded on rd rather than read later: the texture handles go
@@ -5368,7 +5373,7 @@ void RenderSystem::Update(f32 deltaTime) {
 
                 // Only create custom bind group if at least one texture loaded
                 if (baseColorTex.IsValid() || normalTex.IsValid() || mrTex.IsValid() ||
-                    matcapT.IsValid() || scrollT.IsValid() || heightT.IsValid()) {
+                    matcapT.IsValid() || scrollT.IsValid() || heightT.IsValid() || emissiveT.IsValid()) {
                     auto bc = baseColorTex.IsValid() ? baseColorTex : m_WebDefaultWhiteTex;
                     auto nm = normalTex.IsValid() ? normalTex : m_WebDefaultNormalTex;
                     auto mr = mrTex.IsValid() ? mrTex : m_WebDefaultBlackTex;
@@ -5395,6 +5400,7 @@ void RenderSystem::Update(f32 deltaTime) {
                         {9, {}, 0, 0, {}, sr},
                         {10, {}, 0, 0, ht, {}},
                         {11, {}, 0, 0, {}, ht},
+                        {12, {}, 0, 0, emissiveT.IsValid() ? emissiveT : m_WebDefaultWhiteTex, {}},
                     };
                     auto* bm = m_Renderer->GetBindGroupManager();
                     if (bm) rd.texBindGroup = bm->CreateBindGroup(texBGDesc);
@@ -5432,7 +5438,14 @@ void RenderSystem::Update(f32 deltaTime) {
             obj.emissiveColor = mat ? mat->emissiveColor : Math::Vector3(0, 0, 0);
             obj.emissiveStrength = mat ? mat->emissiveStrength : 0.0f;
             obj.opacity = mat ? mat->opacity : 1.0f;
-            obj.alphaCutoff = mat ? mat->alphaCutoff : 0.0f;
+            // Alpha Mode, as desktop reads it: only Mask cuts, and only Blend
+            // blends (below). Web cut every material at its alphaCutoff (0.5 by
+            // default) and blended anything under full opacity, so an opaque
+            // material's texture alpha punched holes in it and a Blend one with
+            // opacity 1 but alpha in its texture drew solid (WP-12).
+            const bool alphaMask = mat && mat->alphaMode == MaterialComponent::AlphaMode::Mask;
+            const bool alphaBlend = mat && mat->alphaMode == MaterialComponent::AlphaMode::Blend;
+            obj.alphaCutoff = alphaMask ? mat->alphaCutoff : 0.0f;
             obj.uvScrollU = mat ? mat->uvScrollSpeed.x : 0.0f;
             obj.uvScrollV = mat ? mat->uvScrollSpeed.y : 0.0f;
             // Reflection styles: only active when their texture actually bound
@@ -5565,7 +5578,7 @@ void RenderSystem::Update(f32 deltaTime) {
                 }
             }
             const f32 distSq = (xf->position - sortCamPos).LengthSquared();
-            drawCmds.push_back({entity, offset, meshKey, distSq, obj.opacity < 1.0f});
+            drawCmds.push_back({entity, offset, meshKey, distSq, alphaBlend});
         }
 
         // Sort draw commands: opaque grouped by mesh+texture (for instancing), then front-to-back
@@ -5800,6 +5813,8 @@ void RenderSystem::Update(f32 deltaTime) {
                                 auto mr = WebGetOrLoadTexture(slotMat->metallicRoughnessTexturePath);
                                 auto ht = slotMat->heightTexturePath.empty()
                                     ? Renderer::GPUTextureHandle{} : WebGetOrLoadTexture(slotMat->heightTexturePath);
+                                auto em = slotMat->emissiveTexturePath.empty()
+                                    ? Renderer::GPUTextureHandle{} : WebGetOrLoadTexture(slotMat->emissiveTexturePath);
 
                                 // Keyed by the textures it binds: sub-meshes sharing
                                 // a material share the group, and it survives across
@@ -5808,7 +5823,8 @@ void RenderSystem::Update(f32 deltaTime) {
                                 const u64 texKey = (static_cast<u64>(bc.id) * 0x9E3779B97F4A7C15ull)
                                                  ^ (static_cast<u64>(nm.id) * 0xC2B2AE3D27D4EB4Full)
                                                  ^ (static_cast<u64>(mr.id) * 0x165667B19E3779F9ull)
-                                                 ^ (static_cast<u64>(ht.id) * 0x27D4EB2F165667C5ull);
+                                                 ^ (static_cast<u64>(ht.id) * 0x27D4EB2F165667C5ull)
+                                                 ^ (static_cast<u64>(em.id) * 0x94D049BB133111EBull);
                                 auto cached = m_WebSubMeshTexCache.find(texKey);
                                 if (cached != m_WebSubMeshTexCache.end()) {
                                     encoder->SetBindGroup(2, cached->second);
@@ -5839,6 +5855,7 @@ void RenderSystem::Update(f32 deltaTime) {
                                     // invalid group (WP-14).
                                     {10, {}, 0, 0, ht.IsValid() ? ht : m_WebDefaultBlackTex, {}},
                                     {11, {}, 0, 0, {}, ht.IsValid() ? ht : m_WebDefaultBlackTex},
+                                    {12, {}, 0, 0, em.IsValid() ? em : m_WebDefaultWhiteTex, {}},
                                 };
                                 subTexBG = bindMgr->CreateBindGroup(texBGD);
                                 if (subTexBG.IsValid()) m_WebSubMeshTexCache[texKey] = subTexBG;

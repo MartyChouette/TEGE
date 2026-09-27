@@ -86,6 +86,10 @@ struct BoneSSBO {
 // its first step and shifts the UV by nothing.
 @group(2) @binding(10) var heightTex: texture_2d<f32>;
 @group(2) @binding(11) var heightSmp: sampler;
+// Emissive map, white when absent. Sampled with baseColorSmp: this is the
+// 16th sampled texture in the fragment stage, WebGPU's default limit, and a
+// sampler of its own would buy nothing (every sampler here is linear).
+@group(2) @binding(12) var emissiveTex: texture_2d<f32>;
 
 struct ShadowViewProjection {
     view: mat4x4<f32>,
@@ -561,11 +565,24 @@ fn shadeSurface(in: VertexOutput) -> vec4<f32> {
         alpha = idxSample.a * object.opacity;
     }
 
+    // Vertex colour, as desktop multiplies it (triangle.frag: albedo *=
+    // fragVertColor). Web never did, so glTF COLOR_0 was lost, a mesh built
+    // from vertex colours rendered white, and Gouraud-only lost its lighting
+    // (WP-12). Not for water (bit 5: G is the edge distance), SDF text (bit 6:
+    // the glyph colour, used at the tail) or ocean (bit 11).
+    if ((object.flags & (32 | 64 | 2048)) == 0) {
+        albedo *= in.color.rgb;
+        alpha *= in.color.a;
+    }
+
+    // The cutoff is non-zero only for AlphaMode Mask; RenderSystem sends 0
+    // otherwise, so an opaque material is never cut and a blended one fades.
     if (object.alphaCutoff > 0.0 && alpha < object.alphaCutoff) {
         discard;
     }
 
     let mr = textureSample(mrTex, mrSmp, uv);
+    let emissiveSample = textureSample(emissiveTex, baseColorSmp, uv);
     let metallic = mr.b * object.metallic;
     let roughness = mr.g * object.roughness;
 
@@ -783,7 +800,7 @@ fn shadeSurface(in: VertexOutput) -> vec4<f32> {
         ambIrr = mix(lighting.ambientColor.rgb, hemi, 0.6);
     }
     let ambient = ambIrr * lighting.ambientColor.w * albedo;
-    let emissive = object.emissiveColor * object.emissiveStrength;
+    let emissive = object.emissiveColor * object.emissiveStrength * emissiveSample.rgb;
     // Baked light, added as its own term against the surface colour -- the
     // same place and the same form as triangle.frag, so a scene reads the same
     // on both backends. Computing rnmLight above and never adding it here is
@@ -917,10 +934,7 @@ fn shadeSurface(in: VertexOutput) -> vec4<f32> {
     // pass does ACES and gamma, so applying it here would double-correct --
     // the same trap the exported-desktop double-gamma bug is made of.
     if ((object.flags & 8192) != 0) {
-        // `emissive` is this shader's own term (line ~699). Desktop multiplies
-        // by an emissive TEXTURE here; the web path has no emissive texture
-        // sample at all, so matching desktop's expression literally would not
-        // compile. This matches what web's lit path already does.
+        // `emissive` already carries the emissive texture, as desktop's does
         let gouraud = albedo + emissive;
         return vec4<f32>(gouraud, alpha);
     }
