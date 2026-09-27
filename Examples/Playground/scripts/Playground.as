@@ -23,25 +23,13 @@ class Playground : TegeBehavior {
         Subtitle_Show("Welcome to the TEGE Playground", "", 4.0f);
         Announcer_Announce("Playground loaded. Weather follows the season. Press B for slow motion, V for weather, N for the season.");
 
-        // Every one of these is a named game ACTION, not a hardcoded key: naming
-        // a Custom slot lists it in the controls menu and the on-screen hint,
-        // and the touch button presses whatever it is bound to, rebinds
-        // included. A key that is only readable through Input_GetKeyDown can
-        // never be rebound, never appears in the hint, and never reaches a
-        // touch device.
-        InputAction_SetName(GameAction::Custom0, "SLO-MO");
-        InputAction_Rebind(GameAction::Custom0, Key::B);
-        InputAction_AddGamepadBinding(GameAction::Custom0, GamepadBtn::Y);
+        // SLO-MO, WEATHER and SEASON are project actions (Project Settings >
+        // Input & Touch, slots 0-2, so GameAction::Custom0..2). Their keys and
+        // pad buttons are set there, not here: binding them in OnStart ran after
+        // the player's saved bindings loaded and undid every rebind on each
+        // scene start (IN-15). The script only places their touch buttons.
         Touch_AddActionButton("SLO-MO", GameAction::Custom0, 0, 2, 0.115f);
-
-        InputAction_SetName(GameAction::Custom1, "WEATHER");
-        InputAction_Rebind(GameAction::Custom1, Key::V);
-        InputAction_AddGamepadBinding(GameAction::Custom1, GamepadBtn::X);
         Touch_AddActionButton("WEATHER", GameAction::Custom1, 1, 2, 0.115f);
-
-        InputAction_SetName(GameAction::Custom2, "SEASON");
-        InputAction_Rebind(GameAction::Custom2, Key::N);
-        InputAction_AddGamepadBinding(GameAction::Custom2, GamepadBtn::B);
         Touch_AddActionButton("SEASON", GameAction::Custom2, 2, 2, 0.115f);
 
         lastSeason = WorldTime_GetSeasonName();

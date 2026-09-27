@@ -11,6 +11,30 @@
  "input": {
   "customActions": [
    {
+    "slot": 0,
+    "name": "SLO-MO",
+    "key": 66,
+    "mouse": -1,
+    "gamepad": 3,
+    "mode": 2
+   },
+   {
+    "slot": 1,
+    "name": "WEATHER",
+    "key": 86,
+    "mouse": -1,
+    "gamepad": 2,
+    "mode": 2
+   },
+   {
+    "slot": 2,
+    "name": "SEASON",
+    "key": 78,
+    "mouse": -1,
+    "gamepad": 1,
+    "mode": 2
+   },
+   {
     "slot": 3,
     "name": "Colorblind Mode",
     "key": 67,
