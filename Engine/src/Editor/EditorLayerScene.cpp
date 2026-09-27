@@ -515,7 +515,9 @@ bool EditorLayer::SaveScene(const std::string& path) {
     if (m_PostProcessing) renderSettings.lutPath = m_PostProcessing->GetLUTPath();
     serializer.SetRenderSettings(renderSettings);
 
+    SwapWorldTimeSun();                      // the scene's own sun, not world time's (EP-4)
     auto result = serializer.Save(path);
+    SwapWorldTimeSun();
 
     if (result.success) {
         m_CurrentScenePath = path;
@@ -1362,7 +1364,9 @@ void EditorLayer::AutoSave() {
     if (m_PostProcessing) renderSettings.lutPath = m_PostProcessing->GetLUTPath();
     serializer.SetRenderSettings(renderSettings);
 
+    SwapWorldTimeSun();
     auto result = serializer.Save(autoSavePath);
+    SwapWorldTimeSun();
     if (result.success) {
         ENJIN_LOG_INFO(Editor, "Auto-saved to %s", autoSavePath.c_str());
     } else {
@@ -1391,9 +1395,68 @@ void EditorLayer::AdoptSceneWorldTime(const Renderer::SceneRenderSettings& s) {
     m_WorldTime.SetTime(s.startTimeOfDay, 1, s.startMonth, 1);
     m_SeasonalWeather.GetConfig().weatherChangeInterval = s.seasonalChangeInterval;
     m_ArtStylePreset = s.artStylePreset;
+    m_WorldCurvature = s.worldCurvature;
+    m_WorldCurvatureEnabled = s.worldCurvature != 0.0f;
+    // A new world: whatever was taken over belonged to the last one
+    m_WorldTimeTakeover = WorldTimeTakeover{};
+}
+
+void EditorLayer::BeginWorldTimeTakeover() {
+    m_WorldTimeTakeover = WorldTimeTakeover{};
+    m_WorldTimeTakeover.active = true;
+    if (m_RenderSystem) {
+        m_WorldTimeTakeover.ambientColor = m_RenderSystem->GetAmbientColor();
+        m_WorldTimeTakeover.ambientIntensity = m_RenderSystem->GetAmbientIntensity();
+    }
+    if (!m_World) return;
+    // The light UpdateAndApplyWorldTime drives: the first directional one
+    for (ECS::Entity e : m_World->GetEntitiesWithComponent<ECS::LightComponent>()) {
+        auto* light = m_World->GetComponent<ECS::LightComponent>(e);
+        auto* xf = m_World->GetComponent<ECS::TransformComponent>(e);
+        if (!light || !xf || light->type != ECS::LightType::Directional) continue;
+        m_WorldTimeTakeover.sun = e;
+        m_WorldTimeTakeover.rotation = xf->rotation;
+        m_WorldTimeTakeover.color = light->color;
+        m_WorldTimeTakeover.intensity = light->intensity;
+        break;
+    }
+}
+
+void EditorLayer::EndWorldTimeTakeover() {
+    // World time switched off: the scene's own sun and ambient come back
+    if (m_WorldTimeTakeover.active) {
+        SwapWorldTimeSun();
+        if (m_RenderSystem) {
+            m_RenderSystem->SetAmbientColor(m_WorldTimeTakeover.ambientColor);
+            m_RenderSystem->SetAmbientIntensity(m_WorldTimeTakeover.ambientIntensity);
+        }
+    }
+    m_WorldTimeTakeover = WorldTimeTakeover{};
+}
+
+void EditorLayer::SwapWorldTimeSun() {
+    auto& t = m_WorldTimeTakeover;
+    if (!t.active || !m_World || t.sun == ECS::INVALID_ENTITY || !m_World->IsValid(t.sun)) return;
+    auto* light = m_World->GetComponent<ECS::LightComponent>(t.sun);
+    auto* xf = m_World->GetComponent<ECS::TransformComponent>(t.sun);
+    if (!light || !xf) return;
+    std::swap(xf->rotation, t.rotation);
+    std::swap(light->color, t.color);
+    std::swap(light->intensity, t.intensity);
+    xf->worldMatrixDirty = true;
 }
 
 void EditorLayer::WriteSceneWorldTime(Renderer::SceneRenderSettings& s) const {
+    // Live values the scene does not own: a weather zone's fog and world
+    // time's ambient (EP-4). The sun light is swapped around the save itself.
+    if (m_RenderSystem) {
+        m_RenderSystem->GetAuthoredFog(s.fogDensity, s.fogStart, s.fogEnd,
+                                       s.fogHeightFalloff, s.fogColor);
+    }
+    if (m_WorldTimeTakeover.active) {
+        s.ambientColor = m_WorldTimeTakeover.ambientColor;
+        s.ambientIntensity = m_WorldTimeTakeover.ambientIntensity;
+    }
     s.worldTimeEnabled = m_WorldTimeEnabled;
     s.seasonalWeatherEnabled = m_SeasonalWeatherEnabled;
     s.startTimeOfDay = m_SceneStartTimeOfDay;

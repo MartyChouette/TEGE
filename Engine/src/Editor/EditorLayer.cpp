@@ -3499,18 +3499,20 @@ void EditorLayer::UpdateGameViewSims(f32 simDt) {
     // which is why day and night worked in the editor and did nothing in a
     // shipped game: both players only ticked the clock.
     if (m_WorldTimeEnabled) {
+        if (!m_WorldTimeTakeover.active) BeginWorldTimeTakeover();
         Effects::UpdateAndApplyWorldTime(m_World, m_WorldTime, m_RenderSystem,
                                          &m_SeasonalWeather, &m_WeatherSystem, simDt);
     } else if (m_RenderSystem) {
+        if (m_WorldTimeTakeover.active) EndWorldTimeTakeover();
         Effects::SyncSkySunToSunLight(m_World, m_RenderSystem);   // the sky follows the sun light
     }
 
-    // World curvature
-    if (m_WorldCurvatureEnabled) {
-        m_RenderSystem->SetWorldCurvature(m_WorldCurvature);
-    } else {
-        m_RenderSystem->SetWorldCurvature(0.0f);
-    }
+    // World curvature is no longer forced here. It was set every frame from an
+    // editor checkbox that was never saved or loaded, so a curved scene opened
+    // flat, the next save captured the 0, and Render_SetWorldCurvature and the
+    // console's curvature command were undone a frame later (EP-4). The
+    // controls now write the renderer when changed, and opening a scene reads
+    // them back from it (AdoptSceneWorldTime).
 
     // Notify render system whether rain is active (drives water ripple shader)
     m_RenderSystem->SetRainActive(m_GameViewIsRain);

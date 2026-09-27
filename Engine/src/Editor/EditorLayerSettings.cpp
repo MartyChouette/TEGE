@@ -1855,10 +1855,16 @@ void EditorLayer::DrawSettingsSection_Environment() {
 
         // === WORLD CURVATURE ===
         if (ImGui::TreeNode("World Curvature")) {
-            ImGui::Checkbox("Enable Curvature", &m_WorldCurvatureEnabled);
+            // Written to the renderer when changed, which is what the scene
+            // saves (EP-4)
+            bool curvatureChanged = ImGui::Checkbox("Enable Curvature", &m_WorldCurvatureEnabled);
             if (m_WorldCurvatureEnabled) {
-                ImGui::DragFloat("Curvature Strength", &m_WorldCurvature, 0.00001f, 0.0f, 0.01f, "%.5f");
+                curvatureChanged |= ImGui::DragFloat("Curvature Strength", &m_WorldCurvature, 0.00001f, 0.0f, 0.01f, "%.5f");
                 ImGui::TextDisabled("Bends distant geometry downward. Try 0.0001-0.001.");
+            }
+            if (curvatureChanged && m_RenderSystem) {
+                m_RenderSystem->SetWorldCurvature(m_WorldCurvatureEnabled ? m_WorldCurvature : 0.0f);
+                MarkDirty();
             }
             ImGui::TreePop();
         }

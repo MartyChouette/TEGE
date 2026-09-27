@@ -1206,6 +1206,17 @@ public:
         m_AuthoredFogHeightFalloff = heightFalloff;
         m_AuthoredFogColor = color;
     }
+    // The scene's own fog, whatever a weather zone has put on the live channel.
+    // What an editor save writes: capturing the live values saved a zone's fog
+    // into the scene whenever the game camera stood in one (EP-4).
+    void GetAuthoredFog(f32& density, f32& start, f32& end, f32& heightFalloff,
+                        Math::Vector3& color) const {
+        density = m_AuthoredFogDensity;
+        start = m_AuthoredFogStart;
+        end = m_AuthoredFogEnd;
+        heightFalloff = m_AuthoredFogHeightFalloff;
+        color = m_AuthoredFogColor;
+    }
     void RestoreAuthoredFog() {
         SetFogParams(m_AuthoredFogDensity, m_AuthoredFogStart,
                      m_AuthoredFogEnd, m_AuthoredFogHeightFalloff);

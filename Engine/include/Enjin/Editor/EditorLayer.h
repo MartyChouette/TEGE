@@ -1849,6 +1849,27 @@ private:
     // CaptureFromRuntime cannot read back: taken on open, written on save
     void AdoptSceneWorldTime(const Renderer::SceneRenderSettings& settings);
     void WriteSceneWorldTime(Renderer::SceneRenderSettings& settings) const;
+    // What world time took over, as the scene had it. World time rewrites the
+    // first directional light (rotation, colour, intensity) and the ambient
+    // every frame, and a save used to write those live values, so a save at
+    // dusk authored a dusk sun into the scene and turning world time off later
+    // kept it (EP-4). Taken the first frame world time drives, put back when it
+    // is switched off, and swapped in around every save.
+    struct WorldTimeTakeover {
+        bool active = false;
+        ECS::Entity sun = ECS::INVALID_ENTITY;
+        Math::Quaternion rotation;
+        Math::Vector3 color;
+        f32 intensity = 0.0f;
+        Math::Vector3 ambientColor;
+        f32 ambientIntensity = 0.0f;
+    };
+    WorldTimeTakeover m_WorldTimeTakeover;
+    void BeginWorldTimeTakeover();
+    void EndWorldTimeTakeover();
+    // Exchanges the sun light's live values with the authored ones; called
+    // before a save and again after it
+    void SwapWorldTimeSun();
 
     // World curvature
     f32 m_WorldCurvature = 0.0f;
