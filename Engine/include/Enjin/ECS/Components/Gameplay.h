@@ -1242,8 +1242,8 @@ struct ParticleEmitterComponent {
     u32 maxParticles = 1024;
 
     // Simulation space
-    enum class SimulationSpace : u8 { World, Local };
-    SimulationSpace simulationSpace = SimulationSpace::World;
+    // Particles simulate in world space. A Local space was declared, saved and
+    // never simulated; it is filed as a feature (SD-27).
 
     // Render mode
     enum class RenderMode : u8 { Billboard, VelocityStretch };
@@ -2245,7 +2245,6 @@ struct DestructibleComponent {
     bool isDestroyed = false;
 
     // Visual
-    f32 shakeOnHit = 0.1f;        // Screen/entity shake amount
 
     // Event callbacks (set by gameplay code, called on destruction)
     std::function<void(Entity)> onDamaged;      // Called each time damage is applied
@@ -2255,7 +2254,6 @@ struct DestructibleComponent {
     // Visual damage feedback
     bool showDamageOverlay = true;              // Enable crack/damage visual
     f32 damageOverlayIntensity = 0.0f;          // Runtime: 0=pristine, 1=about to break (computed from health ratio)
-    std::string crackTexturePath;               // Optional crack normal map overlay
     Math::Vector3 damageTint = Math::Vector3(0.3f, 0.25f, 0.2f); // Darkening tint at low health
 
     // Damage overlay internal state

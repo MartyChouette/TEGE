@@ -645,7 +645,6 @@ ENJIN_TEST(SerdesCoverage, DestructibleDamageOverlaySurvivesASave) {
     Entity e = Base(src);
     DestructibleComponent dc;
     dc.showDamageOverlay = false;
-    dc.crackTexturePath = "art/cracks/stone.png";
     dc.damageTint = Vector3(0.8f, 0.1f, 0.05f);
     src.AddComponent<DestructibleComponent>(e, dc);
 
@@ -657,7 +656,6 @@ ENJIN_TEST(SerdesCoverage, DestructibleDamageOverlaySurvivesASave) {
     const auto* r = dst.GetComponent<DestructibleComponent>(loaded);
     ENJIN_ASSERT_TRUE(r != nullptr);
     ENJIN_EXPECT_TRUE(!r->showDamageOverlay);
-    ENJIN_EXPECT_TRUE(r->crackTexturePath == "art/cracks/stone.png");
     ENJIN_EXPECT_TRUE(Near(r->damageTint.x, 0.8f));
     ENJIN_EXPECT_TRUE(Near(r->damageTint.z, 0.05f));
 }

@@ -2676,6 +2676,8 @@ static bool IsRetiredField(std::string_view component, std::string_view field) {
         {"pushable", "canBePushedOff"}, {"resource", "attackCost"}, {"terrain2d", "autoColliders"},
         {"triggerZone", "triggerMask"}, {"vegetation", "swayFrequency"}, {"vegetation", "swayStrength"},
         {"vegetation", "useVertexColorWeight"}, {"networkTransform", "interpDuration"},
+        {"destructible", "shakeOnHit"}, {"destructible", "crackTexturePath"},
+        {"particleEmitter", "simulationSpace"},
     };
     for (const auto& [c, f] : kRetired) {
         if (f == field && (c.empty() || c == component)) return true;
@@ -5293,7 +5295,6 @@ json SerializeParticleEmitterComponent(const ECS::ParticleEmitterComponent& pe) 
     j["rotationSpeed"] = RF(pe.rotationSpeed);
     j["rotationSpeedVariance"] = RF(pe.rotationSpeedVariance);
     j["maxParticles"] = pe.maxParticles;
-    j["simulationSpace"] = static_cast<u8>(pe.simulationSpace);
     j["renderMode"] = static_cast<u8>(pe.renderMode);
     j["velocityStretchScale"] = RF(pe.velocityStretchScale);
     return j;
@@ -5334,7 +5335,6 @@ ECS::ParticleEmitterComponent DeserializeParticleEmitterComponent(const json& j)
     if (j.contains("rotationSpeed")) pe.rotationSpeed = j["rotationSpeed"].get<f32>();
     if (j.contains("rotationSpeedVariance")) pe.rotationSpeedVariance = j["rotationSpeedVariance"].get<f32>();
     if (j.contains("maxParticles")) pe.maxParticles = j["maxParticles"].get<u32>();
-    if (j.contains("simulationSpace")) { u8 v = j["simulationSpace"].get<u8>(); if (v <= 1) pe.simulationSpace = static_cast<ECS::ParticleEmitterComponent::SimulationSpace>(v); }
     if (j.contains("renderMode")) {
         u8 rm = j["renderMode"].get<u8>();
         if (rm <= 1) pe.renderMode = static_cast<ECS::ParticleEmitterComponent::RenderMode>(rm);
@@ -9271,9 +9271,7 @@ json SerializeDestructibleComponent(const ECS::DestructibleComponent& dc) {
     j["pickupCount"] = RF(dc.pickupCount);
     j["canRespawn"] = RF(dc.canRespawn);
     j["respawnTime"] = RF(dc.respawnTime);
-    j["shakeOnHit"] = RF(dc.shakeOnHit);
     j["showDamageOverlay"] = dc.showDamageOverlay;
-    if (!dc.crackTexturePath.empty()) j["crackTexturePath"] = dc.crackTexturePath;
     j["damageTint"] = SerializeVector3(dc.damageTint);
     return j;
 }
@@ -9287,9 +9285,7 @@ ECS::DestructibleComponent DeserializeDestructibleComponent(const json& j) {
     if (j.contains("pickupCount")) dc.pickupCount = j["pickupCount"].get<i32>();
     if (j.contains("canRespawn")) dc.canRespawn = JB(j["canRespawn"]);
     if (j.contains("respawnTime")) dc.respawnTime = j["respawnTime"].get<f32>();
-    if (j.contains("shakeOnHit")) dc.shakeOnHit = j["shakeOnHit"].get<f32>();
     if (j.contains("showDamageOverlay")) dc.showDamageOverlay = JB(j["showDamageOverlay"]);
-    if (j.contains("crackTexturePath")) dc.crackTexturePath = SafeStr(j["crackTexturePath"], MAX_STR_PATH);
     if (j.contains("damageTint")) dc.damageTint = DeserializeVector3(j["damageTint"]);
     return dc;
 }

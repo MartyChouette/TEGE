@@ -9408,7 +9408,6 @@ void EditorLayer::DrawDestructibleComponent(ECS::Entity entity) {
             InspectorUndo::DragFloat(m_UndoRedo, "Respawn Time##Dest", &dest->respawnTime, 0.1f, 0.0f, 300.0f);
         }
 
-        InspectorUndo::DragFloat(m_UndoRedo, "Shake On Hit##Dest", &dest->shakeOnHit, 0.01f, 0.0f, 2.0f);
     }
 }
 

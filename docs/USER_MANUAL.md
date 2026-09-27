@@ -1644,7 +1644,6 @@ Entity that can be destroyed by damage or interaction.
 | `pickupCount` | i32 | 1 | Number of items to drop. |
 | `canRespawn` | bool | false | Respawn after destruction. |
 | `respawnTime` | f32 | 10.0 | Seconds before respawn. |
-| `shakeOnHit` | f32 | 0.1 | Screen/entity shake intensity on hit. |
 
 #### MovingPlatformComponent
 
