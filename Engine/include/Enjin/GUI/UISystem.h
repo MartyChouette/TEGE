@@ -274,6 +274,7 @@ private:
     // Action-or-fallback navigation input (see SetInputActionMap).
     bool NavConfirmPressed() const;
     bool NavPressed(InputSystem::GameAction action, bool fallback) const;
+    bool NavHeld(InputSystem::GameAction action, bool fallback) const;
 
     InputSystem::InputActionMap* m_InputMap = nullptr;
 

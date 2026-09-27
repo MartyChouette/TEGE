@@ -2506,6 +2506,11 @@ bool UISystem::NavPressed(InputSystem::GameAction action, bool fallback) const {
     return fallback;
 }
 
+bool UISystem::NavHeld(InputSystem::GameAction action, bool fallback) const {
+    if (m_InputMap) return m_InputMap->IsActionHeld(action);
+    return fallback;
+}
+
 void UISystem::ProcessFocusNavigation(UICanvasComponent& canvas, f32 deltaTime) {
     ImGuiIO& io = ImGui::GetIO();
 
@@ -2580,17 +2585,21 @@ void UISystem::ProcessFocusNavigation(UICanvasComponent& canvas, f32 deltaTime) 
     bool navLeft  = NavPressed(InputSystem::GameAction::UINavLeft,
                                ImGui::IsKeyPressed(ImGuiKey_LeftArrow)  || ImGui::IsKeyPressed(ImGuiKey_GamepadDpadLeft));
 
-    // Key repeat for held keys
-    bool anyNavHeld = ImGui::IsKeyDown(ImGuiKey_DownArrow) || ImGui::IsKeyDown(ImGuiKey_UpArrow) ||
-                      ImGui::IsKeyDown(ImGuiKey_GamepadDpadDown) || ImGui::IsKeyDown(ImGuiKey_GamepadDpadUp);
-    if (anyNavHeld) {
+    // Key repeat for held keys, through the same actions as the first press:
+    // the repeat read raw arrows, so a rebound Menu Down moved once and then
+    // stopped while the arrow kept repeating (IN-6)
+    const bool downHeld = NavHeld(InputSystem::GameAction::UINavDown,
+                                  ImGui::IsKeyDown(ImGuiKey_DownArrow) || ImGui::IsKeyDown(ImGuiKey_GamepadDpadDown));
+    const bool upHeld = NavHeld(InputSystem::GameAction::UINavUp,
+                                ImGui::IsKeyDown(ImGuiKey_UpArrow) || ImGui::IsKeyDown(ImGuiKey_GamepadDpadUp));
+    if (downHeld || upHeld) {
         m_NavRepeatTimer += deltaTime;
         if (m_NavRepeatTimer > NAV_REPEAT_DELAY) {
             f32 elapsed = m_NavRepeatTimer - NAV_REPEAT_DELAY;
             if (std::fmod(elapsed, NAV_REPEAT_RATE) < deltaTime) {
                 // Fire repeat
-                if (ImGui::IsKeyDown(ImGuiKey_DownArrow) || ImGui::IsKeyDown(ImGuiKey_GamepadDpadDown)) navDown = true;
-                if (ImGui::IsKeyDown(ImGuiKey_UpArrow) || ImGui::IsKeyDown(ImGuiKey_GamepadDpadUp)) navUp = true;
+                if (downHeld) navDown = true;
+                if (upHeld) navUp = true;
             }
         }
     } else {

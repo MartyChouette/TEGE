@@ -1537,14 +1537,24 @@ public:
                 m_FlowTimer -= deltaTime;
                 if (m_FlowTimer <= 0.0f) AdvanceWebFlow();
                 break;
-            case FlowAdvance::Input:
-                if (Enjin::Input::IsKeyPressed(Enjin::KeyCode::Space) ||
-                    Enjin::Input::IsKeyPressed(Enjin::KeyCode::Enter) ||
-                    Enjin::Input::IsKeyPressed(Enjin::KeyCode::Escape) ||
-                    Enjin::Input::IsMouseButtonPressed(Enjin::MouseButton::Left)) {
-                    AdvanceWebFlow();
-                }
-                break;
+            case FlowAdvance::Input: {
+                    // A new touch, not a held one: a finger left down would
+                    // otherwise advance a step every frame
+                    static bool s_FlowTouchDown = false;
+                    const bool touchNow = Enjin::Input::GetActiveTouchCount() > 0;
+                    const bool touchStarted = touchNow && !s_FlowTouchDown;
+                    s_FlowTouchDown = touchNow;
+                    // Confirm or Cancel as bound (pad A and B included), a click or a
+                    // tap. It read three fixed keys and the mouse, so a pad player
+                    // could not get past a "press to continue" step (IN-6).
+                    if (m_InputMap.IsActionPressedAnyFocus(Enjin::InputSystem::GameAction::UIConfirm) ||
+                        m_InputMap.IsActionPressedAnyFocus(Enjin::InputSystem::GameAction::UICancel) ||
+                        Enjin::Input::IsMouseButtonPressed(Enjin::MouseButton::Left) ||
+                        touchStarted) {
+                        AdvanceWebFlow();
+                    }
+                    break;
+            }
             case FlowAdvance::Script:
                 if (m_FlowAdvanceRequested) { m_FlowAdvanceRequested = false; AdvanceWebFlow(); }
                 break;
