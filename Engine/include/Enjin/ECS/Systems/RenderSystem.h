@@ -2124,6 +2124,13 @@ private:
     Renderer::GPUBindGroupLayoutHandle m_WebShadowSampleLayout;
     Renderer::GPUBindGroupHandle m_WebShadowSampleBG;
 
+    // How many point and spot lights web shades per frame, nearest the camera
+    // first (WP-15). The LightingUBO arrays in WebLightingLayout.h are sized
+    // from these: lightDir/Color/Params hold 4 directional + the points, the
+    // spot arrays hold the spots. Change one, change the other.
+    static constexpr u32 WEB_MAX_POINT_LIGHTS = 16;
+    static constexpr u32 WEB_MAX_SPOT_LIGHTS = 8;
+
     // Spot light shadows (max 2)
     static constexpr u32 WEB_SPOT_SHADOW_SIZE = 512;
     static constexpr u32 WEB_MAX_SPOT_SHADOWS = 2;

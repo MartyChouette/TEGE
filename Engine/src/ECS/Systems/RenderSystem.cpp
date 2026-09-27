@@ -1523,7 +1523,7 @@ struct alignas(16) WebLightVec4 { f32 x, y, z, w; };
 struct WebLightingUBO {
     ENJIN_WEB_LIGHTING_FIELDS(ENJIN_WEB_LIGHTING_MEMBER1, ENJIN_WEB_LIGHTING_MEMBERN)
 };
-static_assert(sizeof(WebLightingUBO) == 1024,
+static_assert(sizeof(WebLightingUBO) == 1984,
               "WebLightingUBO changed size. APPEND a row to the list in "
               "WebLightingLayout.h (inserting moves every offset after it), then "
               "move this number. The shaders follow automatically.");
@@ -4192,6 +4192,11 @@ void RenderSystem::Update(f32 deltaTime) {
     // Upload Lighting UBO
     {
         WebLightingUBO lit{};
+        static_assert(sizeof(lit.lightDir) / sizeof(lit.lightDir[0]) == 4 + WEB_MAX_POINT_LIGHTS,
+                      "lightDir in WebLightingLayout.h holds 4 directional + WEB_MAX_POINT_LIGHTS");
+        static_assert(sizeof(lit.spotPos) / sizeof(lit.spotPos[0]) == WEB_MAX_SPOT_LIGHTS &&
+                      sizeof(lit.spotCookie) / sizeof(lit.spotCookie[0]) == WEB_MAX_SPOT_LIGHTS,
+                      "the spot arrays in WebLightingLayout.h hold WEB_MAX_SPOT_LIGHTS");
         std::memset(&lit, 0, sizeof(lit));
         // Baked light strength, written every frame like the rest of this
         // buffer -- and AFTER the memset above, which is where the first
@@ -4199,17 +4204,52 @@ void RenderSystem::Update(f32 deltaTime) {
         lit.lightmapParams = { m_LightmapEnabled ? m_LightmapStrength : 0.0f, 0.0f, 0.0f, 0.0f };
 
         u32 dirCount = 0, pointCount = 0, spotCount = 0;
-        // Which atlas quadrant the next cookie-carrying spot gets. Counted
-        // separately from spotCount because a spot without a cookie takes a
-        // light slot but no cell.
-        u32 cookieCell = 0;
+        // The atlas cell each cookie-carrying spot got. WebUpdateLightCookies
+        // fills cells in GetEntitiesWithComponent order, so the lookup is by
+        // entity, not by where the spot lands in the light list below: the two
+        // orders stopped being the same the moment lights were sorted.
+        std::unordered_map<Entity, u32> cookieCellOf;
+        for (Entity e : m_World->GetEntitiesWithComponent<LightComponent>()) {
+            const auto* lc = m_World->GetComponent<LightComponent>(e);
+            if (!lc || lc->type != LightType::Spot || !lc->cookieEnabled) continue;
+            if (cookieCellOf.size() >= kWebCookieCells) break;
+            const u32 cell = static_cast<u32>(cookieCellOf.size());
+            cookieCellOf[e] = cell;
+        }
         if (m_CachedTransformStorage) {
-            // Shadow caster first so it lands in directional slot 0
-            std::vector<Entity> orderedLights(m_CachedLightEntities.begin(), m_CachedLightEntities.end());
-            if (shadowCasterLight != INVALID_ENTITY) {
-                auto it = std::find(orderedLights.begin(), orderedLights.end(), shadowCasterLight);
-                if (it != orderedLights.end()) std::iter_swap(orderedLights.begin(), it);
+            // WP-15. The cap was 4 points and 4 spots, taken in ENTITY order, so
+            // the fifth lamp in a scene was dark however close the camera stood
+            // to it. Now 16 and 8, and the ones that make the cut are the ones
+            // nearest the camera (by the distance to the edge of their range).
+            //
+            // Two exceptions come first, in the order the shadow passes pick
+            // them, because the shader applies spot shadow map k to spot slot k
+            // and the point shadow to point slot 0: the shadow-casting lights.
+            // Sorting them in with the rest would put a shadow on the wrong lamp.
+            const Math::Vector3 camPos = m_Camera ? m_Camera->GetPosition() : Math::Vector3(0.0f);
+            std::vector<Entity> orderedLights;
+            orderedLights.reserve(m_CachedLightEntities.size());
+            if (shadowCasterLight != INVALID_ENTITY) orderedLights.push_back(shadowCasterLight);   // directional slot 0
+            u32 spotCasters = 0, pointCasters = 0;
+            for (Entity e : m_CachedLightEntities) {
+                const auto* lc = m_World->GetComponent<LightComponent>(e);
+                if (!lc || !lc->castShadows || e == shadowCasterLight || !m_CachedTransformStorage->Get(e)) continue;
+                if (lc->type == LightType::Spot && spotCasters < WEB_MAX_SPOT_SHADOWS) { orderedLights.push_back(e); ++spotCasters; }
+                if (lc->type == LightType::Point && pointCasters < WEB_MAX_POINT_SHADOWS) { orderedLights.push_back(e); ++pointCasters; }
             }
+            const usize fixedCount = orderedLights.size();
+            for (Entity e : m_CachedLightEntities) {
+                if (std::find(orderedLights.begin(), orderedLights.begin() + fixedCount, e) ==
+                    orderedLights.begin() + fixedCount) orderedLights.push_back(e);
+            }
+            auto reachFromCamera = [&](Entity e) {
+                const auto* lc = m_World->GetComponent<LightComponent>(e);
+                const auto* xf = m_CachedTransformStorage->Get(e);
+                if (!lc || !xf || lc->type == LightType::Directional) return 0.0f;
+                return std::max(0.0f, (xf->position - camPos).Length() - std::max(lc->range, 0.0f));
+            };
+            std::stable_sort(orderedLights.begin() + fixedCount, orderedLights.end(),
+                             [&](Entity a, Entity b) { return reachFromCamera(a) < reachFromCamera(b); });
             for (Entity lightEntity : orderedLights) {
                 auto* lc = m_World->GetComponent<LightComponent>(lightEntity);
                 auto* xf = m_CachedTransformStorage->Get(lightEntity);
@@ -4220,14 +4260,14 @@ void RenderSystem::Update(f32 deltaTime) {
                     lit.lightDir[dirCount] = {fwd.x, fwd.y, fwd.z, 0.0f};
                     lit.lightColor[dirCount] = {lc->color.x, lc->color.y, lc->color.z, lc->intensity};
                     dirCount++;
-                } else if (lc->type == LightType::Point && pointCount < 4) {
+                } else if (lc->type == LightType::Point && pointCount < WEB_MAX_POINT_LIGHTS) {
                     u32 idx = 4 + pointCount;
                     Math::Vector3 pos = xf->position;
                     lit.lightDir[idx] = {pos.x, pos.y, pos.z, 1.0f};
                     lit.lightColor[idx] = {lc->color.x, lc->color.y, lc->color.z, lc->intensity};
                     lit.lightParams[idx] = {lc->range, lc->linearAttenuation, lc->quadraticAttenuation, lc->constantAttenuation};
                     pointCount++;
-                } else if (lc->type == LightType::Spot && spotCount < 4) {
+                } else if (lc->type == LightType::Spot && spotCount < WEB_MAX_SPOT_LIGHTS) {
                     Math::Vector3 pos = xf->position;
                     Math::Vector3 fwd = xf->rotation.GetForward();
                     lit.spotPos[spotCount] = {pos.x, pos.y, pos.z, lc->range};
@@ -4246,11 +4286,8 @@ void RenderSystem::Update(f32 deltaTime) {
                     const Math::Vector3 right =
                         xf->rotation.Rotate(Math::Vector3(1.0f, 0.0f, 0.0f)).Normalized();
                     lit.spotCookieRight[spotCount] = {right.x, right.y, right.z, 0.0f};
-                    // The atlas is filled in the same order this loop runs, so
-                    // a spot's cell IS its slot -- both skip non-cookie lights
-                    // the same way.
-                    const f32 cell = lc->cookieEnabled ? static_cast<f32>(cookieCell) : -1.0f;
-                    if (lc->cookieEnabled && cookieCell < kWebCookieCells) cookieCell++;
+                    const auto cellIt = cookieCellOf.find(lightEntity);
+                    const f32 cell = cellIt != cookieCellOf.end() ? static_cast<f32>(cellIt->second) : -1.0f;
                     lit.spotCookie[spotCount] = {
                         cell,
                         lc->cookieScale > 0.0f ? lc->cookieScale : 1.0f,
@@ -4258,6 +4295,27 @@ void RenderSystem::Update(f32 deltaTime) {
                         0.0f};
                     spotCount++;
                 }
+            }
+
+            // Transient point lights: fire from the elemental system, and
+            // anything else gameplay pushes each frame. Web collected them and
+            // never read them, while web_main said they glow (WP-15). They take
+            // whatever point slots the scene's own lights left, nearest first.
+            std::vector<const TransientPointLight*> transients;
+            for (const auto& t : m_TransientPointLights) transients.push_back(&t);
+            std::sort(transients.begin(), transients.end(), [&](const TransientPointLight* a, const TransientPointLight* b) {
+                return std::max(0.0f, (a->position - camPos).Length() - a->range) <
+                       std::max(0.0f, (b->position - camPos).Length() - b->range);
+            });
+            const LightComponent defaults{};
+            for (const TransientPointLight* t : transients) {
+                if (pointCount >= WEB_MAX_POINT_LIGHTS) break;
+                const u32 idx = 4 + pointCount;
+                lit.lightDir[idx] = {t->position.x, t->position.y, t->position.z, 1.0f};
+                lit.lightColor[idx] = {t->color.x, t->color.y, t->color.z, t->intensity};
+                lit.lightParams[idx] = {t->range, defaults.linearAttenuation, defaults.quadraticAttenuation,
+                                        defaults.constantAttenuation};
+                pointCount++;
             }
         }
 

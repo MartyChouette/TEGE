@@ -22,19 +22,23 @@
 
 // X1(name) for a single vec4, XN(name, count) for an array of them.
 #define ENJIN_WEB_LIGHTING_FIELDS(X1, XN) \
-    XN(lightDir, 8)               /* 128  (0-3: dir directions, 4-7: point positions) */ \
-    XN(lightColor, 8)             /* 128  (matching color.rgb + intensity.w) */ \
-    XN(lightParams, 8)            /* 128  (point: range, linear, quadratic, constant) */ \
+    /* 4 directional + WEB_MAX_POINT_LIGHTS (16) points. Resized in place from */ \
+    /* 8 when the point cap went from 4 to 16 (WP-15); every reader is generated */ \
+    /* from this list, so nothing holds the old offsets. */ \
+    XN(lightDir, 20)              /* 320  (0-3: dir directions, 4-19: point positions) */ \
+    XN(lightColor, 20)            /* 320  (matching color.rgb + intensity.w) */ \
+    XN(lightParams, 20)           /* 320  (point: range, linear, quadratic, constant) */ \
     X1(ambientColor)              /* 16 */ \
     X1(fogColor)                  /* 16 */ \
     X1(fogParams)                 /* 16 */ \
     X1(shadowParams)              /* 16 */ \
     X1(lightCount)                /* 16   (x=dir, y=point, z=spot) */ \
     /* Spot lights (separate arrays since they need both position and direction) */ \
-    XN(spotPos, 4)                /* 64   position.xyz, range.w */ \
-    XN(spotDir, 4)                /* 64   direction.xyz */ \
-    XN(spotColor, 4)              /* 64   color.rgb, intensity.w */ \
-    XN(spotParams, 4)             /* 64   innerCutoff.x, outerCutoff.y */ \
+    /* WEB_MAX_SPOT_LIGHTS (8) of each, up from 4 (WP-15) */ \
+    XN(spotPos, 8)                /* 128  position.xyz, range.w */ \
+    XN(spotDir, 8)                /* 128  direction.xyz */ \
+    XN(spotColor, 8)              /* 128  color.rgb, intensity.w */ \
+    XN(spotParams, 8)             /* 128  innerCutoff.x, outerCutoff.y */ \
     X1(windData)                  /* 16   xyz = wind dir * strength, w = wind clock */ \
     /* Sky palette + atmosphere (mirrors the sky block in pbr.wgsl/SKY_WGSL) */ \
     X1(skyTop)                    /* xyz zenith color, w = configured flag */ \
@@ -48,8 +52,8 @@
     /* Light cookies. APPENDED rather than squeezed into the spot arrays: every */ \
     /* field above keeps its offset, so nothing that writes this UBO had to be */ \
     /* touched or re-checked. */ \
-    XN(spotCookie, 4)             /* 64   x = atlas cell (-1 = none), y = scale, z = intensity */ \
-    XN(spotCookieRight, 4)        /* 64   xyz = the light's local +X */ \
+    XN(spotCookie, 8)             /* 128  x = atlas cell (-1 = none), y = scale, z = intensity */ \
+    XN(spotCookieRight, 8)        /* 128  xyz = the light's local +X */ \
     /* Baked lightmap strength in x. The atlases are textures on the frame */ \
     /* group; only the dial lives here. */ \
     X1(lightmapParams)            /* 16 */ \
