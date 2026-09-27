@@ -56,6 +56,7 @@
 #include "Enjin/GUI/UISystem.h"
 #include "Enjin/GUI/UITemplates.h"
 #include "Enjin/GUI/ControlsScreen.h"
+#include "Enjin/ECS/Systems/HoverHighlightSystem.h"
 #include "Enjin/GUI/GameMenus.h"
 #include "Enjin/GUI/EngineSplash.h"
 #include "Enjin/ECS/Components/ArtStyle.h"
@@ -663,6 +664,8 @@ public:
         // nothing (WP-2).
         Enjin::Scripting::SetBindingsDialogueSystem(&m_DialogueSystem);
         Enjin::Scripting::SetBindingsSceneManager(&m_SceneManager);
+        // Elemental_* script calls; editor play was the only runtime that set it (EP-6)
+        Enjin::Scripting::SetBindingsElemental(&m_ElementalSystem);
         Enjin::Scripting::SetBindingsFlowAdvanceFlag(&m_FlowAdvanceRequested);
         Enjin::Scripting::SetBindingsPhysics2D(m_Physics2D.get());
         Enjin::Scripting::SetBindingsNetworking(&m_NetworkSystem);
@@ -1002,6 +1005,7 @@ public:
         Enjin::Scripting::SetBindingsWind(nullptr);
         { extern Enjin::Effects::Water3D* s_VisualScriptWater; s_VisualScriptWater = nullptr; }
         Enjin::Scripting::SetBindingsSceneManager(nullptr);
+        Enjin::Scripting::SetBindingsElemental(nullptr);
         Enjin::Scripting::SetBindingsFlowAdvanceFlag(nullptr);
         Enjin::Scripting::SetBindingsPhysics2D(nullptr);
         Enjin::Scripting::SetBindingsNetworking(nullptr);
@@ -2282,6 +2286,15 @@ public:
                     m_Camera->SetPerspective(fov, aspect, cc->nearPlane, cc->farPlane);
                 }
             }
+        }
+        // Hover highlights, against the camera just synced. The cursor is in
+        // backing pixels, the swapchain's own space (EP-6).
+        if (m_World && m_Camera && m_Renderer) {
+            m_HoverHighlight.SetWorld(m_World.get());
+            m_HoverHighlight.SetPhysics(m_Physics.get());
+            m_HoverHighlight.UpdateForWindow(m_Camera->GetProjectionMatrix() * m_Camera->GetViewMatrix(),
+                                             static_cast<Enjin::f32>(m_Renderer->GetSwapChainWidth()),
+                                             static_cast<Enjin::f32>(m_Renderer->GetSwapChainHeight()));
         }
     }
 
@@ -3621,6 +3634,7 @@ private:
     // waves (a boat sampling the surface) sat on a flat plane.
     Enjin::Effects::Water3D m_Water3D;
     Enjin::Effects::ElementalSystem m_ElementalSystem;
+    Enjin::ECS::HoverHighlightSystem m_HoverHighlight;
     std::vector<Enjin::Effects::FireLight> m_FireLights;
     Enjin::f32 m_EffectsTime = 0.0f;
     // Web parity: desktop-only CPU systems now ticked on web too.

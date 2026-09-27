@@ -103,6 +103,7 @@ static bool IsCaptureRun() {
 }
 #include "Enjin/Input/MIDIInput.h"
 #include "Enjin/GUI/GameMenus.h"
+#include "Enjin/ECS/Systems/HoverHighlightSystem.h"
 #include "Enjin/GUI/ControlsScreen.h"
 #include "Enjin/GUI/ImGuiLayer.h"
 #include "Enjin/GUI/UIFontRegistry.h"
@@ -1073,6 +1074,9 @@ public:
             extern Enjin::Gameplay::ObjectPool* s_VisualScriptObjectPool;
             extern Enjin::Gameplay::QuestSystem* s_VisualScriptQuestSystem;
             extern Enjin::Gameplay::CinematicSystem* s_VisualScriptCinematic;
+            extern Enjin::Effects::ElementalSystem* s_VisualScriptElemental;
+            s_VisualScriptElemental = nullptr;
+            Enjin::Scripting::SetBindingsElemental(nullptr);
             s_VisualScriptSaveSystem = nullptr;
             s_VisualScriptWeather = nullptr;
             s_VisualScriptWater = nullptr;
@@ -2300,6 +2304,15 @@ public:
             }
         }
 
+        // Hover highlights, against the camera just synced (EP-6)
+        if (m_World && m_Camera && extent.width > 0 && extent.height > 0) {
+            m_HoverHighlight.SetWorld(m_World.get());
+            m_HoverHighlight.SetPhysics(m_Physics.get());
+            m_HoverHighlight.UpdateForWindow(m_Camera->GetProjectionMatrix() * m_Camera->GetViewMatrix(),
+                                             static_cast<Enjin::f32>(extent.width),
+                                             static_cast<Enjin::f32>(extent.height));
+        }
+
         // Splitscreen. The detection rule used to be written out here and
         // nowhere else, which is why the web player never split the screen at
         // all; it is RenderSystem::ApplySplitscreenFromWorld now and both
@@ -3507,6 +3520,12 @@ private:
             extern Enjin::Gameplay::ObjectPool* s_VisualScriptObjectPool;
             extern Enjin::Gameplay::QuestSystem* s_VisualScriptQuestSystem;
             extern Enjin::Gameplay::CinematicSystem* s_VisualScriptCinematic;
+            // Elemental spawns (fire, water, snow, steam) from visual scripts and
+            // AngelScript. Only editor play wired these, so the nodes and the
+            // Elemental_* calls did nothing in a built game (EP-6).
+            extern Enjin::Effects::ElementalSystem* s_VisualScriptElemental;
+            s_VisualScriptElemental = &m_ElementalSystem;
+            Enjin::Scripting::SetBindingsElemental(&m_ElementalSystem);
             s_VisualScriptSaveSystem = &m_TieredSaveSystem;
             s_VisualScriptWeather = &m_WeatherSystem;
             s_VisualScriptWater = &m_Water3D;
@@ -4569,6 +4588,7 @@ private:
     // Parity with the editor (EditorLayer) so shipped games run the same sim and
     // fire emitters light the scene as transient point lights.
     Enjin::Effects::ElementalSystem m_ElementalSystem;
+    Enjin::ECS::HoverHighlightSystem m_HoverHighlight;
     Enjin::f32 m_EffectsTime = 0.0f;
     std::vector<Enjin::Effects::FireLight> m_FireLights;
 

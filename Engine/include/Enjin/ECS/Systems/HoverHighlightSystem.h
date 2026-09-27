@@ -35,6 +35,13 @@ public:
                 f32 viewportWidth, f32 viewportHeight,
                 bool cursorOverUI);
 
+    // The players' form: the whole window is the view, the cursor is the
+    // mouse, or the middle of the screen while the mouse is captured (the
+    // crosshair). A menu with focus, or the UI taking the pointer, clears.
+    // Only editor play had a hover system, so HoverHighlight did nothing in a
+    // built game (EP-6).
+    void UpdateForWindow(const Math::Matrix4& viewProjection, f32 width, f32 height);
+
     // Clears every hover flag. Called on stop, on scene change, and whenever
     // the cursor leaves the view -- otherwise the last hovered entity stays
     // lit forever with nothing pointing at it.

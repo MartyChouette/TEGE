@@ -4,6 +4,7 @@
 #include "Enjin/ECS/Components/HoverHighlight.h"
 #include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/Physics/IPhysicsBackend.h"
+#include "Enjin/Platform/Input.h"
 
 namespace Enjin {
 namespace ECS {
@@ -38,6 +39,17 @@ Entity HoverHighlightSystem::ResolveHighlightOwner(Entity hit) const {
         if (hl && hl->enabled && hl->includeChildren) return cur;
     }
     return INVALID_ENTITY;
+}
+
+void HoverHighlightSystem::UpdateForWindow(const Math::Matrix4& viewProjection, f32 width, f32 height) {
+    if (width <= 0.0f || height <= 0.0f || !Input::IsGameplayFocused()) {
+        Clear();
+        return;
+    }
+    const Math::Vector2 cursor = Input::IsMouseCaptured()
+        ? Math::Vector2(width * 0.5f, height * 0.5f)
+        : Input::GetMousePosition();
+    Update(viewProjection, cursor, width, height, Input::IsUIConsumedPointer());
 }
 
 void HoverHighlightSystem::Clear() {
