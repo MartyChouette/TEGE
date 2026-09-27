@@ -4,6 +4,7 @@
 #include "Enjin/Input/InputProjectSettings.h"
 #include "Enjin/Platform/Input.h"
 #include "Enjin/ECS/World.h"
+#include "Enjin/ECS/Components/ActionTrigger.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include "Enjin/Scripting/ScriptEngine.h"
@@ -237,6 +238,56 @@ ENJIN_TEST(TouchActionBinding, ACustomLayoutStickDrivesTheMoveActions) {
     ENJIN_EXPECT_EQ(s.stickActions[0], static_cast<int>(GameAction::MoveLeft));
     ENJIN_EXPECT_EQ(s.stickActions[2], static_cast<int>(GameAction::MoveForward));
     SetTouchProjectSettings(nullptr);
+}
+
+// IN-34: triggers stacked on one spot and doubled a preset's button, and a
+// script's buttons vanished at the next rebuild
+ENJIN_TEST(TouchActionBinding, TriggerButtonsSpreadOutAndScriptButtonsSurvive) {
+    InputActionMap map;
+    SetTouchActionMap(&map);
+    ECS::World world;
+    const ECS::Entity player = world.CreateEntity();
+    world.AddComponent<ECS::TransformComponent>(player, ECS::TransformComponent{});
+    world.AddComponent<ECS::ThirdPersonController>(player, ECS::ThirdPersonController{});
+    for (int a : { static_cast<int>(GameAction::Custom0), static_cast<int>(GameAction::Custom1),
+                   static_cast<int>(GameAction::Jump) }) {
+        const ECS::Entity e = world.CreateEntity();
+        ECS::ActionTriggerComponent t;
+        t.action = a;   // default spot for all three
+        world.AddComponent<ECS::ActionTriggerComponent>(e, t);
+    }
+    map.SetProjectAction(0, "One");
+    map.SetProjectAction(1, "Two");
+    ClearScriptTouchButtons();
+    ResetTouchPresetTracking();
+    ApplyTouchPresetForWorld(&world);
+
+    const Input::TouchScheme& s = Input::GetTouchScheme();
+    int jumps = 0;
+    for (int i = 0; i < s.buttonCount; ++i) {
+        if (s.buttons[i].action == static_cast<int>(GameAction::Jump)) ++jumps;
+        for (int k = i + 1; k < s.buttonCount; ++k) {
+            const bool same = s.buttons[i].colFromRight == s.buttons[k].colFromRight &&
+                              s.buttons[i].rowFromBottom == s.buttons[k].rowFromBottom;
+            ENJIN_EXPECT_FALSE(same);
+        }
+    }
+    ENJIN_EXPECT_EQ(jumps, 1);
+
+    // A script's button comes back after a rebuild
+    Input::TouchButtonDef b;
+    b.action = static_cast<int>(GameAction::Custom2);
+    b.colFromRight = 3.0f;
+    b.rowFromBottom = 3.0f;
+    AddScriptTouchButton(b);
+    ApplyTouchPresetForWorld(&world);   // tracking was reset by the add
+    bool found = false;
+    const Input::TouchScheme& after = Input::GetTouchScheme();
+    for (int i = 0; i < after.buttonCount; ++i) found |= after.buttons[i].action == static_cast<int>(GameAction::Custom2);
+    ENJIN_EXPECT_TRUE(found);
+
+    ClearScriptTouchButtons();
+    SetTouchActionMap(nullptr);
 }
 
 ENJIN_TEST_MAIN()

@@ -2,6 +2,7 @@
 
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Platform/Types.h"
+#include "Enjin/Platform/Input.h"
 
 namespace Enjin {
 namespace ECS { class World; }
@@ -72,6 +73,15 @@ ENJIN_API TouchPreset TouchPresetForWorld(ECS::World* world);
 // SetTouchActionMap(nullptr) resets tracking.
 ENJIN_API bool ApplyTouchPresetForWorld(ECS::World* world);
 ENJIN_API void ResetTouchPresetTracking();
+
+// Buttons a script added (Touch_AddButton, Touch_AddActionButton). They lived
+// only in the current scheme, so the next rebuild (a trigger added, a project
+// setting changed, an action starting to be read) wiped them (IN-34). The
+// bridge keeps them and every rebuild adds them back. Cleared when a scene's
+// scripts start or shut down, so they do not follow the player to the next
+// scene.
+ENJIN_API void AddScriptTouchButton(const Input::TouchButtonDef& button);
+ENJIN_API void ClearScriptTouchButtons();
 
 // ---- UI pointer routing ------------------------------------------------------
 // Give Core the UI's hit test, so a touch landing on an interactive element

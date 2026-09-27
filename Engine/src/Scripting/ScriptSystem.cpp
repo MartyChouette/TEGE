@@ -1,6 +1,7 @@
 #include "Enjin/Scripting/ScriptSystem.h"
 #include "Enjin/Scripting/ScriptEngine.h"
 #include "Enjin/Scripting/ScriptBindings.h"   // ClearBindingsEventListeners on teardown + mouse pick
+#include "Enjin/Input/TouchActionBridge.h"   // script touch buttons belong to their scene
 #include "Enjin/Platform/Input.h"            // mouse position/buttons for OnMouseEnter/OnClick
 #include "Enjin/ECS/Components/Skeleton.h"   // AnimatorComponent — animation-event wiring
 #include "Enjin/Scripting/ScriptPropertyParser.h"
@@ -507,6 +508,8 @@ void ScriptSystem::InitScript(ECS::Entity entity, usize index) {
 
 void ScriptSystem::InitializeAllScripts() {
     if (!m_World || !m_ScriptEngine) return;
+    // A new scene's scripts add their own touch buttons
+    InputSystem::ClearScriptTouchButtons();
 
     for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::ScriptComponent>()) {
         auto* sc = m_World->GetComponent<ECS::ScriptComponent>(entity);
@@ -603,6 +606,8 @@ void ScriptSystem::ShutdownAllScripts() {
     // The script clock restarts with the scripts. Without this a second Play in
     // the editor continues the first run's Time_GetTime().
     Scripting::ResetBindingsTime();
+    // Their touch buttons go with them
+    InputSystem::ClearScriptTouchButtons();
 
     ENJIN_LOG_INFO(Script, "All scripts shut down");
 }

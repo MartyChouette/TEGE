@@ -159,6 +159,7 @@ static void Touch_ClearButtons() {
     // action/keyCode (slot 0 used to keep Jump and press it under any label).
     for (int i = 0; i < Input::kMaxTouchButtons; ++i) s.buttons[i] = Input::TouchButtonDef{};
     Input::SetTouchScheme(s);
+    InputSystem::ClearScriptTouchButtons();
 }
 
 // keyCode: GLFW key held while pressed; negative = mouse button (-1 = left
@@ -191,6 +192,7 @@ static void Touch_AddButton(const std::string& label, int keyCode,
     for (int i = 0; i < 8; ++i) b.label[i] = '\0';
     for (int i = 0; i < 7 && i < static_cast<int>(label.size()); ++i) b.label[i] = label[i];
     Input::SetTouchScheme(s);
+    InputSystem::AddScriptTouchButton(b);   // survives the next rebuild (IN-34)
 }
 
 // Add a button bound to a GameAction, so it presses the action's CURRENT
@@ -207,6 +209,7 @@ static void Touch_AddActionButton(const std::string& label, int action,
     for (int i = 0; i < 8; ++i) b.label[i] = '\0';
     for (int i = 0; i < 7 && i < static_cast<int>(label.size()); ++i) b.label[i] = label[i];
     Input::SetTouchScheme(s);
+    InputSystem::AddScriptTouchButton(b);   // survives the next rebuild (IN-34)
 }
 
 static void Touch_SetStick(bool enabled, int leftKey, int rightKey, int upKey, int downKey) {

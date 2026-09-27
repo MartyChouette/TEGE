@@ -1,3 +1,4 @@
+#include <cmath>
 #include <algorithm>
 #include "Enjin/Input/TouchActionBridge.h"
 #include "Enjin/Input/InputAction.h"
@@ -22,6 +23,7 @@ namespace {
     const InputProjectSettings* s_ProjectSettings = nullptr;
     GUI::UISystem* s_UISystem = nullptr;
     u64 s_LastFingerprint = 0;
+    std::vector<Input::TouchButtonDef> s_ScriptButtons;
     bool s_HasFingerprint = false;
 
     // The actions each controller type consumes, in hint order. This ONE table
@@ -215,16 +217,48 @@ namespace {
         // Scene-authored buttons: an ActionTriggerComponent asking for one. This
         // is what makes a game-specific control (bullet time, a horn, a torch)
         // appear on mobile from dropping a component in the scene, no script.
+        // An action that already has a button gets no second one, and a button
+        // whose spot is taken moves to the next free slot of the cluster: every
+        // trigger defaulted to the same spot and they stacked (IN-34).
+        auto hasAction = [&s](int action) {
+            for (int i = 0; i < s.buttonCount; ++i) if (s.buttons[i].action == action) return true;
+            return false;
+        };
+        auto spotTaken = [&s](f32 col, f32 row) {
+            for (int i = 0; i < s.buttonCount; ++i) {
+                if (std::fabs(s.buttons[i].colFromRight - col) < 0.5f &&
+                    std::fabs(s.buttons[i].rowFromBottom - row) < 0.5f) return true;
+            }
+            return false;
+        };
+        auto freeSlot = [&](f32& col, f32& row, f32& radius) {
+            if (!spotTaken(col, row)) return;
+            for (const Slot& slot : kSlots) {
+                if (spotTaken(slot.col, slot.row)) continue;
+                col = slot.col; row = slot.row; radius = slot.radiusFrac;
+                return;
+            }
+        };
         if (world) {
             for (ECS::Entity e : world->GetEntitiesWithComponent<ECS::ActionTriggerComponent>()) {
                 auto* t = world->GetComponent<ECS::ActionTriggerComponent>(e);
                 if (!t || !t->touchButton || t->action < 0) continue;
                 if (s_TouchMap ? !s_TouchMap->IsValidAction(t->action)
                                : t->action >= static_cast<int>(GameAction::Count)) continue;
+                if (hasAction(t->action)) continue;
                 const char* label = s_TouchMap ? s_TouchMap->GetActionName(t->action)
                                                : GetActionInfo(static_cast<GameAction>(t->action)).touchLabel;
-                AddActionButton(s, t->action, label, t->touchSize, t->touchCol, t->touchRow, 0);
+                f32 col = t->touchCol, row = t->touchRow, radius = t->touchSize;
+                freeSlot(col, row, radius);
+                AddActionButton(s, t->action, label, radius, col, row, 0);
             }
+        }
+
+        // Buttons scripts added, kept across rebuilds
+        for (const Input::TouchButtonDef& b : s_ScriptButtons) {
+            if (s.buttonCount >= Input::kMaxTouchButtons) break;
+            if (b.action >= 0 && hasAction(b.action)) continue;
+            s.buttons[s.buttonCount++] = b;
         }
 
         // Project overrides last: a hand-authored layout replaces the buttons
@@ -356,6 +390,24 @@ bool ApplyTouchPresetForWorld(ECS::World* world) {
 }
 
 void ResetTouchPresetTracking() { s_HasFingerprint = false; }
+
+void AddScriptTouchButton(const Input::TouchButtonDef& button) {
+    // The same action or key added again (a scene restarting its script)
+    // replaces the old one rather than stacking a copy
+    for (auto& b : s_ScriptButtons) {
+        const bool same = button.action >= 0 ? b.action == button.action
+                                             : (b.action < 0 && b.keyCode == button.keyCode);
+        if (same) { b = button; ResetTouchPresetTracking(); return; }
+    }
+    s_ScriptButtons.push_back(button);
+    ResetTouchPresetTracking();
+}
+
+void ClearScriptTouchButtons() {
+    if (s_ScriptButtons.empty()) return;
+    s_ScriptButtons.clear();
+    ResetTouchPresetTracking();
+}
 
 // ---- Drawing -----------------------------------------------------------------
 
