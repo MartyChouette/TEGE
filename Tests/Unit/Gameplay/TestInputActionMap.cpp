@@ -215,4 +215,88 @@ ENJIN_TEST(InputActionMap, ResetKeepsProjectActionsAndPlayerPreferences) {
     ENJIN_EXPECT_TRUE(map.GetInvertY());
 }
 
+// IN-0: a project was held to eight numbered Custom slots. It now names as
+// many actions as it needs, each in a stable slot, and a player's saved
+// bindings find them by NAME, so reordering the project's list moves nothing.
+static CustomActionDef MakeAction(i32 slot, const char* name, KeyCode key) {
+    CustomActionDef d;
+    d.slot = slot;
+    d.name = name;
+    d.key = static_cast<i32>(key);
+    return d;
+}
+
+ENJIN_TEST(InputActionMap, ProjectActionsPastTheEightSlots) {
+    // Arrange: twelve named actions, the last well past Custom7.
+    InputActionMap map;
+    InputProjectSettings project;
+    for (i32 i = 0; i < 11; ++i) project.customActions.push_back(MakeAction(i, "Filler", KeyCode::F1));
+    project.customActions.push_back(MakeAction(40, "Grapple", KeyCode::G));
+
+    // Act
+    project.ApplyTo(map);
+
+    // Assert: the action exists, is listed, bound, and found by name.
+    const i32 grapple = static_cast<i32>(kFirstProjectAction) + 40;
+    ENJIN_ASSERT_TRUE(map.GetActionCount() > grapple);
+    ENJIN_EXPECT_TRUE(map.IsProjectAction(grapple));
+    ENJIN_EXPECT_TRUE(map.IsActionListed(grapple));
+    ENJIN_EXPECT_EQ(map.FindAction("Grapple"), grapple);
+    ENJIN_EXPECT_TRUE(HasKey(map, static_cast<GameAction>(grapple), KeyCode::G));
+    ENJIN_EXPECT_EQ(std::string(map.GetActionName(grapple)), std::string("Grapple"));
+    // An unnamed slot in between is not listed.
+    ENJIN_EXPECT_FALSE(map.IsActionListed(static_cast<i32>(kFirstProjectAction) + 20));
+    // Engine actions are found by display name too.
+    ENJIN_EXPECT_EQ(map.FindAction(GetActionInfo(GameAction::Jump).name), static_cast<i32>(GameAction::Jump));
+    ENJIN_EXPECT_EQ(map.FindAction("Nothing Called This"), -1);
+}
+
+ENJIN_TEST(InputActionMap, DefineProjectActionReusesOrTakesLowestFreeSlot) {
+    InputActionMap map;
+    map.SetProjectAction(0, "Taken");
+    const i32 a = map.DefineProjectAction("Glide");
+    ENJIN_EXPECT_EQ(a, static_cast<i32>(kFirstProjectAction) + 1);
+    ENJIN_EXPECT_EQ(map.DefineProjectAction("Glide"), a);   // same name, same action
+    ENJIN_EXPECT_EQ(map.DefineProjectAction(""), -1);
+    ENJIN_EXPECT_EQ(map.SetProjectAction(static_cast<i32>(kMaxProjectActions), "Too Far"), -1);
+}
+
+ENJIN_TEST(InputActionMap, SavedBindingsFollowTheActionNameNotTheSlot) {
+    // Arrange: the player rebinds Grapple while it lives in slot 12.
+    InputActionMap before;
+    before.SetProjectAction(12, "Grapple");
+    const i32 oldId = static_cast<i32>(kFirstProjectAction) + 12;
+    before.RebindAction(oldId, static_cast<i32>(KeyCode::Q));
+    const std::string saved = before.ToJson();
+
+    // Act: a later version of the game moved Grapple to slot 3.
+    InputActionMap after;
+    after.SetProjectAction(3, "Grapple");
+    ENJIN_ASSERT_TRUE(after.FromJson(saved));
+
+    // Assert: the rebind landed on Grapple, and slot 12 stayed empty.
+    const i32 newId = static_cast<i32>(kFirstProjectAction) + 3;
+    ENJIN_EXPECT_TRUE(HasKey(after, static_cast<GameAction>(newId), KeyCode::Q));
+    ENJIN_EXPECT_FALSE(after.IsActionListed(oldId));
+}
+
+ENJIN_TEST(InputActionMap, ProjectReloadForgetsDeletedActions) {
+    InputActionMap map;
+    InputProjectSettings project;
+    project.customActions.push_back(MakeAction(5, "Old", KeyCode::O));
+    project.ApplyTo(map);
+    ENJIN_EXPECT_NE(map.FindAction("Old"), -1);
+
+    project.customActions.clear();
+    project.ApplyTo(map);
+    ENJIN_EXPECT_EQ(map.FindAction("Old"), -1);
+    ENJIN_EXPECT_FALSE(map.IsActionListed(static_cast<i32>(kFirstProjectAction) + 5));
+}
+
+ENJIN_TEST(InputActionMap, ActionIdentifiersMatchTheEnum) {
+    ENJIN_EXPECT_EQ(std::string(GetActionIdentifier(GameAction::MoveForward)), std::string("MoveForward"));
+    ENJIN_EXPECT_EQ(std::string(GetActionIdentifier(GameAction::DialogueAdvance)), std::string("DialogueAdvance"));
+    ENJIN_EXPECT_EQ(std::string(GetActionIdentifier(GameAction::Custom7)), std::string("Custom7"));
+}
+
 ENJIN_TEST_MAIN()

@@ -41,8 +41,10 @@ enum class GameAction : u32 {
     UINavLeft,
     UINavRight,
     DialogueAdvance,
-    // Game-defined slots. A game names them (InputActionMap::SetCustomActionName)
-    // and binds them at boot; unnamed slots stay hidden from menus and touch.
+    // Project actions start here. The eight Custom slots are the first eight of
+    // them, kept so saved ordinals and scripts that name GameAction::Custom0
+    // still resolve; a project can have as many named actions as it wants past
+    // them (IN-0). Unnamed ones stay hidden from menus and touch.
     Custom0,
     Custom1,
     Custom2,
@@ -54,7 +56,12 @@ enum class GameAction : u32 {
     Count
 };
 
-constexpr u32 kCustomActionCount = 8;
+constexpr u32 kCustomActionCount = 8;    // the legacy slots with enum names
+// Engine actions are 0 .. kFirstProjectAction-1; project actions are every id
+// from kFirstProjectAction up to InputActionMap::GetActionCount(). Use the
+// map's count, never GameAction::Count, as the upper bound of a valid id.
+constexpr u32 kFirstProjectAction = static_cast<u32>(GameAction::Custom0);
+constexpr u32 kMaxProjectActions = 256;  // a ceiling on a mistake, not a budget
 
 // Menu grouping (GetActionCategory). Ordinals are what GameMenus indexes.
 enum class ActionCategory : i32 {
@@ -94,8 +101,12 @@ struct ActionInfo {
     const char* hintVerb;     // lowercase verb for the controls hint ("jump")
 };
 
-// Table lookup, valid for every GameAction below Count.
+// Table lookup. Engine actions get their row; any project action gets the
+// shared project row (category Custom, a touch button, Press).
 ENJIN_API const ActionInfo& GetActionInfo(GameAction action);
+// The C++ enumerator's name ("MoveForward", "Custom3"), for the generated
+// script enum; empty for project actions past the legacy slots.
+ENJIN_API const char* GetActionIdentifier(GameAction action);
 
 // Input binding type
 enum class BindingType : u32 {
@@ -217,11 +228,26 @@ public:
     // with none. Run automatically by FromJson; returns how many were dropped.
     u32 DropInvalidBindings();
 
-    // Custom action slots: a game names Custom0..7 at boot. Names survive
+    // Project actions. A project names as many as it wants, each in a stable
+    // SLOT (id = kFirstProjectAction + slot), so saved bindings keep pointing at
+    // the same action when others are added or removed. Names survive
     // ResetToDefaults (they describe the game, not the player's bindings).
+    // SetCustomActionName names any project id, growing the map to reach it.
     void SetCustomActionName(GameAction action, const std::string& name);
-    // Whether menus / hints should list this action: everything except
-    // unnamed Custom slots.
+    // Name the project action in `slot`; returns its id, or -1 past the ceiling
+    i32 SetProjectAction(i32 slot, const std::string& name);
+    // The named project action, or a new one in the lowest free slot (scripts)
+    i32 DefineProjectAction(const std::string& name);
+    // Unname every project action. A project load starts here, so an action
+    // deleted from Project Settings stops existing instead of staying named
+    // and bound (IN-13). Not part of Reset: a script's Define survives that.
+    void ClearProjectActionNames();
+    // Any action by display name, engine or project; -1 when there is none
+    i32 FindAction(const std::string& name) const;
+    bool IsProjectAction(i32 index) const { return index >= static_cast<i32>(kFirstProjectAction) && index < GetActionCount(); }
+    bool IsValidAction(i32 index) const { return index >= 0 && index < GetActionCount(); }
+    // Whether menus / hints should list this action: every engine action, and
+    // project actions that have a name.
     bool IsActionListed(i32 index) const;
 
     // Display helpers
@@ -251,23 +277,26 @@ public:
 
 private:
     void LoadTableDefaults();   // the ActionInfo table alone
+    void EnsureActionCount(u32 count);   // grow every per-action array to count
     bool IsBindingActive(const InputBinding& binding) const;
     bool IsBindingPressed(const InputBinding& binding) const;
     bool IsBindingReleased(const InputBinding& binding) const;
 
-    ActionConfig m_Actions[static_cast<u32>(GameAction::Count)];
-    std::string m_CustomNames[kCustomActionCount];
+    // One entry per action id, engine actions first. Grown, never shrunk, as
+    // project actions are named (the legacy eight slots always exist).
+    std::vector<ActionConfig> m_Actions;
+    std::vector<std::string> m_ProjectNames;   // indexed by slot
     std::function<void(InputActionMap&)> m_ProjectDefaults;
     bool m_DefaultsLoaded = false;   // the first load has no preferences to keep
 
     // Toggle state tracking
-    bool m_ToggleState[static_cast<u32>(GameAction::Count)] = {};
+    std::vector<u8> m_ToggleState;
 
     // Per-action state (computed each frame)
-    bool m_ActionDown[static_cast<u32>(GameAction::Count)] = {};
-    bool m_ActionPressed[static_cast<u32>(GameAction::Count)] = {};
-    bool m_ActionReleased[static_cast<u32>(GameAction::Count)] = {};
-    f32  m_ActionValue[static_cast<u32>(GameAction::Count)] = {};
+    std::vector<u8> m_ActionDown;
+    std::vector<u8> m_ActionPressed;
+    std::vector<u8> m_ActionReleased;
+    std::vector<f32> m_ActionValue;
 };
 
 } // namespace InputSystem

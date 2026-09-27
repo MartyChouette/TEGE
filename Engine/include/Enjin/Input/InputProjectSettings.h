@@ -19,9 +19,11 @@ class InputActionMap;
 // Player rebinds (bindings.json) are applied AFTER this, so a project sets the
 // defaults and the player still owns their own controls.
 
-// One game-defined action occupying a GameAction::Custom0..7 slot.
+// One named project action. Its slot is its stable identity: the action's id
+// is kFirstProjectAction + slot (the first eight are GameAction::Custom0..7),
+// so a player's saved bindings keep pointing at it when others come and go.
 struct CustomActionDef {
-    i32 slot = 0;              // 0-7 -> GameAction::Custom0 + slot
+    i32 slot = 0;              // 0 .. kMaxProjectActions-1
     std::string name;          // "SLO-MO"; empty leaves the slot hidden
     i32 key = -1;              // KeyCode, or -1
     i32 mouse = -1;            // MouseButton, or -1

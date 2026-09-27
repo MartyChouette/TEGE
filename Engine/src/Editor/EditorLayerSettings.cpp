@@ -2585,12 +2585,13 @@ void EditorLayer::DrawSettingsSection_InputTouch() {
         changed = true;
     }
 
-    // 8 slots exist; each row occupies one.
-    if (settings.customActions.size() < InputSystem::kCustomActionCount) {
+    // As many actions as the game needs (IN-0; there were eight numbered
+    // slots). Each takes the lowest free slot, which is its stable identity:
+    // a player's saved bindings keep pointing at it when others are removed.
+    if (settings.customActions.size() < InputSystem::kMaxProjectActions) {
         if (ImGui::Button("+ Add Action")) {
             InputSystem::CustomActionDef def;
-            // First free slot.
-            for (i32 slot = 0; slot < static_cast<i32>(InputSystem::kCustomActionCount); ++slot) {
+            for (i32 slot = 0; slot < static_cast<i32>(InputSystem::kMaxProjectActions); ++slot) {
                 bool used = false;
                 for (const auto& e : settings.customActions) if (e.slot == slot) used = true;
                 if (!used) { def.slot = slot; break; }
@@ -2599,8 +2600,6 @@ void EditorLayer::DrawSettingsSection_InputTouch() {
             settings.customActions.push_back(def);
             changed = true;
         }
-    } else {
-        ImGui::TextDisabled("All 8 action slots are in use.");
     }
 
     // ---- Touch --------------------------------------------------------------

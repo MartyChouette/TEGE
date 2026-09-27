@@ -80,11 +80,13 @@ These answer only while gameplay has input focus, the same as `InputAction_*`: w
 
 > You do not need scripts for this. Name your actions in **Project Settings > Input & Touch**, then wire them up in a scene with an **Action Trigger** component (pick an action, pick what it does). The calls below are the optional scripted path.
 
-`GameAction::Custom0..Custom7` are game-defined slots. Name one at boot and bind it; from then on the controls menu, the bottom-left controls hint and touch treat it like a built-in action. Unnamed slots stay hidden.
+A game defines as many actions as it needs, by name. Each one gets an id you pass to every `InputAction_*` call; from then on the controls menu, the bottom-left controls hint and touch treat it like a built-in action. A player's saved bindings find project actions by name, so reordering them in Project Settings does not move anyone's rebinds.
 
-- `InputAction_SetName(int action, const string &in name)` — e.g. `InputAction_SetName(GameAction::Custom0, "SLO-MO")`
+- `int InputAction_Find(const string &in name)` returns the action with that display name, built-in or project, or -1. Use it for actions named in Project Settings: `int grapple = InputAction_Find("Grapple");`
+- `int InputAction_Define(const string &in name)` returns the project action with that name, creating it if the project did not
 - `InputAction_Rebind(int action, int keyCode)`, `InputAction_AddGamepadBinding(int action, int button)`, `InputAction_AddMouseBinding(int action, int button)`, `InputAction_ClearBindings(int action)`
-- Read it like any action: `InputAction_IsPressed(GameAction::Custom0)`
+- Read it like any action: `InputAction_IsPressed(grapple)`
+- `GameAction::Custom0..Custom7` still work and are the first eight project actions. `InputAction_SetName(int action, const string &in name)` names one, e.g. `InputAction_SetName(GameAction::Custom0, "SLO-MO")`
 - Menu/dialogue actions also exist: `UIConfirm`, `UICancel`, `UINavUp/Down/Left/Right`, `DialogueAdvance`
 
 ## Input — Mobile Touch Overlay
@@ -775,7 +777,7 @@ Raster-tier screen-space effects running in the post-process fragment shader. Al
 
 ## Input Actions
 
-**Enum `GameAction`:** `MoveForward = 0`, `MoveBack = 1`, `MoveLeft = 2`, `MoveRight = 3`, `Jump = 4`, `Sprint = 5`, `Crouch = 6`, `Dash = 7`, `Interact = 8`, `Attack = 9`, `Block = 10`, `Pause = 11`, `LookUp = 12`, `LookDown = 13`, `LookLeft = 14`, `LookRight = 15`, `CameraZoomIn = 16`, `CameraZoomOut = 17`
+**Enum `GameAction`:** `MoveForward = 0`, `MoveBack = 1`, `MoveLeft = 2`, `MoveRight = 3`, `Jump = 4`, `Sprint = 5`, `Crouch = 6`, `Dash = 7`, `Interact = 8`, `Attack = 9`, `Block = 10`, `Pause = 11`, `LookUp = 12`, `LookDown = 13`, `LookLeft = 14`, `LookRight = 15`, `CameraZoomIn = 16`, `CameraZoomOut = 17`, `UIConfirm = 18`, `UICancel = 19`, `UINavUp = 20`, `UINavDown = 21`, `UINavLeft = 22`, `UINavRight = 23`, `DialogueAdvance = 24`, `Custom0 = 25` .. `Custom7 = 32`. Project actions past the eighth have no enum value; get their id with `InputAction_Find`
 
 ### Query
 
@@ -927,7 +929,7 @@ Per-entity (Braid-style) and scene-wide (Sands of Time-style) time rewind.
 
 ## Every registered binding
 
-1352 global functions, grouped by where they are registered. These lines are
+1354 global functions, grouped by where they are registered. These lines are
 GENERATED from the registration strings themselves, so a signature here is the
 one the engine accepts -- if it disagrees with the prose above, the prose is
 wrong. Regenerate with `python tools/gen_scripting_api.py` after adding a
@@ -1770,7 +1772,7 @@ merely absent.
 - `void Touch_SetStickActions(bool, int, int, int, int)`
 - `void Touch_UsePreset(int)`
 
-### Input actions and rebinding  (25)
+### Input actions and rebinding  (27)
 
 - `Vector2 InputAction_GetMovement()`
 - `bool InputAction_IsCrouchToggle()`
@@ -1780,6 +1782,8 @@ merely absent.
 - `bool InputAction_IsSprintToggle()`
 - `float InputAction_GetMouseSensitivity()`
 - `float InputAction_GetValue(int action)`
+- `int InputAction_Define(const string &in name)`
+- `int InputAction_Find(const string &in name)`
 - `int InputAction_GetCount()`
 - `int InputAction_PollNextKey()`
 - `string InputAction_GetBindingName(int index)`

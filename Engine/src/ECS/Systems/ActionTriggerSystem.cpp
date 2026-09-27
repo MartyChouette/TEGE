@@ -86,8 +86,7 @@ void ActionTriggerSystem::Update(World* world, f32 dt) {
     for (Entity e : world->GetEntitiesWithComponent<ActionTriggerComponent>()) {
         auto* trigger = world->GetComponent<ActionTriggerComponent>(e);
         if (!trigger) continue;
-        if (trigger->action < 0 ||
-            trigger->action >= static_cast<i32>(InputSystem::GameAction::Count)) continue;
+        if (!m_InputMap->IsValidAction(trigger->action)) continue;
 
         auto action = static_cast<InputSystem::GameAction>(trigger->action);
         bool pressed = m_InputMap->IsActionPressed(action);

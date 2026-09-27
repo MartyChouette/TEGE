@@ -65,20 +65,57 @@ namespace {
     static_assert(sizeof(kActionInfo) / sizeof(kActionInfo[0]) == static_cast<size_t>(GameAction::Count),
                   "kActionInfo must have exactly one row per GameAction, in enum order");
 
-    bool IsCustomAction(u32 i) {
-        return i >= static_cast<u32>(GameAction::Custom0) &&
-               i <  static_cast<u32>(GameAction::Custom0) + kCustomActionCount;
-    }
+    // Every project action past the legacy eight shares this row
+    const ActionInfo kProjectActionInfo =
+        { "Custom", AC::Custom, N, N, N, N, N, N, true, 0.5f, PRESS, TH::Button, "", "" };
+}
+
+namespace {
+    // One per enumerator, in enum order. The script enum is registered from
+    // this, so a new action is one row here and one in kActionInfo.
+    const char* const kActionIdent[] = {
+        "MoveForward", "MoveBack", "MoveLeft", "MoveRight", "Jump", "Sprint", "Crouch", "Dash",
+        "Interact", "Attack", "Block", "Pause", "LookUp", "LookDown", "LookLeft", "LookRight",
+        "CameraZoomIn", "CameraZoomOut", "UIConfirm", "UICancel", "UINavUp", "UINavDown",
+        "UINavLeft", "UINavRight", "DialogueAdvance",
+        "Custom0", "Custom1", "Custom2", "Custom3", "Custom4", "Custom5", "Custom6", "Custom7",
+    };
+    static_assert(sizeof(kActionIdent) / sizeof(kActionIdent[0]) == static_cast<size_t>(GameAction::Count),
+                  "kActionIdent must have one name per GameAction, in enum order");
+}
+
+const char* GetActionIdentifier(GameAction action) {
+    const u32 i = static_cast<u32>(action);
+    return i < static_cast<u32>(GameAction::Count) ? kActionIdent[i] : "";
 }
 
 const ActionInfo& GetActionInfo(GameAction action) {
-    u32 i = static_cast<u32>(action);
-    if (i >= static_cast<u32>(GameAction::Count)) i = 0;
-    return kActionInfo[i];
+    const u32 i = static_cast<u32>(action);
+    if (i < static_cast<u32>(GameAction::Count)) return kActionInfo[i];
+    return kProjectActionInfo;
 }
 
 InputActionMap::InputActionMap() {
+    EnsureActionCount(static_cast<u32>(GameAction::Count));
     LoadDefaults();
+}
+
+void InputActionMap::EnsureActionCount(u32 count) {
+    if (count > kFirstProjectAction + kMaxProjectActions) count = kFirstProjectAction + kMaxProjectActions;
+    if (m_Actions.size() >= count) return;
+    const u32 old = static_cast<u32>(m_Actions.size());
+    m_Actions.resize(count);
+    for (u32 i = old; i < count; ++i) {
+        m_Actions[i] = ActionConfig{};
+        m_Actions[i].action = static_cast<GameAction>(i);
+        m_Actions[i].mode = ActionMode::Press;
+    }
+    m_ToggleState.resize(count, 0);
+    m_ActionDown.resize(count, 0);
+    m_ActionPressed.resize(count, 0);
+    m_ActionReleased.resize(count, 0);
+    m_ActionValue.resize(count, 0.0f);
+    m_ProjectNames.resize(count - kFirstProjectAction);
 }
 
 void InputActionMap::SetProjectDefaults(std::function<void(InputActionMap&)> layer) {
@@ -108,7 +145,7 @@ void InputActionMap::LoadDefaults() {
 }
 
 void InputActionMap::LoadTableDefaults() {
-    const u32 count = static_cast<u32>(GameAction::Count);
+    const u32 count = static_cast<u32>(m_Actions.size());
     for (u32 i = 0; i < count; ++i) {
         m_Actions[i] = ActionConfig{};
         m_Actions[i].action = static_cast<GameAction>(i);
@@ -148,8 +185,9 @@ void InputActionMap::LoadTableDefaults() {
 
     // Every default comes from the action table (keyboard first so
     // GetBindingDisplayName / touch labels prefer the key, then mouse, then pad).
+    // Project actions have no engine defaults; the project layer binds them.
     for (u32 i = 0; i < count; ++i) {
-        const ActionInfo& info = kActionInfo[i];
+        const ActionInfo& info = GetActionInfo(static_cast<GameAction>(i));
         auto& cfg = m_Actions[i];
         cfg.mode = static_cast<ActionMode>(info.mode);
         if (info.key1  >= 0) addKey(cfg, static_cast<KeyCode>(info.key1));
@@ -162,29 +200,65 @@ void InputActionMap::LoadTableDefaults() {
 }
 
 void InputActionMap::AddBinding(GameAction action, const InputBinding& binding) {
+    EnsureActionCount(static_cast<u32>(action) + 1);
+    if (!IsValidAction(static_cast<i32>(action))) return;
     m_Actions[static_cast<u32>(action)].bindings.push_back(binding);
 }
 
 void InputActionMap::ClearBindings(GameAction action) {
+    if (!IsValidAction(static_cast<i32>(action))) return;
     m_Actions[static_cast<u32>(action)].bindings.clear();
 }
 
 void InputActionMap::SetCustomActionName(GameAction action, const std::string& name) {
-    u32 i = static_cast<u32>(action);
-    if (!IsCustomAction(i)) return;
-    m_CustomNames[i - static_cast<u32>(GameAction::Custom0)] = name;
+    const u32 i = static_cast<u32>(action);
+    if (i < kFirstProjectAction) return;
+    SetProjectAction(static_cast<i32>(i - kFirstProjectAction), name);
+}
+
+i32 InputActionMap::SetProjectAction(i32 slot, const std::string& name) {
+    if (slot < 0 || slot >= static_cast<i32>(kMaxProjectActions)) return -1;
+    const u32 id = kFirstProjectAction + static_cast<u32>(slot);
+    EnsureActionCount(id + 1);
+    m_ProjectNames[static_cast<usize>(slot)] = name;
+    return static_cast<i32>(id);
+}
+
+void InputActionMap::ClearProjectActionNames() {
+    for (auto& n : m_ProjectNames) n.clear();
+    for (u32 i = kFirstProjectAction; i < m_Actions.size(); ++i) m_Actions[i].bindings.clear();
+}
+
+i32 InputActionMap::DefineProjectAction(const std::string& name) {
+    if (name.empty()) return -1;
+    for (usize s = 0; s < m_ProjectNames.size(); ++s) {
+        if (m_ProjectNames[s] == name) return static_cast<i32>(kFirstProjectAction + s);
+    }
+    for (usize s = 0; s < m_ProjectNames.size(); ++s) {
+        if (m_ProjectNames[s].empty()) return SetProjectAction(static_cast<i32>(s), name);
+    }
+    return SetProjectAction(static_cast<i32>(m_ProjectNames.size()), name);
+}
+
+i32 InputActionMap::FindAction(const std::string& name) const {
+    if (name.empty()) return -1;
+    for (i32 a = 0; a < GetActionCount(); ++a) {
+        if (!IsActionListed(a)) continue;
+        if (name == GetActionName(a)) return a;
+    }
+    return -1;
 }
 
 bool InputActionMap::IsActionListed(i32 index) const {
-    if (index < 0 || index >= static_cast<i32>(GameAction::Count)) return false;
-    u32 i = static_cast<u32>(index);
-    if (!IsCustomAction(i)) return true;
-    return !m_CustomNames[i - static_cast<u32>(GameAction::Custom0)].empty();
+    if (!IsValidAction(index)) return false;
+    const u32 i = static_cast<u32>(index);
+    if (i < kFirstProjectAction) return true;
+    return !m_ProjectNames[i - kFirstProjectAction].empty();
 }
 
 void InputActionMap::Update(f32 dt) {
     (void)dt;
-    const u32 count = static_cast<u32>(GameAction::Count);
+    const u32 count = static_cast<u32>(m_Actions.size());
 
     for (u32 i = 0; i < count; ++i) {
         const auto& cfg = m_Actions[i];
@@ -245,26 +319,27 @@ namespace {
 }
 
 bool InputActionMap::IsActionDown(GameAction action) const {
-    if (!ActionPassesFocus(action)) return false;
-    return m_ActionDown[static_cast<u32>(action)];
+    if (!IsValidAction(static_cast<i32>(action)) || !ActionPassesFocus(action)) return false;
+    return m_ActionDown[static_cast<u32>(action)] != 0;
 }
 
 bool InputActionMap::IsActionPressed(GameAction action) const {
-    if (!ActionPassesFocus(action)) return false;
-    return m_ActionPressed[static_cast<u32>(action)];
+    if (!IsValidAction(static_cast<i32>(action)) || !ActionPassesFocus(action)) return false;
+    return m_ActionPressed[static_cast<u32>(action)] != 0;
 }
 
 bool InputActionMap::IsActionPressedAnyFocus(GameAction action) const {
-    return m_ActionPressed[static_cast<u32>(action)];
+    if (!IsValidAction(static_cast<i32>(action))) return false;
+    return m_ActionPressed[static_cast<u32>(action)] != 0;
 }
 
 bool InputActionMap::IsActionReleased(GameAction action) const {
-    if (!ActionPassesFocus(action)) return false;
-    return m_ActionReleased[static_cast<u32>(action)];
+    if (!IsValidAction(static_cast<i32>(action)) || !ActionPassesFocus(action)) return false;
+    return m_ActionReleased[static_cast<u32>(action)] != 0;
 }
 
 f32 InputActionMap::GetActionValue(GameAction action) const {
-    if (!ActionPassesFocus(action)) return 0.0f;
+    if (!IsValidAction(static_cast<i32>(action)) || !ActionPassesFocus(action)) return 0.0f;
     return m_ActionValue[static_cast<u32>(action)];
 }
 
@@ -284,6 +359,8 @@ Math::Vector2 InputActionMap::GetMovementVector() const {
 }
 
 void InputActionMap::SetBinding(GameAction action, u32 bindingIndex, const InputBinding& binding) {
+    EnsureActionCount(static_cast<u32>(action) + 1);
+    if (!IsValidAction(static_cast<i32>(action))) return;
     auto& cfg = m_Actions[static_cast<u32>(action)];
     if (bindingIndex < cfg.bindings.size()) {
         cfg.bindings[bindingIndex] = binding;
@@ -293,20 +370,31 @@ void InputActionMap::SetBinding(GameAction action, u32 bindingIndex, const Input
 }
 
 void InputActionMap::SetActionMode(GameAction action, ActionMode mode) {
+    EnsureActionCount(static_cast<u32>(action) + 1);
+    if (!IsValidAction(static_cast<i32>(action))) return;
     m_Actions[static_cast<u32>(action)].mode = mode;
     // Reset toggle state when changing modes
     m_ToggleState[static_cast<u32>(action)] = false;
 }
 
 void InputActionMap::SetSensitivity(GameAction action, f32 sensitivity) {
+    if (!IsValidAction(static_cast<i32>(action))) return;
     m_Actions[static_cast<u32>(action)].sensitivity = sensitivity;
 }
 
 const ActionConfig& InputActionMap::GetActionConfig(GameAction action) const {
+    static const ActionConfig kNone{};
+    if (!IsValidAction(static_cast<i32>(action))) return kNone;
     return m_Actions[static_cast<u32>(action)];
 }
 
 ActionConfig& InputActionMap::GetActionConfig(GameAction action) {
+    EnsureActionCount(static_cast<u32>(action) + 1);
+    if (!IsValidAction(static_cast<i32>(action))) {
+        static ActionConfig scratch{};
+        scratch = ActionConfig{};
+        return scratch;
+    }
     return m_Actions[static_cast<u32>(action)];
 }
 
@@ -358,7 +446,7 @@ void InputActionMap::ApplyRightHandOnly() {
 void InputActionMap::ApplyGamepadOnly() {
     // Keep only gamepad bindings from defaults
     LoadDefaults();
-    const u32 count = static_cast<u32>(GameAction::Count);
+    const u32 count = static_cast<u32>(m_Actions.size());
     for (u32 i = 0; i < count; ++i) {
         auto& cfg = m_Actions[i];
         std::vector<InputBinding> gamepadOnly;
@@ -504,7 +592,7 @@ u32 InputActionMap::DropInvalidBindings() {
     // know their file is poisoned. Anything out of range is dropped on load; an
     // action left with nothing gets its defaults back rather than staying unbound.
     u32 repaired = 0;
-    const u32 count = static_cast<u32>(GameAction::Count);
+    const u32 count = static_cast<u32>(m_Actions.size());
     for (u32 i = 0; i < count; ++i) {
         auto& cfg = m_Actions[i];
         const usize before = cfg.bindings.size();
@@ -518,7 +606,7 @@ u32 InputActionMap::DropInvalidBindings() {
         repaired += static_cast<u32>(before - cfg.bindings.size());
 
         if (cfg.bindings.empty()) {
-            const ActionInfo& info = kActionInfo[i];
+            const ActionInfo& info = GetActionInfo(static_cast<GameAction>(i));
             auto add = [&cfg](BindingType t, i32 c) {
                 if (c < 0) return;
                 InputBinding b; b.type = t; b.code = c; cfg.bindings.push_back(b);
@@ -569,7 +657,7 @@ void InputActionMap::RebindAction(i32 actionIndex, i32 keyCode) {
 }
 
 void InputActionMap::RebindAction(i32 actionIndex, BindingType type, i32 code) {
-    if (actionIndex < 0 || actionIndex >= static_cast<i32>(GameAction::Count)) return;
+    if (!IsValidAction(actionIndex)) return;
     // Only Key and MouseButton are rebindable from a controls screen; a gamepad
     // binding is captured differently and is not what this path feeds.
     if (type != BindingType::Key && type != BindingType::MouseButton) return;
@@ -605,15 +693,17 @@ void InputActionMap::RebindAction(i32 actionIndex, BindingType type, i32 code) {
 }
 
 i32 InputActionMap::GetActionCount() const {
-    return static_cast<i32>(GameAction::Count);
+    return static_cast<i32>(m_Actions.size());
 }
 
 const char* InputActionMap::GetActionName(i32 index) const {
-    if (index < 0 || index >= static_cast<i32>(GameAction::Count)) return "";
-    u32 i = static_cast<u32>(index);
-    if (IsCustomAction(i)) {
-        const std::string& custom = m_CustomNames[i - static_cast<u32>(GameAction::Custom0)];
-        if (!custom.empty()) return custom.c_str();
+    if (!IsValidAction(index)) return "";
+    const u32 i = static_cast<u32>(index);
+    if (i >= kFirstProjectAction) {
+        const std::string& name = m_ProjectNames[i - kFirstProjectAction];
+        if (!name.empty()) return name.c_str();
+        if (i < static_cast<u32>(GameAction::Count)) return kActionInfo[i].name;   // "Custom 3"
+        return "";
     }
     return kActionInfo[i].name;
 }
@@ -731,7 +821,7 @@ std::string InputActionMap::ResolvePromptText(const std::string& text) const {
 }
 
 const char* InputActionMap::GetBindingDisplayName(i32 index) const {
-    if (index < 0 || index >= static_cast<i32>(GameAction::Count)) return "";
+    if (!IsValidAction(index)) return "";
     const auto& cfg = m_Actions[index];
     for (const auto& b : cfg.bindings) {
         if (b.type == BindingType::Key) return KeyCodeToName(b.code);
@@ -746,7 +836,7 @@ const char* InputActionMap::GetBindingDisplayName(i32 index) const {
 }
 
 const char* InputActionMap::GetGamepadBindingDisplayName(i32 index) const {
-    if (index < 0 || index >= static_cast<i32>(GameAction::Count)) return "";
+    if (!IsValidAction(index)) return "";
     const auto& cfg = m_Actions[index];
     for (const auto& b : cfg.bindings) {
         if (b.type == BindingType::GamepadButton) return GamepadButtonToName(b.code);
@@ -756,17 +846,22 @@ const char* InputActionMap::GetGamepadBindingDisplayName(i32 index) const {
 }
 
 i32 InputActionMap::GetActionCategory(i32 index) const {
-    if (index < 0 || index >= static_cast<i32>(GameAction::Count)) return static_cast<i32>(ActionCategory::UI);
-    return static_cast<i32>(kActionInfo[index].category);
+    if (!IsValidAction(index)) return static_cast<i32>(ActionCategory::UI);
+    return static_cast<i32>(GetActionInfo(static_cast<GameAction>(index)).category);
 }
 
 std::string InputActionMap::ToJson() const {
     json j = json::array();
-    const u32 count = static_cast<u32>(GameAction::Count);
+    const u32 count = static_cast<u32>(m_Actions.size());
     for (u32 i = 0; i < count; ++i) {
         const auto& cfg = m_Actions[i];
         json actionJson;
         actionJson["action"] = i;
+        // Project actions carry their name, so a save still finds them if the
+        // project reorders its slots
+        if (i >= kFirstProjectAction && !m_ProjectNames[i - kFirstProjectAction].empty()) {
+            actionJson["name"] = m_ProjectNames[i - kFirstProjectAction];
+        }
         actionJson["mode"] = static_cast<u32>(cfg.mode);
         actionJson["sensitivity"] = cfg.sensitivity;
         actionJson["invertAxis"] = cfg.invertAxis;
@@ -791,8 +886,14 @@ bool InputActionMap::FromJson(const std::string& jsonStr) {
         if (!j.is_array()) return false;
 
         for (const auto& actionJson : j) {
+            if (!actionJson.is_object() || !actionJson.contains("action")) continue;   // skip, do not abort
             u32 idx = actionJson["action"].get<u32>();
-            if (idx >= static_cast<u32>(GameAction::Count)) continue;
+            // A named project action goes to wherever that name lives now
+            if (actionJson.contains("name") && actionJson["name"].is_string()) {
+                const i32 byName = FindAction(actionJson["name"].get<std::string>());
+                if (byName >= static_cast<i32>(kFirstProjectAction)) idx = static_cast<u32>(byName);
+            }
+            if (idx >= static_cast<u32>(m_Actions.size())) continue;
 
             auto& cfg = m_Actions[idx];
             cfg.mode = static_cast<ActionMode>(actionJson.value("mode", 0u));

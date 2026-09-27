@@ -81,8 +81,7 @@ namespace {
     };
 
     bool IsCustom(int action) {
-        return action >= static_cast<int>(GameAction::Custom0) &&
-               action <  static_cast<int>(GameAction::Custom0) + static_cast<int>(kCustomActionCount);
+        return s_TouchMap && s_TouchMap->IsProjectAction(action);
     }
 
     void CopyLabel(char* dst, const char* src) {
@@ -93,7 +92,7 @@ namespace {
 }
 
 int TouchActionKey(int action) {
-    if (!s_TouchMap || action < 0 || action >= static_cast<int>(GameAction::Count))
+    if (!s_TouchMap || !s_TouchMap->IsValidAction(action))
         return Input::kTouchNoBinding;
     const ActionConfig& cfg = s_TouchMap->GetActionConfig(static_cast<GameAction>(action));
     for (const auto& b : cfg.bindings) {
@@ -107,7 +106,7 @@ int TouchActionKey(int action) {
 }
 
 const char* TouchActionLabel(int action) {
-    if (!s_TouchMap || action < 0 || action >= static_cast<int>(GameAction::Count))
+    if (!s_TouchMap || !s_TouchMap->IsValidAction(action))
         return nullptr;
     // A custom action's NAME is the useful glyph ("SLO-MO"), not its key.
     if (IsCustom(action) && s_TouchMap->IsActionListed(action))
@@ -204,7 +203,8 @@ namespace {
             for (ECS::Entity e : world->GetEntitiesWithComponent<ECS::ActionTriggerComponent>()) {
                 auto* t = world->GetComponent<ECS::ActionTriggerComponent>(e);
                 if (!t || !t->touchButton || t->action < 0) continue;
-                if (t->action >= static_cast<int>(GameAction::Count)) continue;
+                if (s_TouchMap ? !s_TouchMap->IsValidAction(t->action)
+                               : t->action >= static_cast<int>(GameAction::Count)) continue;
                 const char* label = s_TouchMap ? s_TouchMap->GetActionName(t->action)
                                                : GetActionInfo(static_cast<GameAction>(t->action)).touchLabel;
                 AddActionButton(s, t->action, label, t->touchSize, t->touchCol, t->touchRow, 0);
@@ -218,7 +218,8 @@ namespace {
             if (p.customTouchLayout) {
                 s.buttonCount = 0;
                 for (const auto& b : p.touchButtons) {
-                    if (b.action < 0 || b.action >= static_cast<int>(GameAction::Count)) continue;
+                    if (b.action < 0 || (s_TouchMap ? !s_TouchMap->IsValidAction(b.action)
+                                                    : b.action >= static_cast<int>(GameAction::Count))) continue;
                     const char* label = s_TouchMap ? s_TouchMap->GetActionName(b.action)
                                                    : GetActionInfo(static_cast<GameAction>(b.action)).touchLabel;
                     AddActionButton(s, b.action, label, b.size, b.col, b.row, 0);
@@ -393,8 +394,7 @@ void DrawControlsHint(f32 x0, f32 y0, f32 w, f32 h) {
     }
     if (!moveKeys.empty()) segs.insert(segs.begin(), { moveKeys, "move" });
     // Named custom actions with a binding (game-specific, e.g. "B slo-mo").
-    for (u32 c = 0; c < kCustomActionCount; ++c) {
-        int a = static_cast<int>(GameAction::Custom0) + static_cast<int>(c);
+    for (int a = static_cast<int>(kFirstProjectAction); a < s_TouchMap->GetActionCount(); ++a) {
         if (!s_TouchMap->IsActionListed(a)) continue;
         const char* bind = s_TouchMap->GetBindingDisplayName(a);
         if (!bind || !bind[0] || std::strcmp(bind, "None") == 0) continue;

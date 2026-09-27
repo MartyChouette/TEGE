@@ -36,15 +36,15 @@ std::string ResolveBindingsPromptText(const std::string& text) {
 // call site) so node rebinding behaves identically to scripted rebinding.
 // ---------------------------------------------------------------------------
 bool VSInputActionIsDown(i32 action) {
-    if (!s_BindingsInputActionMap || action < 0 || action >= static_cast<i32>(InputSystem::GameAction::Count)) return false;
+    if (!s_BindingsInputActionMap || action < 0 || action >= s_BindingsInputActionMap->GetActionCount()) return false;
     return s_BindingsInputActionMap->IsActionDown(static_cast<InputSystem::GameAction>(action));
 }
 bool VSInputActionIsPressed(i32 action) {
-    if (!s_BindingsInputActionMap || action < 0 || action >= static_cast<i32>(InputSystem::GameAction::Count)) return false;
+    if (!s_BindingsInputActionMap || action < 0 || action >= s_BindingsInputActionMap->GetActionCount()) return false;
     return s_BindingsInputActionMap->IsActionPressed(static_cast<InputSystem::GameAction>(action));
 }
 f32 VSInputActionGetValue(i32 action) {
-    if (!s_BindingsInputActionMap || action < 0 || action >= static_cast<i32>(InputSystem::GameAction::Count)) return 0.0f;
+    if (!s_BindingsInputActionMap || action < 0 || action >= s_BindingsInputActionMap->GetActionCount()) return 0.0f;
     return s_BindingsInputActionMap->GetActionValue(static_cast<InputSystem::GameAction>(action));
 }
 i32 VSInputActionCount() {
@@ -61,7 +61,7 @@ std::string VSInputBindingName(i32 index) {
     return name ? std::string(name) : std::string();
 }
 void VSInputRebind(i32 actionIndex, i32 keyCode) {
-    if (!s_BindingsInputActionMap || actionIndex < 0 || actionIndex >= static_cast<i32>(InputSystem::GameAction::Count)) return;
+    if (!s_BindingsInputActionMap || actionIndex < 0 || actionIndex >= s_BindingsInputActionMap->GetActionCount()) return;
     s_BindingsInputActionMap->RebindAction(actionIndex, keyCode);
 }
 i32 VSInputPollKey() {
@@ -74,22 +74,22 @@ void VSInputResetBindings() {
 // --- Wrapper functions ---
 
 static bool Input_IsActionDown(i32 action) {
-    if (!s_BindingsInputActionMap || action < 0 || action >= static_cast<i32>(InputSystem::GameAction::Count)) return false;
+    if (!s_BindingsInputActionMap || action < 0 || action >= s_BindingsInputActionMap->GetActionCount()) return false;
     return s_BindingsInputActionMap->IsActionDown(static_cast<InputSystem::GameAction>(action));
 }
 
 static bool Input_IsActionPressed(i32 action) {
-    if (!s_BindingsInputActionMap || action < 0 || action >= static_cast<i32>(InputSystem::GameAction::Count)) return false;
+    if (!s_BindingsInputActionMap || action < 0 || action >= s_BindingsInputActionMap->GetActionCount()) return false;
     return s_BindingsInputActionMap->IsActionPressed(static_cast<InputSystem::GameAction>(action));
 }
 
 static bool Input_IsActionReleased(i32 action) {
-    if (!s_BindingsInputActionMap || action < 0 || action >= static_cast<i32>(InputSystem::GameAction::Count)) return false;
+    if (!s_BindingsInputActionMap || action < 0 || action >= s_BindingsInputActionMap->GetActionCount()) return false;
     return s_BindingsInputActionMap->IsActionReleased(static_cast<InputSystem::GameAction>(action));
 }
 
 static f32 Input_GetActionValue(i32 action) {
-    if (!s_BindingsInputActionMap || action < 0 || action >= static_cast<i32>(InputSystem::GameAction::Count)) return 0.0f;
+    if (!s_BindingsInputActionMap || action < 0 || action >= s_BindingsInputActionMap->GetActionCount()) return 0.0f;
     return s_BindingsInputActionMap->GetActionValue(static_cast<InputSystem::GameAction>(action));
 }
 
@@ -99,7 +99,7 @@ static Math::Vector2 Input_GetMovementVector() {
 }
 
 static void Input_SetSensitivity(i32 action, f32 sensitivity) {
-    if (!s_BindingsInputActionMap || action < 0 || action >= static_cast<i32>(InputSystem::GameAction::Count)) return;
+    if (!s_BindingsInputActionMap || action < 0 || action >= s_BindingsInputActionMap->GetActionCount()) return;
     s_BindingsInputActionMap->SetSensitivity(static_cast<InputSystem::GameAction>(action), sensitivity);
 }
 
@@ -134,7 +134,7 @@ static void Input_SetCrouchToggle(bool toggle) {
 }
 
 static void Input_RebindAction(i32 actionIndex, i32 keyCode) {
-    if (!s_BindingsInputActionMap || actionIndex < 0 || actionIndex >= static_cast<i32>(InputSystem::GameAction::Count)) return;
+    if (!s_BindingsInputActionMap || actionIndex < 0 || actionIndex >= s_BindingsInputActionMap->GetActionCount()) return;
     s_BindingsInputActionMap->RebindAction(actionIndex, keyCode);
 }
 
@@ -180,16 +180,27 @@ static void Input_ResetToDefaults() {
     s_BindingsInputActionMap->ResetToDefaults();
 }
 
+// Project actions by name (IN-0). Find returns any action, engine or project,
+// by its display name; Define returns the project action with that name,
+// creating it in the lowest free slot if there is none. The eight Custom slots
+// are simply the first eight project actions.
+static i32 Input_FindAction(const std::string& name) {
+    return s_BindingsInputActionMap ? s_BindingsInputActionMap->FindAction(name) : -1;
+}
+static i32 Input_DefineAction(const std::string& name) {
+    return s_BindingsInputActionMap ? s_BindingsInputActionMap->DefineProjectAction(name) : -1;
+}
+
 // Custom action slots (GameAction::Custom0..7): a game names one at boot, binds
 // it, and from then on menus, the controls hint and touch (via
 // Touch_AddActionButton) treat it like any built-in action.
 static void Input_SetActionName(i32 action, const std::string& name) {
-    if (!s_BindingsInputActionMap || action < 0 || action >= static_cast<i32>(InputSystem::GameAction::Count)) return;
+    if (!s_BindingsInputActionMap || action < 0 || action >= s_BindingsInputActionMap->GetActionCount()) return;
     s_BindingsInputActionMap->SetCustomActionName(static_cast<InputSystem::GameAction>(action), name);
 }
 
 static void Input_AddGamepadBinding(i32 action, i32 button) {
-    if (!s_BindingsInputActionMap || action < 0 || action >= static_cast<i32>(InputSystem::GameAction::Count)) return;
+    if (!s_BindingsInputActionMap || action < 0 || action >= s_BindingsInputActionMap->GetActionCount()) return;
     if (button < 0 || button >= static_cast<i32>(GamepadButton::Count)) return;
     InputSystem::InputBinding b;
     b.type = InputSystem::BindingType::GamepadButton;
@@ -198,7 +209,7 @@ static void Input_AddGamepadBinding(i32 action, i32 button) {
 }
 
 static void Input_AddMouseBinding(i32 action, i32 button) {
-    if (!s_BindingsInputActionMap || action < 0 || action >= static_cast<i32>(InputSystem::GameAction::Count)) return;
+    if (!s_BindingsInputActionMap || action < 0 || action >= s_BindingsInputActionMap->GetActionCount()) return;
     if (button < 0 || button > 7) return;
     InputSystem::InputBinding b;
     b.type = InputSystem::BindingType::MouseButton;
@@ -207,47 +218,24 @@ static void Input_AddMouseBinding(i32 action, i32 button) {
 }
 
 static void Input_ClearBindings(i32 action) {
-    if (!s_BindingsInputActionMap || action < 0 || action >= static_cast<i32>(InputSystem::GameAction::Count)) return;
+    if (!s_BindingsInputActionMap || action < 0 || action >= s_BindingsInputActionMap->GetActionCount()) return;
     s_BindingsInputActionMap->ClearBindings(static_cast<InputSystem::GameAction>(action));
 }
 
 void RegisterInputActionBindings(asIScriptEngine* engine) {
     // GameAction enum constants
     AS_CHECK(engine->RegisterEnum("GameAction"));
-    AS_CHECK(engine->RegisterEnumValue("GameAction", "MoveForward", 0));
-    AS_CHECK(engine->RegisterEnumValue("GameAction", "MoveBack", 1));
-    AS_CHECK(engine->RegisterEnumValue("GameAction", "MoveLeft", 2));
-    AS_CHECK(engine->RegisterEnumValue("GameAction", "MoveRight", 3));
-    AS_CHECK(engine->RegisterEnumValue("GameAction", "Jump", 4));
-    AS_CHECK(engine->RegisterEnumValue("GameAction", "Sprint", 5));
-    AS_CHECK(engine->RegisterEnumValue("GameAction", "Crouch", 6));
-    AS_CHECK(engine->RegisterEnumValue("GameAction", "Dash", 7));
-    AS_CHECK(engine->RegisterEnumValue("GameAction", "Interact", 8));
-    AS_CHECK(engine->RegisterEnumValue("GameAction", "Attack", 9));
-    AS_CHECK(engine->RegisterEnumValue("GameAction", "Block", 10));
-    AS_CHECK(engine->RegisterEnumValue("GameAction", "Pause", 11));
-    AS_CHECK(engine->RegisterEnumValue("GameAction", "LookUp", 12));
-    AS_CHECK(engine->RegisterEnumValue("GameAction", "LookDown", 13));
-    AS_CHECK(engine->RegisterEnumValue("GameAction", "LookLeft", 14));
-    AS_CHECK(engine->RegisterEnumValue("GameAction", "LookRight", 15));
-    AS_CHECK(engine->RegisterEnumValue("GameAction", "CameraZoomIn", 16));
-    AS_CHECK(engine->RegisterEnumValue("GameAction", "CameraZoomOut", 17));
-    AS_CHECK(engine->RegisterEnumValue("GameAction", "UIConfirm", 18));
-    AS_CHECK(engine->RegisterEnumValue("GameAction", "UICancel", 19));
-    AS_CHECK(engine->RegisterEnumValue("GameAction", "UINavUp", 20));
-    AS_CHECK(engine->RegisterEnumValue("GameAction", "UINavDown", 21));
-    AS_CHECK(engine->RegisterEnumValue("GameAction", "UINavLeft", 22));
-    AS_CHECK(engine->RegisterEnumValue("GameAction", "UINavRight", 23));
-    AS_CHECK(engine->RegisterEnumValue("GameAction", "DialogueAdvance", 24));
-    AS_CHECK(engine->RegisterEnumValue("GameAction", "Custom0", 25));
-    AS_CHECK(engine->RegisterEnumValue("GameAction", "Custom1", 26));
-    AS_CHECK(engine->RegisterEnumValue("GameAction", "Custom2", 27));
-    AS_CHECK(engine->RegisterEnumValue("GameAction", "Custom3", 28));
-    AS_CHECK(engine->RegisterEnumValue("GameAction", "Custom4", 29));
-    AS_CHECK(engine->RegisterEnumValue("GameAction", "Custom5", 30));
-    AS_CHECK(engine->RegisterEnumValue("GameAction", "Custom6", 31));
-    AS_CHECK(engine->RegisterEnumValue("GameAction", "Custom7", 32));
-    static_assert(static_cast<int>(InputSystem::GameAction::Custom7) == 32, "script GameAction enum values drifted from the C++ enum");
+    // Generated from the action registry (IN-1): one value per engine action
+    // and legacy Custom slot, named by the C++ enumerator, so the script enum
+    // cannot drift from the table the way the hand-written list could
+    for (u32 i = 0; i < static_cast<u32>(InputSystem::GameAction::Count); ++i) {
+        const auto act = static_cast<InputSystem::GameAction>(i);
+        AS_CHECK(engine->RegisterEnumValue("GameAction", InputSystem::GetActionIdentifier(act), static_cast<int>(i)));
+    }
+
+    // Project actions by name
+    AS_CHECK(engine->RegisterGlobalFunction("int InputAction_Find(const string &in name)", ENJIN_AS_FN(Input_FindAction), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("int InputAction_Define(const string &in name)", ENJIN_AS_FN(Input_DefineAction), ENJIN_AS_CALL_CDECL));
 
     // Action query functions
     AS_CHECK(engine->RegisterGlobalFunction("bool InputAction_IsDown(int action)", ENJIN_AS_FN(Input_IsActionDown), ENJIN_AS_CALL_CDECL));

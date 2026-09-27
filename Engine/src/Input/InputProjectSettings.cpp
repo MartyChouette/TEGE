@@ -15,11 +15,9 @@ namespace {
 // slot its authored bindings and mode. Unnamed slots stay hidden and unbound.
 void ApplyCustomActions(InputActionMap& map, const std::vector<CustomActionDef>& customActions) {
     for (const auto& def : customActions) {
-        if (def.slot < 0 || def.slot >= static_cast<i32>(kCustomActionCount)) continue;
-        GameAction action = static_cast<GameAction>(
-            static_cast<i32>(GameAction::Custom0) + def.slot);
-        map.SetCustomActionName(action, def.name);
-        if (def.name.empty()) continue;
+        const i32 id = map.SetProjectAction(def.slot, def.name);
+        if (id < 0 || def.name.empty()) continue;
+        const GameAction action = static_cast<GameAction>(id);
 
         map.ClearBindings(action);
         if (def.key >= 0) {
@@ -52,6 +50,7 @@ void InputProjectSettings::ApplyTo(InputActionMap& map) const {
     // web player agree without three separate wirings.
     SetControlsHintEnabled(showControlsHint);
 
+    map.ClearProjectActionNames();   // what this project does not name stops existing
     ApplyCustomActions(map, customActions);
     // And again on every reset or preset, which start from the engine table:
     // these ARE the game's defaults for its custom actions (IN-10).
@@ -114,7 +113,9 @@ bool InputProjectSettings::FromJson(const std::string& jsonStr) {
                 def.mouse = a.value("mouse", -1);
                 def.gamepad = a.value("gamepad", -1);
                 def.mode = a.value("mode", 2u);
-                if (def.slot < 0 || def.slot >= static_cast<i32>(kCustomActionCount)) continue;
+                // Any slot below the ceiling: a project is no longer held to
+                // the eight numbered slots (IN-0)
+                if (def.slot < 0 || def.slot >= static_cast<i32>(kMaxProjectActions)) continue;
                 customActions.push_back(def);
             }
         }
