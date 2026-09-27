@@ -383,6 +383,12 @@ void ControllerSystem::UpdatePresentation(f32 deltaTime) {
         // Clamp pitch
         if (pitch < Math::Radians(lookAt->minPitch)) pitch = Math::Radians(lookAt->minPitch);
         if (pitch > Math::Radians(lookAt->maxPitch)) pitch = Math::Radians(lookAt->maxPitch);
+        // And yaw, which had limits in the inspector and no clamp (SD-27): a
+        // turret can be kept to its arc. The full circle is the default.
+        if (lookAt->maxYaw - lookAt->minYaw < 360.0f) {
+            if (yaw < Math::Radians(lookAt->minYaw)) yaw = Math::Radians(lookAt->minYaw);
+            if (yaw > Math::Radians(lookAt->maxYaw)) yaw = Math::Radians(lookAt->maxYaw);
+        }
 
         Math::Quaternion targetRotation = Math::Quaternion::FromEuler(
             Math::Vector3(pitch, yaw, 0.0f));
@@ -558,6 +564,17 @@ void ControllerSystem::UpdatePresentation(f32 deltaTime) {
     }
 }
 
+
+// A dash spends the entity's Resource Dash Cost, the way a jump spends Jump
+// Cost; with too little left there is no dash. Dash Cost was in the Resource
+// inspector and no dash read it (SD-27). Called last in each dash condition, so
+// it is only paid when the dash would otherwise happen.
+bool ControllerSystem::PayDashCost(Entity entity) {
+    if (!m_World) return true;
+    auto* resource = m_World->GetComponent<ResourceComponent>(entity);
+    if (!resource || resource->dashCost <= 0.0f) return true;
+    return resource->TryConsume(resource->dashCost);
+}
 
 Math::Vector2 ControllerSystem::GetMovementInput(const CharacterControllerBase& controller) {
     // Delegate to input action map if available
@@ -1084,7 +1101,8 @@ void ControllerSystem::UpdateTopDown2D(Entity entity, TopDown2DController& ctrl,
     }
 
     // Check for dash input
-    if (ctrl.enableDash && IsDashPressed() && ctrl.dashCooldownTimer <= 0.0f && !ctrl.isDashing) {
+    if (ctrl.enableDash && IsDashPressed() && ctrl.dashCooldownTimer <= 0.0f && !ctrl.isDashing &&
+        PayDashCost(entity)) {
         ctrl.isDashing = true;
         ctrl.dashTimer = ctrl.dashDuration;
         ctrl.dashCooldownTimer = ctrl.dashCooldown;
@@ -1161,7 +1179,8 @@ void ControllerSystem::UpdateTopDown3D(Entity entity, TopDown3DController& ctrl,
     }
 
     // Check for dash input
-    if (ctrl.enableDash && IsDashPressed() && ctrl.dashCooldownTimer <= 0.0f && !ctrl.isDashing) {
+    if (ctrl.enableDash && IsDashPressed() && ctrl.dashCooldownTimer <= 0.0f && !ctrl.isDashing &&
+        PayDashCost(entity)) {
         ctrl.isDashing = true;
         ctrl.dashTimer = ctrl.dashDuration;
         ctrl.dashCooldownTimer = ctrl.dashCooldown;
@@ -2059,7 +2078,8 @@ void ControllerSystem::UpdateFirstPerson(Entity entity, FirstPersonController& c
     }
 
     // Check for dash input
-    if (ctrl.enableDash && IsDashPressed() && ctrl.dashCooldownTimer <= 0.0f && !ctrl.isDashing) {
+    if (ctrl.enableDash && IsDashPressed() && ctrl.dashCooldownTimer <= 0.0f && !ctrl.isDashing &&
+        PayDashCost(entity)) {
         ctrl.isDashing = true;
         ctrl.dashTimer = ctrl.dashDuration;
         ctrl.dashCooldownTimer = ctrl.dashCooldown;

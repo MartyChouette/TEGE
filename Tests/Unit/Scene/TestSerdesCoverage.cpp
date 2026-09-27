@@ -266,6 +266,28 @@ ENJIN_TEST(SerdesCoverage, ARetiredPolygonCollider2DBecomesAStaticBody2D) {
     ENJIN_EXPECT_TRUE(b2->shapeType == Physics::Shape2DType::Circle);
 }
 
+ENJIN_TEST(SerdesCoverage, ALipSyncVoiceSourceSurvivesAReload) {
+    // It was read by the audio system and never saved, so it was always "self"
+    World src;
+    Entity spacer = src.CreateEntity();          // a gap, so ids change on load
+    Entity face = Base(src);
+    src.AddComponent<NameComponent>(face, NameComponent("Face"));
+    Entity voice = Base(src);
+    src.AddComponent<NameComponent>(voice, NameComponent("Voice"));
+    LipSyncComponent ls;
+    ls.linkedAudioSource = voice;
+    src.AddComponent<LipSyncComponent>(face, ls);
+    src.DestroyEntity(spacer);
+    src.Update(0.0f);
+    Scene::SceneSerializer out(&src);
+    const std::string text = out.SaveToString();
+    World dst;
+    Scene::SceneSerializer in(&dst);
+    in.LoadFromString(text);
+    ENJIN_EXPECT_EQ(dst.GetComponent<LipSyncComponent>(dst.FindEntityByName("Face"))->linkedAudioSource,
+                    dst.FindEntityByName("Voice"));
+}
+
 ENJIN_TEST(SerdesCoverage, EntityLinksPointAtTheRightEntityAfterAReload) {
     // Saved ids are pre-load ids. A scene that ever deleted something saves
     // ids with gaps, and CreateEntity on load hands out different ones, so an

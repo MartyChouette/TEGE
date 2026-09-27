@@ -1,4 +1,5 @@
 #include "Enjin/ECS/Systems/GameplaySystem.h"
+#include "Enjin/ECS/Components/Material.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
@@ -606,6 +607,12 @@ void GameplaySystem::UpdateGoalZones(World* world, f32 dt) {
         const bool wasSatisfied = goal->isSatisfied;
         goal->isSatisfied = satisfied;
         goal->satisfiedBy = by;
+
+        // Visual feedback: the zone's material shows Active or Inactive Colour.
+        // Both were in the inspector and nothing tinted anything (SD-27).
+        if (auto* mat = world->GetComponent<MaterialComponent>(e)) {
+            mat->baseColor = satisfied ? goal->activeColor : goal->inactiveColor;
+        }
 
         // A checkpoint fires once, on the edge. Whether it actually saves is the
         // save system's decision: "On Checkpoint" in the Save Debug panel had no

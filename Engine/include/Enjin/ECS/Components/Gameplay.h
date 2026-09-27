@@ -289,11 +289,13 @@ struct AudioSourceComponent {
     // Spatial blend (0 = 2D, 1 = 3D)
     f32 spatialBlend = 1.0f;
 
-    // Rolloff mode
+    // How a 3D sound fades with distance between Min and Max Distance
+    // (AudioEngine::SetRolloff). Exponential was called Custom and had no
+    // curve behind it; the saved number is unchanged.
     enum class Rolloff : u8 {
         Logarithmic,
         Linear,
-        Custom
+        Exponential
     };
     Rolloff rolloff = Rolloff::Logarithmic;
 

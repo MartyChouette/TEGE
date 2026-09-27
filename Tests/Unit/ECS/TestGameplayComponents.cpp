@@ -6,6 +6,9 @@
 #include "Enjin/ECS/CameraZones.h"
 #include "Enjin/Gameplay/InteractionSystem.h"
 #include "Enjin/ECS/Systems/FlowerSystem.h"
+#include "Enjin/ECS/Systems/ControllerSystem.h"
+#include "Enjin/ECS/Systems/GameplaySystem.h"
+#include "Enjin/ECS/Components/Material.h"
 #include "Enjin/ECS/Components/Flower.h"
 #include "Enjin/ECS/Systems/RenderSystem.h"
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
@@ -825,6 +828,50 @@ ENJIN_TEST(FlowerSap, BelowTheThresholdNothingDrips) {
     const size_t drips = DripsAfterPull(0.99f, broke);
     ENJIN_EXPECT_FALSE(broke);
     ENJIN_EXPECT_EQ(drips, size_t(0));
+}
+
+// ===========================================================================
+// SD-27 per-field wires: look-at yaw limits, goal zone colours
+// ===========================================================================
+
+ENJIN_TEST(LookAtYaw, AYawLimitKeepsATurretInItsArc) {
+    World w;
+    ControllerSystem cs;
+    cs.SetWorld(&w);
+    Entity turret = w.CreateEntity();
+    w.AddComponent<TransformComponent>(turret);
+    LookAtTargetComponent la;
+    la.useWorldTarget = true;
+    la.worldTarget = Math::Vector3(10.0f, 0.0f, 0.0f);   // 90 degrees off to the right
+    la.instant = true;
+    la.minYaw = -30.0f;
+    la.maxYaw = 30.0f;
+    w.AddComponent<LookAtTargetComponent>(turret, la);
+    cs.UpdatePresentation(0.016f);
+    const Math::Vector3 fwd = w.GetComponent<TransformComponent>(turret)->rotation.Rotate(Math::Vector3(0, 0, -1));
+    // Stopped at its 30 degree limit toward the target, not turned all the way
+    ENJIN_EXPECT_TRUE(std::abs(fwd.x - 0.5f) < 0.02f);
+    ENJIN_EXPECT_TRUE(std::abs(fwd.z + 0.866f) < 0.02f);
+}
+
+ENJIN_TEST(GoalZoneColour, TheZoneShowsWhetherItIsSatisfied) {
+    World w;
+    GameplaySystem gs;
+    Entity zone = w.CreateEntity();
+    w.AddComponent<TransformComponent>(zone);
+    w.AddComponent<MaterialComponent>(zone);
+    GoalZoneComponent g;
+    g.type = GoalZoneComponent::GoalType::PushTarget;
+    w.AddComponent<GoalZoneComponent>(zone, g);
+    gs.Update(&w, 0.016f);
+    ENJIN_EXPECT_TRUE(Near3(w.GetComponent<MaterialComponent>(zone)->baseColor, g.inactiveColor));
+
+    Entity crate = w.CreateEntity();
+    w.AddComponent<TransformComponent>(crate);
+    w.AddComponent<PushableComponent>(crate);
+    gs.Update(&w, 0.016f);
+    ENJIN_EXPECT_TRUE(w.GetComponent<GoalZoneComponent>(zone)->isSatisfied);
+    ENJIN_EXPECT_TRUE(Near3(w.GetComponent<MaterialComponent>(zone)->baseColor, g.activeColor));
 }
 
 ENJIN_TEST_MAIN()

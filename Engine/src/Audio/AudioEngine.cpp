@@ -1395,6 +1395,15 @@ bool AudioEngine::Seek(SoundHandle sound, f32 seconds) {
     return ma_sound_seek_to_pcm_frame(ma, frame) == MA_SUCCESS;
 }
 
+void AudioEngine::SetRolloff(SoundHandle handle, u8 rolloff) {
+    auto it = m_Sounds.find(handle);
+    if (it == m_Sounds.end() || !it->second.maSound || !it->second.is3D) return;
+    const ma_attenuation_model model =
+        rolloff == 1 ? ma_attenuation_model_linear :
+        rolloff == 2 ? ma_attenuation_model_exponential : ma_attenuation_model_inverse;
+    ma_sound_set_attenuation_model(static_cast<ma_sound*>(it->second.maSound), model);
+}
+
 void AudioEngine::SetLoFi(const LoFiParams& params) {
     if (m_Impl) m_Impl->lofi.SetParams(params);
 }
@@ -1654,6 +1663,8 @@ void AudioEngine::UpdateAudioSources(f32 deltaTime) {
                 m_NextCaption = audio->audioDescription;
                 if (diegetic3D) {
                     snd = Play3D(clip, position, v.volume, audio->minDistance, audio->maxDistance, ch);
+                    // The source's Rolloff, saved and never applied before (SD-27)
+                    SetRolloff(snd, static_cast<u8>(audio->rolloff));
                 } else {
                     snd = Play(clip, v.volume, v.pitch, audio->loop, ch);
                 }

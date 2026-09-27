@@ -270,6 +270,10 @@ public:
     bool Seek(SoundHandle sound, f32 seconds);
 
     // Master volume (affects all channels)
+    // Distance fade of a playing 3D sound: 0 logarithmic (inverse, the
+    // default), 1 linear, 2 exponential. AudioSourceComponent::Rolloff order.
+    void SetRolloff(SoundHandle handle, u8 rolloff);
+
     // The master lo-fi effect (AudioFidelityComponent via AudioReactiveSystem)
     void SetLoFi(const struct LoFiParams& params);
     void SetMasterVolume(f32 volume);

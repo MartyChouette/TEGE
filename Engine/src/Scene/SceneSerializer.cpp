@@ -6673,6 +6673,7 @@ json SerializeLipSyncComponent(const ECS::LipSyncComponent& c) {
         morphs.push_back(entries);
     }
     j["visemeMorphMap"] = morphs;
+    j["linkedAudioSource"] = static_cast<u64>(c.linkedAudioSource);
     return j;
 }
 
@@ -6711,6 +6712,7 @@ ECS::LipSyncComponent DeserializeLipSyncComponent(const json& j) {
             }
         }
     }
+    if (j.contains("linkedAudioSource")) c.linkedAudioSource = static_cast<ECS::Entity>(j["linkedAudioSource"].get<u64>());
     return c;
 }
 
@@ -11029,6 +11031,7 @@ void SceneSerializer::DeserializeEntities(const json& sceneJson, Deserialization
         if (auto* wp = m_World->GetComponent<ECS::WaypointComponent>(entity)) remap(wp->nextWaypoint);
         if (auto* aic = m_World->GetComponent<ECS::AIControllerComponent>(entity)) remap(aic->patrolRoute);
         if (auto* ic = m_World->GetComponent<ECS::InteractableComponent>(entity)) remap(ic->onInteractNotify);
+        if (auto* ls = m_World->GetComponent<ECS::LipSyncComponent>(entity)) remap(ls->linkedAudioSource);
         if (auto* cb = m_World->GetComponent<ECS::Camera2DBoundsComponent>(entity)) remap(cb->followTarget);
         if (auto* dd = m_World->GetComponent<ECS::DynamicDifficultyComponent>(entity)) remap(dd->playerEntity);
         if (auto* rg = m_World->GetComponent<ECS::RagdollComponent>(entity)) {

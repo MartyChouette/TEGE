@@ -151,6 +151,7 @@ private:
     bool IsJumpHeld();
     bool IsCrouchHeld();
     bool IsDashPressed();
+    bool PayDashCost(Entity entity);
     // Latch-aware raw queries (used by PumpFrameInput and the non-latched path)
     bool QueryJumpPressedNow();
     bool QueryCrouchPressedNow();

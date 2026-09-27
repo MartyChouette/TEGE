@@ -63,6 +63,7 @@ static void Audio_Play(u64 entityId) {
         auto* tc = s_BindingsWorld->GetComponent<TransformComponent>(entity);
         Vector3 pos = tc ? tc->position : Vector3();
         asc->soundHandle = s_BindingsAudio->Play3D(clip, pos, asc->volume, asc->minDistance, asc->maxDistance, ch);
+        s_BindingsAudio->SetRolloff(asc->soundHandle, static_cast<u8>(asc->rolloff));
     } else {
         asc->soundHandle = s_BindingsAudio->Play(clip, asc->volume, asc->pitch, asc->loop, ch);
     }

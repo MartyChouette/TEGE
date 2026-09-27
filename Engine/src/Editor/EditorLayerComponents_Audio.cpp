@@ -2,6 +2,7 @@
 // Split from EditorLayerComponents.cpp for faster incremental builds.
 #include "Enjin/Editor/EditorLayer.h"
 #include "Enjin/Audio/AudioReactiveSystem.h"
+#include "Enjin/Editor/EntityPicker.h"
 #include "Enjin/Editor/EditorTheme.h"
 #include "Enjin/Editor/InspectorUndo.h"
 #include "Enjin/Logging/Log.h"
@@ -268,6 +269,14 @@ void EditorLayer::DrawAudioSourceComponent(ECS::Entity entity) {
             InspectorUndo::DragFloat(m_UndoRedo, "Spatial Blend", &audio->spatialBlend, 0.05f, 0.0f, 1.0f);
             InspectorUndo::DragFloat(m_UndoRedo, "Min Distance", &audio->minDistance, 0.5f, 0.1f, 100.0f);
             InspectorUndo::DragFloat(m_UndoRedo, "Max Distance", &audio->maxDistance, 5.0f, audio->minDistance, 1000.0f);
+            {
+                static const char* kRolloffs[] = { "Logarithmic", "Linear", "Exponential" };
+                int r = static_cast<int>(audio->rolloff);
+                if (InspectorUndo::Combo(m_UndoRedo, "Rolloff", &r, kRolloffs, 3)) {
+                    audio->rolloff = static_cast<ECS::AudioSourceComponent::Rolloff>(r);
+                }
+                ImGui::SetItemTooltip("How the sound fades between Min and Max Distance. Logarithmic sounds natural,\nLinear fades evenly, Exponential drops off fast.");
+            }
         }
 
         InspectorUndo::DragInt(m_UndoRedo, "Priority", &audio->priority, 1, 0, 255);
@@ -635,6 +644,12 @@ void EditorLayer::DrawLipSyncComponent(ECS::Entity entity) {
         auto* ls = m_World->GetComponent<ECS::LipSyncComponent>(entity);
         if (!ls) return;
         DrawComponentHelp("lipSync", m_World, entity);
+
+        // Whose voice drives the mouth. The audio system read this and nothing
+        // could set it or save it, so it was always the entity itself (SD-27).
+        InspectorUndo::EntityField<ECS::LipSyncComponent>(m_UndoRedo, "Voice Source##LS", m_World, entity,
+                                                          &ECS::LipSyncComponent::linkedAudioSource);
+        ImGui::SetItemTooltip("The entity whose Audio Source plays the voice. (none) uses this entity.");
 
         InspectorUndo::DragFloat(m_UndoRedo, "Blend Speed##LS", &ls->blendSpeed, 0.5f, 1.0f, 30.0f);
         InspectorUndo::Checkbox(m_UndoRedo, "Auto from Amplitude##LS", &ls->autoFromAmplitude);
