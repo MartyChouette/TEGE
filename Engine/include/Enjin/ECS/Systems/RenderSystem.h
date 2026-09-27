@@ -251,6 +251,10 @@ struct EntityRenderData {
     // its bones bound alongside the outline records, not the main ones.
     Renderer::GPUBindGroupHandle outlineBoneBindGroup;
     u32 outlineBoneBindGroupGen = 0;
+    // And against the SHADOW caster array: a skinned caster's depth pass
+    // needs its bones (WP-16; it cast its bind pose)
+    Renderer::GPUBindGroupHandle shadowBoneBindGroup;
+    u32 shadowBoneBindGroupGen = 0;
 #endif
     u32 indexCount = 0;
     bool valid = false;  // true if this slot is occupied
@@ -287,6 +291,8 @@ struct EntityRenderData {
         texBindGroupValid = false;
         objBoneBindGroup = {};
         objBoneBindGroupGen = 0;
+        shadowBoneBindGroup = {};
+        shadowBoneBindGroupGen = 0;
 #endif
         indexCount = 0;
         valid = false;
@@ -2128,6 +2134,7 @@ private:
     Renderer::GPUBufferHandle m_WebShadowVPBuffer;       // light VP UBO
     Renderer::GPUBufferHandle m_WebShadowObjectBuffer;   // per-entity model UBO
     Renderer::GPUBindGroupHandle m_WebShadowObjectBG;
+    u32 m_WebShadowObjectGen = 1;   // bumped when the caster array is reallocated
 
     // Shadow sampling in main PBR pass (bind group 3)
     Renderer::GPUBindGroupLayoutHandle m_WebShadowSampleLayout;

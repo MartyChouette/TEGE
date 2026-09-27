@@ -2406,6 +2406,7 @@ void RenderSystem::Initialize() {
         Renderer::GPUBindGroupLayoutDesc shadowObjLD;
         shadowObjLD.entries = {
             {0, BType::StorageBufferReadOnly, SStage::Vertex, 0},
+            {1, BType::StorageBufferReadOnly, SStage::Vertex, 0},   // bones (a skinned caster's own)
         };
         m_WebShadowObjectLayout = bindMgr->CreateBindGroupLayout(shadowObjLD);
 
@@ -2430,11 +2431,13 @@ void RenderSystem::Initialize() {
         shadowPipeDesc.depthBiasSlope = 0.25f;
         shadowPipeDesc.label = "ShadowPipeline";
 
-        // Shadow uses only position (location 0)
+        // Position, and the bone influences a skinned caster needs
         Renderer::GPUVertexBufferLayoutDesc shadowVertLayout;
         shadowVertLayout.stride = sizeof(MeshComponent::Vertex);
         shadowVertLayout.attributes = {
-            {Renderer::GPUVertexFormat::Float32x3, 0, 0},  // position only
+            {Renderer::GPUVertexFormat::Float32x3, 0, 0},
+            {Renderer::GPUVertexFormat::Float32x4, static_cast<u32>(offsetof(MeshComponent::Vertex, boneWeights)), 4},
+            {Renderer::GPUVertexFormat::Uint32x4,  static_cast<u32>(offsetof(MeshComponent::Vertex, boneIndices)), 5},
         };
         shadowPipeDesc.vertexBuffers = {shadowVertLayout};
 
@@ -2475,7 +2478,8 @@ void RenderSystem::Initialize() {
         Renderer::GPUBindGroupDesc sobg;
         sobg.layout = m_WebShadowObjectLayout;
         m_WebShadowObjectCapacity = sizeof(Math::Matrix4);
-        sobg.entries = {{0, m_WebShadowObjectBuffer, 0, m_WebShadowObjectCapacity, {}, {}}};
+        sobg.entries = {{0, m_WebShadowObjectBuffer, 0, m_WebShadowObjectCapacity, {}, {}},
+                        {1, m_WebDefaultBoneBuffer, 0, 0, {}, {}}};
         m_WebShadowObjectBG = bindMgr->CreateBindGroup(sobg);
     }
 
@@ -4068,6 +4072,51 @@ void RenderSystem::Update(f32 deltaTime) {
     //
     // The caster list is the same, in the same order, in all three passes, so
     // one upload serves all of them and the row is just the caster's index.
+    // A caster whose bones are on the GPU. The bones are uploaded by the main
+    // draw loop, which runs after the shadow passes, so the shadow pose is one
+    // frame behind the drawn one, and a caster's first frame is its bind pose.
+    auto webShadowCasterSkinned = [&](Entity e) -> bool {
+        const u64 eid = EntityIndex(e);
+        return eid < m_EntityRenderData.size() && m_EntityRenderData[eid].boneBuffer.IsValid() &&
+               ResolveAnimator(e) != nullptr;
+    };
+    // The group 1 a caster's depth draw binds: the shared caster array, plus
+    // the caster's own bones when it is skinned (cached on the entity)
+    auto webShadowGroupFor = [&](Entity e) -> WGPUBindGroup {
+        auto* sBindMgr = static_cast<Renderer::WebGPUBindGroupManager*>(m_Renderer->GetBindGroupManager());
+        const u64 eid = EntityIndex(e);
+        if (!webShadowCasterSkinned(e)) return sBindMgr->GetNativeGroup(m_WebShadowObjectBG);
+        auto& rd = m_EntityRenderData[eid];
+        if (!rd.shadowBoneBindGroup.IsValid() || rd.shadowBoneBindGroupGen != m_WebShadowObjectGen) {
+            if (rd.shadowBoneBindGroup.IsValid()) sBindMgr->DestroyBindGroup(rd.shadowBoneBindGroup);
+            Renderer::GPUBindGroupDesc bgd;
+            bgd.layout = m_WebShadowObjectLayout;
+            bgd.entries = {{0, m_WebShadowObjectBuffer, 0, m_WebShadowObjectCapacity, {}, {}},
+                           {1, rd.boneBuffer, 0, 0, {}, {}}};
+            rd.shadowBoneBindGroup = sBindMgr->CreateBindGroup(bgd);
+            rd.shadowBoneBindGroupGen = m_WebShadowObjectGen;
+        }
+        return rd.shadowBoneBindGroup.IsValid() ? sBindMgr->GetNativeGroup(rd.shadowBoneBindGroup)
+                                                : sBindMgr->GetNativeGroup(m_WebShadowObjectBG);
+    };
+    // The pose, for the shadow caches: an animating caster changes the depth
+    // map without moving its transform, so the caches never redrew for it
+    auto webSkinPoseHash = [&](Entity e) -> u64 {
+        if (!webShadowCasterSkinned(e)) return 0;
+        const auto* anim = ResolveAnimator(e);
+        if (!anim) return 0;
+        u64 h = 1469598103934665603ull;
+        for (const auto& m : anim->animator.GetSkinningMatrices()) {
+            for (int k : {12, 13, 14, 0, 5, 10}) {
+                u32 bits;
+                const f32 q = std::round(m.m[k] * 512.0f);
+                std::memcpy(&bits, &q, sizeof(bits));
+                h = (h ^ bits) * 1099511628211ull;
+            }
+        }
+        return h;
+    };
+
     bool webShadowObjectsReady = false;
     auto webShadowObjects = [&]() -> bool {
         if (webShadowObjectsReady) return m_WebShadowObjectBG.IsValid();
@@ -4077,12 +4126,20 @@ void RenderSystem::Update(f32 deltaTime) {
         if (!bufMgr || !sBindMgr) return false;
 
         const auto& casters = webShadowCasters();
-        static std::vector<Math::Matrix4> models;
+        // ShadowRow in SHADOW_WGSL: the model, then params.x = skinned
+        struct ShadowRow { Math::Matrix4 model; f32 params[4]; };
+        static_assert(sizeof(ShadowRow) == 80, "matches ShadowRow in SHADOW_WGSL");
+        static std::vector<ShadowRow> models;
         models.clear();
         models.reserve(casters.size());
-        for (Entity ce : casters) models.push_back(ECS::ComputeWorldMatrix(m_World, ce));
+        for (Entity ce : casters) {
+            ShadowRow row{};
+            row.model = ECS::ComputeWorldMatrix(m_World, ce);
+            row.params[0] = webShadowCasterSkinned(ce) ? 1.0f : 0.0f;
+            models.push_back(row);
+        }
 
-        const usize needBytes = (models.empty() ? 1 : models.size()) * sizeof(Math::Matrix4);
+        const usize needBytes = (models.empty() ? 1 : models.size()) * sizeof(ShadowRow);
         if (!m_WebShadowObjectBuffer.IsValid() || m_WebShadowObjectCapacity < needBytes) {
             if (m_WebShadowObjectBuffer.IsValid()) bufMgr->DestroyBuffer(m_WebShadowObjectBuffer);
             if (m_WebShadowObjectBG.IsValid()) {
@@ -4096,13 +4153,15 @@ void RenderSystem::Update(f32 deltaTime) {
         }
         if (!models.empty() && m_WebShadowObjectBuffer.IsValid()) {
             bufMgr->UploadData(m_WebShadowObjectBuffer, models.data(),
-                               models.size() * sizeof(Math::Matrix4));
+                               models.size() * sizeof(ShadowRow));
         }
         if (!m_WebShadowObjectBG.IsValid() && m_WebShadowObjectBuffer.IsValid()) {
             Renderer::GPUBindGroupDesc sobgd;
             sobgd.layout = m_WebShadowObjectLayout;
-            sobgd.entries = {{0, m_WebShadowObjectBuffer, 0, m_WebShadowObjectCapacity, {}, {}}};
+            sobgd.entries = {{0, m_WebShadowObjectBuffer, 0, m_WebShadowObjectCapacity, {}, {}},
+                             {1, m_WebDefaultBoneBuffer, 0, 0, {}, {}}};
             m_WebShadowObjectBG = sBindMgr->CreateBindGroup(sobgd);
+            ++m_WebShadowObjectGen;   // every skinned caster's own group points at the old buffer
         }
         return m_WebShadowObjectBG.IsValid();
     };
@@ -4147,6 +4206,7 @@ void RenderSystem::Update(f32 deltaTime) {
             const u64 eid = EntityIndex(ce);
             if (eid < m_EntityRenderData.size())
                 eh = hashF(eh, static_cast<f32>(m_EntityRenderData[eid].indexCount));
+            eh ^= webSkinPoseHash(ce);
             // Added, not chained, so iteration order cannot look like a change.
             sum += eh;
         }
@@ -4576,6 +4636,7 @@ void RenderSystem::Update(f32 deltaTime) {
             eh = shadowHashF(eh, qr(mx->rotation.x)); eh = shadowHashF(eh, qr(mx->rotation.y));
             eh = shadowHashF(eh, qr(mx->rotation.z)); eh = shadowHashF(eh, qr(mx->rotation.w));
             eh = shadowHashF(eh, qp(mx->scale.x)); eh = shadowHashF(eh, qp(mx->scale.y)); eh = shadowHashF(eh, qp(mx->scale.z));
+            eh ^= webSkinPoseHash(fe);
             casterSigSum += eh;
         }
         shadowSig ^= casterSigSum;
@@ -4635,6 +4696,7 @@ void RenderSystem::Update(f32 deltaTime) {
                     if (eid >= m_EntityRenderData.size()) { shadowIncomplete = true; continue; }
                     auto& rd = m_EntityRenderData[eid];
                     if (!rd.valid || !rd.vertexBuffer.IsValid() || !rd.indexBuffer.IsValid()) { shadowIncomplete = true; continue; }
+                    wgpuRenderPassEncoderSetBindGroup(shadowPass, 1, webShadowGroupFor(entity), 0, nullptr);
                     wgpuRenderPassEncoderSetVertexBuffer(shadowPass, 0, webBufMgr->GetNativeBuffer(rd.vertexBuffer), 0, WGPU_WHOLE_SIZE);
                     wgpuRenderPassEncoderSetIndexBuffer(shadowPass, webBufMgr->GetNativeBuffer(rd.indexBuffer),
                                                         WGPUIndexFormat_Uint32, 0, WGPU_WHOLE_SIZE);
@@ -4765,6 +4827,7 @@ void RenderSystem::Update(f32 deltaTime) {
                             if (eid >= m_EntityRenderData.size()) continue;
                             auto& rd = m_EntityRenderData[eid];
                             if (!rd.valid || !rd.vertexBuffer.IsValid() || !rd.indexBuffer.IsValid()) continue;
+                            wgpuRenderPassEncoderSetBindGroup(spotPass, 1, webShadowGroupFor(entity), 0, nullptr);
                             wgpuRenderPassEncoderSetVertexBuffer(spotPass, 0, webBufMgr2->GetNativeBuffer(rd.vertexBuffer), 0, WGPU_WHOLE_SIZE);
                             wgpuRenderPassEncoderSetIndexBuffer(spotPass, webBufMgr2->GetNativeBuffer(rd.indexBuffer), WGPUIndexFormat_Uint32, 0, WGPU_WHOLE_SIZE);
                             wgpuRenderPassEncoderDrawIndexed(spotPass, rd.indexCount, 1, 0, 0,
@@ -4907,6 +4970,7 @@ void RenderSystem::Update(f32 deltaTime) {
                             if (eid >= m_EntityRenderData.size()) continue;
                             auto& rd = m_EntityRenderData[eid];
                             if (!rd.valid || !rd.vertexBuffer.IsValid() || !rd.indexBuffer.IsValid()) continue;
+                            wgpuRenderPassEncoderSetBindGroup(facePass, 1, webShadowGroupFor(entity), 0, nullptr);
                             wgpuRenderPassEncoderSetVertexBuffer(facePass, 0, webBufMgr3->GetNativeBuffer(rd.vertexBuffer), 0, WGPU_WHOLE_SIZE);
                             wgpuRenderPassEncoderSetIndexBuffer(facePass, webBufMgr3->GetNativeBuffer(rd.indexBuffer), WGPUIndexFormat_Uint32, 0, WGPU_WHOLE_SIZE);
                             wgpuRenderPassEncoderDrawIndexed(facePass, rd.indexCount, 1, 0, 0,
@@ -6948,6 +7012,7 @@ void RenderSystem::OnEntityRemoved(Entity entity) {
         if (bindMgr && rd.texBindGroup.IsValid()) bindMgr->DestroyBindGroup(rd.texBindGroup);
         if (bindMgr && rd.objBoneBindGroup.IsValid()) bindMgr->DestroyBindGroup(rd.objBoneBindGroup);
         if (bindMgr && rd.outlineBoneBindGroup.IsValid()) bindMgr->DestroyBindGroup(rd.outlineBoneBindGroup);
+        if (bindMgr && rd.shadowBoneBindGroup.IsValid()) bindMgr->DestroyBindGroup(rd.shadowBoneBindGroup);
         rd.Invalidate();
     }
 }
@@ -6970,7 +7035,8 @@ void RenderSystem::FlushSceneClear(const Renderer::GpuLifetimeToken&) {
                 // entity for the life of the tab.
                 if (bindMgr && rd.texBindGroup.IsValid()) bindMgr->DestroyBindGroup(rd.texBindGroup);
                 if (bindMgr && rd.objBoneBindGroup.IsValid()) bindMgr->DestroyBindGroup(rd.objBoneBindGroup);
-        if (bindMgr && rd.outlineBoneBindGroup.IsValid()) bindMgr->DestroyBindGroup(rd.outlineBoneBindGroup);
+                if (bindMgr && rd.outlineBoneBindGroup.IsValid()) bindMgr->DestroyBindGroup(rd.outlineBoneBindGroup);
+                if (bindMgr && rd.shadowBoneBindGroup.IsValid()) bindMgr->DestroyBindGroup(rd.shadowBoneBindGroup);
                 rd.Invalidate();
             }
         }

@@ -1075,13 +1075,25 @@ struct ViewProjection {
 // times per caster for a point light. The row is selected by the draw's
 // firstInstance, and the caster order is the same in every pass, so one upload
 // serves all of them.
+// params.x = 1 when the caster is skinned and binding 1 holds its bones.
+// Skinned casters used to go into the depth map in their bind pose (WP-16).
+struct ShadowRow {
+    model: mat4x4<f32>,
+    params: vec4<f32>,
+};
 struct ShadowObjects {
-    models: array<mat4x4<f32>>,
+    rows: array<ShadowRow>,
 };
 @group(1) @binding(0) var<storage, read> objects: ShadowObjects;
+struct ShadowBones {
+    matrices: array<mat4x4<f32>>,
+};
+@group(1) @binding(1) var<storage, read> bones: ShadowBones;
 
 struct VertexInput {
     @location(0) position: vec3<f32>,
+    @location(4) boneWeights: vec4<f32>,
+    @location(5) boneIndices: vec4<u32>,
 };
 
 struct VertexOutput {
@@ -1091,7 +1103,16 @@ struct VertexOutput {
 @vertex
 fn vs_main(in: VertexInput, @builtin(instance_index) instanceIdx: u32) -> VertexOutput {
     var out: VertexOutput;
-    let world_pos = objects.models[instanceIdx] * vec4<f32>(in.position, 1.0);
+    let row = objects.rows[instanceIdx];
+    var pos = in.position;
+    if (row.params.x > 0.5) {
+        let skin = in.boneWeights.x * bones.matrices[in.boneIndices.x]
+                 + in.boneWeights.y * bones.matrices[in.boneIndices.y]
+                 + in.boneWeights.z * bones.matrices[in.boneIndices.z]
+                 + in.boneWeights.w * bones.matrices[in.boneIndices.w];
+        pos = (skin * vec4<f32>(in.position, 1.0)).xyz;
+    }
+    let world_pos = row.model * vec4<f32>(pos, 1.0);
     out.clip_position = lightVP.proj * lightVP.view * world_pos;
     return out;
 }
