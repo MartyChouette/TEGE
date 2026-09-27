@@ -1,7 +1,11 @@
 #include "EnjinTest.h"
 #include "Enjin/Input/InputAction.h"
 #include "Enjin/Input/TouchActionBridge.h"
+#include "Enjin/Input/InputProjectSettings.h"
 #include "Enjin/Platform/Input.h"
+#include "Enjin/ECS/World.h"
+#include "Enjin/ECS/Components/Transform.h"
+#include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include "Enjin/Scripting/ScriptEngine.h"
 #include "Enjin/Scripting/ScriptBindings.h"
 #include <angelscript.h>
@@ -209,6 +213,30 @@ ENJIN_TEST(TouchActionBinding, ScriptButtonsWithNoLayoutDoNotStack) {
 
     Input::SetTouchScheme(Input::TouchScheme{});
     engine.Shutdown();
+}
+
+// IN-33: a vehicle scene got the no-controller preset, so no stick
+ENJIN_TEST(TouchActionBinding, VehiclesGetAStick) {
+    ECS::World world;
+    const ECS::Entity car = world.CreateEntity();
+    world.AddComponent<ECS::TransformComponent>(car, ECS::TransformComponent{});
+    world.AddComponent<ECS::VehicleController>(car, ECS::VehicleController{});
+    ENJIN_EXPECT_TRUE(TouchPresetForWorld(&world) == TouchPreset::ThirdPerson);
+}
+
+// IN-31: a hand-authored layout on a game with no controller had a stick
+// that pressed nothing
+ENJIN_TEST(TouchActionBinding, ACustomLayoutStickDrivesTheMoveActions) {
+    InputProjectSettings project;
+    project.customTouchLayout = true;
+    project.touchStick = true;
+    SetTouchProjectSettings(&project);
+    ApplyTouchPreset(TouchPreset::Generic);
+    const Input::TouchScheme& s = Input::GetTouchScheme();
+    ENJIN_EXPECT_TRUE(s.moveStick);
+    ENJIN_EXPECT_EQ(s.stickActions[0], static_cast<int>(GameAction::MoveLeft));
+    ENJIN_EXPECT_EQ(s.stickActions[2], static_cast<int>(GameAction::MoveForward));
+    SetTouchProjectSettings(nullptr);
 }
 
 ENJIN_TEST_MAIN()

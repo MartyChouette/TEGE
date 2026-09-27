@@ -241,6 +241,18 @@ namespace {
                     AddActionButton(s, b.action, label, b.size, b.col, b.row, 0);
                 }
                 s.moveStick = p.touchStick;
+                // A stick the preset did not fill (a no-controller game) had no
+                // actions behind it and pressed nothing (IN-31). It drives the
+                // four move actions, which is what a script-driven game reads.
+                if (s.moveStick) {
+                    const GameAction moves[4] = { GameAction::MoveLeft, GameAction::MoveRight,
+                                                  GameAction::MoveForward, GameAction::MoveBack };
+                    for (int i = 0; i < 4; ++i) {
+                        if (s.stickActions[i] >= 0) continue;
+                        s.stickActions[i] = static_cast<int>(moves[i]);
+                        s.stickKeys[i] = GetActionInfo(moves[i]).key1;
+                    }
+                }
             }
             if (p.touchLook == TouchLookMode::AlwaysOn)  s.lookRegion = true;
             if (p.touchLook == TouchLookMode::AlwaysOff) s.lookRegion = false;
@@ -322,6 +334,14 @@ TouchPreset TouchPresetForWorld(ECS::World* world) {
     if (!world->GetEntitiesWithComponent<TopDown3DController>().empty())    return TouchPreset::TopDown3D;
     if (!world->GetEntitiesWithComponent<TopDown2DController>().empty())    return TouchPreset::TopDown2D;
     if (!world->GetEntitiesWithComponent<Platformer2DController>().empty()) return TouchPreset::Platformer2D;
+    // Vehicles and the surface-aligned walker steer with the move actions and
+    // orbit a camera like third person. They fell through to Generic, which
+    // has no stick, so a phone could not drive (IN-33). The third-person
+    // buttons they do not read drop out on their own: touch lists what the
+    // game reads.
+    if (!world->GetEntitiesWithComponent<VehicleController>().empty() ||
+        !world->GetEntitiesWithComponent<WaterVehicleController>().empty() ||
+        !world->GetEntitiesWithComponent<SurfaceAlignedController>().empty()) return TouchPreset::ThirdPerson;
     return TouchPreset::Generic;
 }
 
