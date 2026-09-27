@@ -15406,8 +15406,11 @@ void RenderSystem::UpdateFrameUniforms() {
         }
     }
 
-    // World curvature
-    lighting.worldCurvature = Math::Vector4(m_WorldCurvature, 0.0f, 0.0f, 0.0f);
+    // World curvature: x only. y, z and w carry depth-sort jitter, normal
+    // quantize steps and the cel shadow mode, packed above; this used to
+    // assign the whole vector and zeroed all three every frame, so those three
+    // settings did nothing on desktop (WP-19).
+    lighting.worldCurvature.x = m_WorldCurvature;
 
     // Sky reflection color for water/ice fresnel
     {
