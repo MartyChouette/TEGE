@@ -5986,6 +5986,11 @@ void EditorLayer::RegisterPaletteCommands() {
         }
     });
     m_CommandPalette.RegisterCommand({
+        "Play from Start", "PlayMode", "",
+        "Play the whole game from the start scene, through the startup flow",
+        [this]() { RequestPlayFromStart(); }
+    });
+    m_CommandPalette.RegisterCommand({
         "Stop", "PlayMode", "Escape",
         "Stop play mode",
         [this]() {

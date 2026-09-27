@@ -415,6 +415,10 @@ int main(int argc, char* argv[]) {
         if (flag == "--play") {
             Enjin::Editor::EditorLayer::s_AutoPlayOnLaunch = true;
             Enjin::Editor::EditorLayer::s_AutoPlayRequested = true;
+        } else if (flag == "--play-from-start") {
+            Enjin::Editor::EditorLayer::s_AutoPlayOnLaunch = true;
+            Enjin::Editor::EditorLayer::s_AutoPlayRequested = true;
+            Enjin::Editor::EditorLayer::s_AutoPlayFromStart = true;
         } else if (flag == "--play-cycle" && i + 1 < argc && argv[i + 1]) {
             Enjin::Editor::EditorSettings::s_ReadOnly = true;   // automated: leave the person's settings alone
             Enjin::Editor::EditorLayer::s_PlayCycleFrames = std::atoi(argv[++i]);

@@ -229,6 +229,8 @@ public:
     // s_AutoPlayOnLaunch clears once play fires; s_AutoPlayRequested persists
     // so the --golden counter knows to wait for play mode before counting.
     static inline bool s_AutoPlayOnLaunch = false;
+    // --play-from-start: the auto-play above goes through Play from Start
+    static inline bool s_AutoPlayFromStart = false;
     // --creative: open straight into the build surface. Lets a person launch
     // into creative mode without hunting for it, and makes the surface
     // capturable by the headless --golden harness, which is the only way to
@@ -1851,6 +1853,33 @@ private:
     // The scene's authored start, not the running clock: what a save writes and
     // what a build starts from (EP-1, GR-11). The Time of Day and Month
     // controls set these as well as the clock.
+    // Play from Start (EditorLayerPlayFromStart.cpp): the whole game from the
+    // start scene through the startup flow, where plain Play runs the open
+    // scene only (decided 2026-09-27)
+    struct FromStartRun {
+        bool active = false;
+        bool beginPending = false;     // waiting for play to start in the start scene
+        bool waitingForScene = false;  // a Scene step's switch is under way
+        bool onMenu = false;           // a Menu step: gameplay held
+        bool builtInMenu = false;      // that menu is the built-in one, not a MainMenu canvas
+        bool menuAnswered = false;     // New Game / Continue pressed on the built-in menu
+        bool finished = false;         // ran off the end: gameplay
+        bool touchDown = false;
+        i32 index = -1;
+        f32 timer = 0.0f;
+        std::string returnScene;       // reopened when the run ends
+        std::vector<Scene::StartupFlowStep> steps;
+    };
+    FromStartRun m_FromStart;
+    bool m_FlowAdvanceRequested = false;   // Flow_Advance() from a script
+    void RequestPlayFromStart();
+    void EndPlayFromStart();
+    void AdvanceFromStart();
+    void UpdatePlayFromStart(f32 dt);
+    bool FromStartHoldsGameplay() const;
+    std::string FromStartScenePath(const std::string& projectRelative) const;
+    bool FromStartSceneIsOpen(const std::string& absolutePath) const;
+    ECS::Entity FindVisibleAuthoredMainMenu() const;
     // This frame's game clock: scaled in play, zero while paused (EP-10, EP-11)
     f32 m_LastGameDt = 0.0f;
     f32 m_SceneStartTimeOfDay = 8.0f;

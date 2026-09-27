@@ -3811,6 +3811,9 @@ Math::Vector3 RenderSystem::MeasureTextTo(Entity entity, i32 codepointIndex) {
 // MeshComponent is enough.
 void RenderSystem::EnsureWater3DMeshes() {
     if (!m_World) return;
+    // A scene opened earlier this frame (World::Clear) leaves the cached
+    // storages dangling; the editor calls this after such a load
+    EnsureStorageCacheFresh();
     for (Entity entity : m_World->GetEntitiesWithComponent<Water3DComponent>()) {
         if (!m_World->IsValid(entity)) continue;
         auto* water3d = m_CachedWater3DStorage ? m_CachedWater3DStorage->Get(entity)
@@ -20037,6 +20040,9 @@ void RenderSystem::UploadMorphTargetSSBO(Entity entity, ECS::MorphTargetComponen
 
 void RenderSystem::EnsureWater3DMeshes() {
     if (!m_World) return;
+    // A scene opened earlier this frame (World::Clear) leaves the cached
+    // storages dangling; the editor calls this after such a load
+    EnsureStorageCacheFresh();
     for (Entity entity : m_World->GetEntitiesWithComponent<Water3DComponent>()) {
         if (!m_World->IsValid(entity)) continue;
         auto* water3d = m_CachedWater3DStorage ? m_CachedWater3DStorage->Get(entity) : m_World->GetComponent<Water3DComponent>(entity);
@@ -24803,6 +24809,12 @@ void RenderSystem::EnsureTilemapMeshes() {
 }
 
 void RenderSystem::EnsureWaterMeshes() {
+    if (!m_World) return;
+    // Same as EnsureWater3DMeshes: the editor calls this on the frame a scene
+    // opens, and the cached WaterVolume storage from the old world was read
+    // after World::Clear freed it (a crash on the first scene switch of a Play
+    // from Start run, and of Scene_LoadScene in editor play)
+    EnsureStorageCacheFresh();
     for (Entity entity : m_World->GetEntitiesWithComponent<WaterVolumeComponent>()) {
         auto* waterVol = m_CachedWaterVolumeStorage ? m_CachedWaterVolumeStorage->Get(entity) : m_World->GetComponent<WaterVolumeComponent>(entity);
         if (!waterVol) continue;

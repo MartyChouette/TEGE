@@ -1319,7 +1319,8 @@ void EditorLayer::DrawMenuBar() {
             // (steps + REC + scrubber) and while stopped (export buttons + gear).
             f32 totalW = btnW + (stopped ? 0.0f : (4.0f + btnW)) + badgeW;
             if (!stopped) totalW += (stepW + 4.0f) * 2.0f + 8.0f + 64.0f + 6.0f + 190.0f;
-            else totalW += 8.0f + 190.0f;
+            else totalW += 8.0f + 190.0f + 4.0f + ImGui::CalcTextSize("From Start").x +
+                           ImGui::GetStyle().FramePadding.x * 2.0f;   // Play from Start
             f32 centerX = (ImGui::GetWindowWidth() - totalW) * 0.5f;
             if (centerX > ImGui::GetCursorPosX()) {
                 ImGui::SetCursorPosX(centerX);
@@ -1401,6 +1402,12 @@ void EditorLayer::DrawMenuBar() {
                     }
                 }
                 ImGui::SetItemTooltip("Play");
+                ImGui::SameLine(0.0f, 4.0f);
+                if (ImGui::Button("From Start", ImVec2(0.0f, btnH))) {
+                    RequestPlayFromStart();
+                }
+                ImGui::SetItemTooltip("Play from Start: the whole game from the start scene, "
+                                      "through the startup flow, as a player gets it");
             } else if (playing) {
                 if (iconButton("##pausebtn", 1, textCol)) {
                     m_PlayMode.Pause();

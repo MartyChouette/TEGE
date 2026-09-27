@@ -414,6 +414,20 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
                                       &m_SubtitleSystem, &m_Announcer);
     });
     m_GameMenu.SetCallback([this](const std::string& action) {
+        if ((action == "new_game" || action == "continue") && m_FromStart.onMenu) {
+            // The title menu of a Play from Start run. Continue starts the game
+            // too: a play session has no save to continue.
+            m_GameMenu.HideAll();
+            m_FromStart.menuAnswered = true;
+            return;
+        }
+        if (action == "quit" && m_FromStart.active) {
+            // Quit on the game's title menu closes a built game. Here it ends
+            // the run; closing the EDITOR would be quite a different thing.
+            m_GameMenu.HideAll();
+            m_PendingPlayStop = true;
+            return;
+        }
         if (action == "resume") {
             m_GameMenu.HideAll();
             m_PlayMode.Resume();
@@ -756,6 +770,9 @@ void EditorLayer::StartPlayMode() {
     // authored day went nowhere and the date was always day 1.
     Scripting::SetBindingsWorldTime(&m_WorldTime, &m_SeasonalWeather);
     Scripting::SetBindingsSceneManager(&m_SceneManager);
+    // Flow_Advance() moves a Play from Start run past a Script step. The
+    // editor never wired it, so the call did nothing in editor play (EP-6).
+    Scripting::SetBindingsFlowAdvanceFlag(&m_FlowAdvanceRequested);
     s_VisualScriptWater = &m_Water3D;
     m_CachedPlayerEntity = ECS::INVALID_ENTITY;
     m_PlayMode.SetDebugRecording(m_EditorSettings.debugRecordPlay, m_EditorSettings.debugRecordSeconds);
@@ -1105,8 +1122,13 @@ void EditorLayer::Update(f32 deltaTime) {
         if (s_AutoPlayCountdown > 0 && --s_AutoPlayCountdown == 0) {
             s_AutoPlayOnLaunch = false;
             if (m_PlayMode.IsStopped()) {
-                StartPlayMode();
-                ENJIN_LOG_INFO(Editor, "--play: auto-entered play mode");
+                if (s_AutoPlayFromStart) {
+                    RequestPlayFromStart();
+                    ENJIN_LOG_INFO(Editor, "--play-from-start: started");
+                } else {
+                    StartPlayMode();
+                    ENJIN_LOG_INFO(Editor, "--play: auto-entered play mode");
+                }
             }
         }
     }
@@ -1225,10 +1247,11 @@ void EditorLayer::Update(f32 deltaTime) {
             });
             m_McpServer.SetPlayControlHook([this](const std::string& action) -> std::string {
                 if (action == "play")   { if (m_PlayMode.IsStopped()) { StartPlayMode(); return "playing"; } return "already in play mode"; }
+                if (action == "play_from_start") { if (m_PlayMode.IsStopped()) { RequestPlayFromStart(); return "playing from start"; } return "already in play mode"; }
                 if (action == "pause")  { if (m_PlayMode.IsPlaying()) { m_PlayMode.Pause(); return "paused"; } return "not playing"; }
                 if (action == "resume") { if (m_PlayMode.IsPaused()) { m_PlayMode.Resume(); return "resumed"; } return "not paused"; }
                 if (action == "stop")   { if (!m_PlayMode.IsStopped()) { m_PendingPlayStop = true; return "stopping"; } return "not in play mode"; }
-                return "unknown action '" + action + "' (play|pause|resume|stop)";
+                return "unknown action '" + action + "' (play|play_from_start|pause|resume|stop)";
             });
             m_McpServer.SetCaptureHook([this]() -> std::string {
                 std::string base = (std::filesystem::temp_directory_path() / "tege_mcp_capture").string();
@@ -2863,7 +2886,8 @@ void EditorLayer::Update(f32 deltaTime) {
         (m_PlayMode.IsStopped() || (!m_GameViewVisiblePrev && !m_FocusMode))) {
         m_ContentWarnings.Dismiss();
     }
-    if (!m_ContentWarnings.IsVisible()) m_PlayMode.Update(deltaTime);
+    UpdatePlayFromStart(m_LastGameDt);
+    if (!m_ContentWarnings.IsVisible() && !FromStartHoldsGameplay()) m_PlayMode.Update(deltaTime);
 
     // The editor's own audio device, for auditioning clips while editing. Only
     // ticks once something has actually been played: the device is not opened
@@ -6380,7 +6404,7 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
     // is Console focus, so W typed into the console does not also walk the
     // player: actions and a script's raw keys both go quiet.
     const bool gameplayHasInput = m_PlayMode.IsPlaying() && !m_PlayMode.IsPaused() &&
-                                  !m_ContentWarnings.IsVisible();
+                                  !m_ContentWarnings.IsVisible() && !FromStartHoldsGameplay();
     const bool typing = ImGui::GetCurrentContext() && ImGui::GetIO().WantTextInput;
     const bool inDialogue = gameplayHasInput && m_PlayMode.GetDialogueSystem()->GetActiveDialogueEntity() != 0;
     Input::SetInputFocus(!gameplayHasInput ? Input::InputFocus::Menu
@@ -6436,6 +6460,7 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
             case GUI::MenuScreen::Audio:
             case GUI::MenuScreen::Controls:
             case GUI::MenuScreen::HowToPlay:
+            case GUI::MenuScreen::MainMenu:   // only ever shown by Play from Start
                 // Into the Game View window's list, not the background one:
                 // the docked game view is an ImGui image, so a menu on the
                 // background list draws underneath the very thing it covers.
