@@ -2446,10 +2446,19 @@ void ControllerSystem::UpdateWaterVehicle(Entity entity, WaterVehicleController&
     }
 }
 
+// The mass at which the authored acceleration and brake numbers apply as
+// written: the component's default. A car twice as heavy picks up and sheds
+// speed half as fast.
+static constexpr f32 kVehicleReferenceMass = 1000.0f;
+
 void ControllerSystem::UpdateVehicle(Entity entity, VehicleController& ctrl, TransformComponent& transform, f32 dt) {
     (void)entity;
 
     Math::Vector2 input = GetMovementInput(ctrl);
+
+    // Mass: acceleration, braking and engine drag are forces, so their effect
+    // on speed goes as 1/mass (SD-27; mass was saved and never read).
+    const f32 massScale = kVehicleReferenceMass / std::max(ctrl.mass, 1.0f);
     bool handbrakeInput = IsJumpPressed();
 
     // --- Throttle / Brake ---
@@ -2464,31 +2473,31 @@ void ControllerSystem::UpdateVehicle(Entity entity, VehicleController& ctrl, Tra
     if (ctrl.handbrake) {
         // Handbrake: strong deceleration, reduced drift factor for skidding
         ctrl.isBraking = true;
-        ctrl.currentSpeed = Math::MoveTowards(ctrl.currentSpeed, 0.0f, ctrl.brakeForce * ctrl.handbrakeScale * dt);
+        ctrl.currentSpeed = Math::MoveTowards(ctrl.currentSpeed, 0.0f, ctrl.brakeForce * ctrl.handbrakeScale * massScale * dt);
     } else if (throttle > 0.01f) {
         // Forward throttle
         if (ctrl.currentSpeed < 0.0f) {
             // Currently reversing, apply brake first
             ctrl.isBraking = true;
-            ctrl.currentSpeed = Math::MoveTowards(ctrl.currentSpeed, 0.0f, ctrl.brakeForce * dt);
+            ctrl.currentSpeed = Math::MoveTowards(ctrl.currentSpeed, 0.0f, ctrl.brakeForce * massScale * dt);
         } else {
-            ctrl.currentSpeed = Math::MoveTowards(ctrl.currentSpeed, ctrl.maxSpeed * throttle, ctrl.acceleration * dt);
+            ctrl.currentSpeed = Math::MoveTowards(ctrl.currentSpeed, ctrl.maxSpeed * throttle, ctrl.acceleration * massScale * dt);
         }
     } else if (throttle < -0.01f) {
         // Reverse / brake
         if (ctrl.currentSpeed > ctrl.reverseSpeedThreshold) {
             // Moving forward: treat as brake
             ctrl.isBraking = true;
-            ctrl.currentSpeed = Math::MoveTowards(ctrl.currentSpeed, 0.0f, ctrl.brakeForce * dt);
+            ctrl.currentSpeed = Math::MoveTowards(ctrl.currentSpeed, 0.0f, ctrl.brakeForce * massScale * dt);
         } else {
             // Slow enough: allow reverse
             ctrl.isReversing = true;
             ctrl.currentSpeed = Math::MoveTowards(ctrl.currentSpeed, -ctrl.reverseMaxSpeed * (-throttle),
-                                                  ctrl.acceleration * ctrl.reverseAccelScale * dt);
+                                                  ctrl.acceleration * ctrl.reverseAccelScale * massScale * dt);
         }
     } else {
         // No input: engine brake (coast to stop)
-        ctrl.currentSpeed = Math::MoveTowards(ctrl.currentSpeed, 0.0f, ctrl.engineBrake * dt);
+        ctrl.currentSpeed = Math::MoveTowards(ctrl.currentSpeed, 0.0f, ctrl.engineBrake * massScale * dt);
     }
 
     // --- Steering ---
@@ -2538,8 +2547,14 @@ void ControllerSystem::UpdateVehicle(Entity entity, VehicleController& ctrl, Tra
     f32 forwardVel = currentVel.x * ctrl.forwardDir.x + currentVel.z * ctrl.forwardDir.z;
     f32 lateralVel = currentVel.x * rightDir.x + currentVel.z * rightDir.z;
 
-    // Damp lateral velocity (driftFactor: 1.0 = full grip, 0.0 = ice)
+    // Damp lateral velocity (driftFactor: 1.0 = full grip, 0.0 = ice).
+    // Grip scales how hard the tyres bite sideways, and downforce adds bite
+    // with the square of speed, so a fast car corners flatter than a slow one
+    // slides (SD-27; both were saved and never read). At the defaults, grip 1
+    // and standing still, this is the old damping exactly.
+    const f32 downforce = 1.0f + ctrl.downforceMultiplier * speedFactor * speedFactor;
     f32 driftDamp = ctrl.handbrake ? ctrl.driftFactor * 0.3f : ctrl.driftFactor;
+    driftDamp = Math::Clamp(driftDamp * std::max(ctrl.grip, 0.0f) * downforce, 0.0f, 1.0f);
     lateralVel *= std::pow(1.0f - driftDamp, dt * 60.0f);
 
     // Detect drifting

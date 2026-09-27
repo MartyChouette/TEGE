@@ -201,4 +201,101 @@ ENJIN_TEST(FirstPersonMovement, WalkingAcrossOpenFloorIsNotReportedAsBlocked) {
 // take another run at it; what is NOT wanted is a passing test that quietly
 // asserts the weaker claim and lets the original one stand.
 
+// ===========================================================================
+// Vehicle: grip, downforce and mass were saved and never read (SD-27)
+// ===========================================================================
+
+namespace {
+struct Driver {
+    ECS::World world;
+    ECS::Entity car = ECS::INVALID_ENTITY;
+    std::unique_ptr<Physics::IPhysicsBackend> physics;
+    ECS::ControllerSystem controllers;
+    InputSystem::InputActionMap map;
+
+    explicit Driver(const ECS::VehicleController& vc) {
+        ECS::Entity floor = world.CreateEntity();
+        ECS::TransformComponent ft;
+        ft.position = Math::Vector3(0.0f, -0.5f, 0.0f);
+        world.AddComponent<ECS::TransformComponent>(floor, ft);
+        ECS::BoxColliderComponent bc;
+        bc.size = Math::Vector3(400.0f, 1.0f, 400.0f);
+        world.AddComponent<ECS::BoxColliderComponent>(floor, bc);
+
+        car = world.CreateEntity();
+        world.AddComponent<ECS::TransformComponent>(car);
+        world.AddComponent<ECS::VehicleController>(car, vc);
+
+        physics = Physics::CreatePhysicsBackend(Physics::PhysicsBackendType::Auto);
+        physics->SetWorld(&world);
+        controllers.SetEnabled(true);
+        controllers.SetWorld(&world);
+        controllers.SetPhysics(physics.get());
+        map.LoadDefaults();
+        controllers.SetInputActionMap(&map);
+    }
+
+    void Hold(std::initializer_list<KeyCode> held, int frames) {
+        const f32 dt = 1.0f / 60.0f;
+        bool keys[512] = {};
+        bool mouse[8] = {};
+        for (KeyCode k : held) keys[static_cast<int>(k)] = true;
+        Input::SetInputFocus(Input::InputFocus::Gameplay);
+        Input::SetReplayInjection(true);
+        for (int i = 0; i < frames; ++i) {
+            Input::InjectFrameState(keys, mouse, Math::Vector2(0.0f, 0.0f));
+            Input::Update();
+            map.Update(dt);
+            physics->Update(dt);
+            controllers.Update(dt);
+        }
+        Input::SetReplayInjection(false);
+    }
+
+    ECS::VehicleController& V() { return *world.GetComponent<ECS::VehicleController>(car); }
+};
+}
+
+ENJIN_TEST(VehicleHandling, AHeavierCarPicksUpSpeedMoreSlowly) {
+    ECS::VehicleController light;
+    light.mass = 1000.0f;
+    ECS::VehicleController heavy = light;
+    heavy.mass = 2000.0f;
+    Driver a(light), b(heavy);
+    a.Hold({KeyCode::W}, 30);
+    b.Hold({KeyCode::W}, 30);
+    ENJIN_EXPECT_TRUE(a.V().currentSpeed > 0.5f);
+    // Half a second from rest at 15 u/s^2: 7.5 for the light car, half that for the heavy
+    ENJIN_EXPECT_TRUE(std::abs(b.V().currentSpeed - a.V().currentSpeed * 0.5f) < 0.3f);
+}
+
+ENJIN_TEST(VehicleHandling, LessGripSlidesWiderInATurn) {
+    ECS::VehicleController grippy;
+    grippy.driftFactor = 0.2f;
+    ECS::VehicleController slick = grippy;
+    slick.grip = 0.3f;
+    Driver a(grippy), b(slick);
+    a.Hold({KeyCode::W}, 90);
+    b.Hold({KeyCode::W}, 90);
+    a.Hold({KeyCode::W, KeyCode::D}, 30);
+    b.Hold({KeyCode::W, KeyCode::D}, 30);
+    const f32 slideA = a.V().lateralVelocity.Length();
+    const f32 slideB = b.V().lateralVelocity.Length();
+    ENJIN_EXPECT_TRUE(slideB > slideA * 1.5f);
+}
+
+ENJIN_TEST(VehicleHandling, DownforceBitesHarderAtSpeed) {
+    ECS::VehicleController none;
+    none.driftFactor = 0.2f;
+    none.downforceMultiplier = 0.0f;
+    ECS::VehicleController pressed = none;
+    pressed.downforceMultiplier = 2.0f;
+    Driver a(none), b(pressed);
+    a.Hold({KeyCode::W}, 150);
+    b.Hold({KeyCode::W}, 150);
+    a.Hold({KeyCode::W, KeyCode::D}, 30);
+    b.Hold({KeyCode::W, KeyCode::D}, 30);
+    ENJIN_EXPECT_TRUE(b.V().lateralVelocity.Length() < a.V().lateralVelocity.Length());
+}
+
 ENJIN_TEST_MAIN()
