@@ -2477,6 +2477,29 @@ private:
     // pipeline = pre-transparency behavior).
     std::unique_ptr<Renderer::VulkanPipeline> m_TransparentPipeline;
     std::unique_ptr<Renderer::VulkanPipeline> m_OffscreenTransparentPipeline;
+    // Line-mode twins of the two offscreen geometry pipelines. Wireframe used to
+    // be baked into m_OffscreenPipeline itself, and the editor's Scene View and
+    // Game View share that pipeline, so the Scene View's Wireframe mode forced
+    // the game's polygon mode every frame: the Game View drew lines, and the
+    // Rendering panel checkbox, a scene's saved wireframe and
+    // Render_SetWireframeEnabled were all reverted (EP-16). Both variants now
+    // exist and each pass picks one (OffscreenOpaquePipeline). Null when the
+    // device lacks fillModeNonSolid: wireframe then draws filled.
+    std::unique_ptr<Renderer::VulkanPipeline> m_OffscreenWirePipeline;
+    std::unique_ptr<Renderer::VulkanPipeline> m_OffscreenWireTransparentPipeline;
+    // The game's wireframe setting or the editor view mode for this pass
+    bool OffscreenWireframe() const { return m_WireframeMode || m_EditorWireframe; }
+    Renderer::VulkanPipeline* OffscreenOpaquePipeline() const {
+        if (OffscreenWireframe() && m_OffscreenWirePipeline) return m_OffscreenWirePipeline.get();
+        return m_OffscreenPipeline.get();
+    }
+    Renderer::VulkanPipeline* OffscreenTransparentPipeline() const {
+        if (OffscreenWireframe() && m_OffscreenWireTransparentPipeline) return m_OffscreenWireTransparentPipeline.get();
+        return m_OffscreenTransparentPipeline.get();
+    }
+    bool IsOffscreenOpaquePipeline(const Renderer::VulkanPipeline* p) const {
+        return p && (p == m_OffscreenPipeline.get() || p == m_OffscreenWirePipeline.get());
+    }
     Renderer::MaterialSpecKey m_BoundSpecKey{0xFFFFFFFF}; // Currently bound variant key (invalid = force rebind)
 
 #if !ENJIN_RENDERER_WEBGPU

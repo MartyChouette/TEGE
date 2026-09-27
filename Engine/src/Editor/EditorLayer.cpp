@@ -1851,15 +1851,6 @@ void EditorLayer::Update(f32 deltaTime) {
         }
     }
 
-    // Wireframe mode: only applies to the scene view (editor viewport).
-    // The global pipeline is toggled for scene view render, then restored
-    // for game view. Pipeline recreation is deferred to avoid mid-render crashes.
-    if (m_RenderSystem && m_RenderSystem->IsWireframeEnabled() != m_PendingWireframe) {
-        m_RenderSystem->SetWireframeEnabled(m_PendingWireframe);
-    }
-    // After scene view renders (in RenderOffscreen), wireframe is turned off
-    // so the game view always renders in fill mode. See restore block at line ~1540.
-
     // In pure edit mode the World tick never runs, so deferred entity destructions
     // (m_World->DestroyEntity) are never flushed. OnEntityRemoved -- which rebuilds
     // the shadow caster cache, material SSBO, scene composition, etc. -- would not
@@ -3641,9 +3632,10 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
             prevUnlit = m_RenderSystem->GetEditorUnlit();
 
             bool wantShadows = (m_SceneViewMode == SceneViewMode::LitShadows || m_SceneViewMode == SceneViewMode::Full);
-            // Wireframe toggle is deferred — SetWireframeEnabled triggers pipeline
-            // recreation which is unsafe mid-render. Set a flag and apply in Update.
-            m_PendingWireframe = (m_SceneViewMode == SceneViewMode::Wireframe);
+            // Per pass: the renderer holds both polygon modes, so this picks the
+            // line pipeline for the Scene View alone. It used to drive the game's
+            // own wireframe setting, which the Game View shares (EP-16).
+            m_RenderSystem->SetEditorWireframe(m_SceneViewMode == SceneViewMode::Wireframe);
             m_RenderSystem->SetEditorUnlit(m_SceneViewMode == SceneViewMode::Solid);
 
             // The view mode is applied PER PASS at the viewport's RenderToTarget
@@ -3732,9 +3724,7 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
         m_EditorViewportRT->End(commandBuffer);
         if (m_RenderSystem) m_RenderSystem->SetCullTarget(nullptr, 0);
 
-        // Restore render state so game view renders with full quality.
-        // Wireframe is handled by the offscreen pipeline (scene view only) —
-        // the main pipeline always uses fill mode, so no wireframe restore needed.
+        // Restore render state so the game view draws as the game asks.
         // Shadows are NOT restored here — see the per-mode toggle above for why.
         if (m_RenderSystem) {
             m_RenderSystem->SetEditorWireframe(prevWireframe);

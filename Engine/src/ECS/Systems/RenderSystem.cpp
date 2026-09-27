@@ -8285,6 +8285,8 @@ void RenderSystem::Shutdown() {
     m_EntityCustomShader.clear();
     m_CustomShaderPipelines.clear();   // GPU already idle here (WaitForGPU above)
     m_OffscreenTransparentPipeline.reset();
+    m_OffscreenWireTransparentPipeline.reset();
+    m_OffscreenWirePipeline.reset();
     m_TransparentPipeline.reset();
     m_OffscreenPipeline.reset();
     m_Pipeline.reset();
@@ -11387,7 +11389,7 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
 
     // Use offscreen pipeline (created for offscreen UNORM render pass) to avoid
     // Vulkan spec violation from binding SRGB pipeline in UNORM render pass
-    auto* targetPipeline = m_OffscreenPipeline ? m_OffscreenPipeline.get() : m_Pipeline.get();
+    auto* targetPipeline = m_OffscreenPipeline ? OffscreenOpaquePipeline() : m_Pipeline.get();
 
     // Bind pipeline and descriptor set ONCE before the entity loop (not per-entity)
     targetPipeline->Bind(commandBuffer);
@@ -11506,8 +11508,8 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
     // once at the boundary; the per-entity guard also copes with the unsorted
     // first-frame fallback. Same shaders + layout, so bound descriptor sets and
     // dynamic state survive the rebind. Null variant -> stay on the opaque pipeline.
-    Renderer::VulkanPipeline* rtTransparentPipeline = (targetPipeline == m_OffscreenPipeline.get())
-        ? m_OffscreenTransparentPipeline.get() : m_TransparentPipeline.get();
+    Renderer::VulkanPipeline* rtTransparentPipeline = IsOffscreenOpaquePipeline(targetPipeline)
+        ? OffscreenTransparentPipeline() : m_TransparentPipeline.get();
     bool rtTransparentBound = false;
     bool rtCustomBound = false;   // last entity used a custom-shader pipeline
 
@@ -11678,7 +11680,7 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                 }
                 activePipeline = m_OITAccumPipeline.get();
             } else if (Renderer::VulkanPipeline* rtCustom =
-                    GetEntityCustomPipeline(entity, targetPipeline == m_OffscreenPipeline.get())) {
+                    GetEntityCustomPipeline(entity, IsOffscreenOpaquePipeline(targetPipeline))) {
                 rtCustom->Bind(commandBuffer);
                 rtCustomBound = true;
                 activePipeline = rtCustom;
@@ -12399,7 +12401,7 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
         m_LastBound.Reset(); m_GeometryPoolBound = false;
 
         // Use offscreen pipeline (created for offscreen UNORM render pass)
-        auto* ssPipeline = m_OffscreenPipeline ? m_OffscreenPipeline.get() : m_Pipeline.get();
+        auto* ssPipeline = m_OffscreenPipeline ? OffscreenOpaquePipeline() : m_Pipeline.get();
 
         // Bind pipeline, descriptor set, viewport, and scissor once per viewport
         ssPipeline->Bind(commandBuffer);
@@ -12414,8 +12416,8 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
         // Render all entities using sorted render list (skip sprites — drawn in sorted pass)
         // Cache sprite storage pointer outside the loop to avoid per-entity type-ID hash
         auto* spriteStorageSS = m_World->GetComponentStorage<Sprite2DComponent>();
-        Renderer::VulkanPipeline* ssTransparentPipeline = (ssPipeline == m_OffscreenPipeline.get())
-            ? m_OffscreenTransparentPipeline.get() : m_TransparentPipeline.get();
+        Renderer::VulkanPipeline* ssTransparentPipeline = IsOffscreenOpaquePipeline(ssPipeline)
+            ? OffscreenTransparentPipeline() : m_TransparentPipeline.get();
         bool ssTransparentBound = false;
         m_LastPipelineWasCustom = false;   // reset custom-shader pipeline tracking per loop
         for (Entity entity : m_SortedRenderList) {
@@ -13318,7 +13320,7 @@ void RenderSystem::RunLateOcclusion(VkCommandBuffer cmd) {
     // pipeline and sets, or the main pass's. (GetActiveBufferIndex already
     // answers for whichever is active.)
     const u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
-    Renderer::VulkanPipeline* pipe = (m_OffscreenMode && m_OffscreenPipeline) ? m_OffscreenPipeline.get()
+    Renderer::VulkanPipeline* pipe = (m_OffscreenMode && m_OffscreenPipeline) ? OffscreenOpaquePipeline()
                                                                               : m_Pipeline.get();
     pipe->Bind(cmd);
     m_BoundSpecKey.bits = 0xFFFFFFFF;
@@ -16295,9 +16297,9 @@ void RenderSystem::SetBackfaceCullingEnabled(bool enabled) {
 }
 
 void RenderSystem::SetWireframeEnabled(bool enabled) {
-    if (m_WireframeMode == enabled) return;
+    // Both polygon modes are built up front (m_OffscreenWirePipeline), so this
+    // switches which one a pass binds and needs no pipeline recreation
     m_WireframeMode = enabled;
-    m_PendingRecreation = PendingRecreationType::PipelineOnly;
 }
 
 void RenderSystem::SetTextureFilterConfig(u32 filter, u32 anisotropy, bool mipmaps, u32 wrap) {
@@ -16476,11 +16478,13 @@ void RenderSystem::RecreatePipelines(bool gpuAlreadyIdle) {
 
     // Destroy all pipelines that share the descriptor set layout
     m_OffscreenTransparentPipeline.reset();
+    m_OffscreenWireTransparentPipeline.reset();
     m_TransparentPipeline.reset();
     m_OffscreenWireframeOverlayPipeline.reset();
     m_OffscreenOutlinePipeline.reset();
     m_OffscreenLinePipeline.reset();
     m_OffscreenPipeline.reset();
+    m_OffscreenWirePipeline.reset();
     m_WireframeOverlayPipeline.reset();
     m_OutlinePipeline.reset();
     m_LinePipeline.reset();
@@ -16883,7 +16887,7 @@ void RenderSystem::BindGeometryPipelineForMaterial(VkCommandBuffer cmd, Entity e
     // layout, so bound descriptor sets + push constants stay valid). Neither opaque nor
     // transparent is bound after this, so m_LastPipelineWasCustom forces the next
     // standard entity to rebind.
-    bool offscreenPass = (opaque == m_OffscreenPipeline.get());
+    bool offscreenPass = IsOffscreenOpaquePipeline(opaque);
     if (Renderer::VulkanPipeline* custom = GetEntityCustomPipeline(entity, offscreenPass)) {
         custom->Bind(cmd);
         m_LastPipelineWasCustom = true;
@@ -20384,7 +20388,7 @@ void RenderSystem::RecreateEffectPipelinesForRenderPass(VkRenderPass renderPass,
         config.depthWrite = true;
         config.cullMode = m_BackfaceCulling ? VK_CULL_MODE_BACK_BIT : VK_CULL_MODE_NONE;
         config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-        config.polygonMode = m_WireframeMode ? VK_POLYGON_MODE_LINE : VK_POLYGON_MODE_FILL;
+        config.polygonMode = VK_POLYGON_MODE_FILL;    // the line twins are built below (EP-16)
         config.msaaSamples = VK_SAMPLE_COUNT_1_BIT;  // Offscreen RT is always 1 sample
         config.colorAttachmentCount = colorAttachmentCount; // follows the PASS: 2 when it carries velocity
         // Match the main pipeline: enable alpha blending so transparent materials
@@ -20405,6 +20409,23 @@ void RenderSystem::RecreateEffectPipelinesForRenderPass(VkRenderPass renderPass,
         if (!m_OffscreenTransparentPipeline->Create(config, m_VertexShader.get(), m_FragmentShader.get())) {
             ENJIN_LOG_ERROR(Renderer, "Failed to create offscreen transparent pipeline");
             m_OffscreenTransparentPipeline.reset();
+        }
+
+        // Line-mode twins, one per pass choice: the Scene View's Wireframe mode
+        // and the game's wireframe setting pick these without touching the
+        // pipelines the Game View draws with (EP-16)
+        config.polygonMode = VK_POLYGON_MODE_LINE;
+        m_OffscreenWireTransparentPipeline = std::make_unique<Renderer::VulkanPipeline>(m_VulkanRenderer->GetContext());
+        if (m_BindlessManager) m_OffscreenWireTransparentPipeline->SetBindlessLayout(m_BindlessManager->GetDescriptorSetLayout());
+        if (!m_OffscreenWireTransparentPipeline->Create(config, m_VertexShader.get(), m_FragmentShader.get())) {
+            m_OffscreenWireTransparentPipeline.reset();
+        }
+        config.depthWrite = true;
+        m_OffscreenWirePipeline = std::make_unique<Renderer::VulkanPipeline>(m_VulkanRenderer->GetContext());
+        if (m_BindlessManager) m_OffscreenWirePipeline->SetBindlessLayout(m_BindlessManager->GetDescriptorSetLayout());
+        if (!m_OffscreenWirePipeline->Create(config, m_VertexShader.get(), m_FragmentShader.get())) {
+            ENJIN_LOG_WARN(Renderer, "No offscreen wireframe pipeline (fillModeNonSolid?); wireframe draws filled");
+            m_OffscreenWirePipeline.reset();
         }
     }
 
