@@ -1667,7 +1667,17 @@ static bool Timer_IsRunning(u64 id) {
 static void Timer_SetRunning(u64 id, bool val) {
     if (!s_BindingsWorld) return;
     auto* tc = ENJIN_SCRIPT_COMPONENT(TimerComponent, id);
-    if (tc) tc->isRunning = val;
+    if (!tc) return;
+    // Starting a finished one-shot timer runs it again, rather than completing
+    // it again on the next tick with elapsed already at duration
+    if (val && !tc->isRunning && tc->IsComplete()) tc->elapsed = 0.0f;
+    tc->isRunning = val;
+}
+
+static i32 Timer_GetLoopCount(u64 id) {
+    if (!s_BindingsWorld) return 0;
+    auto* tc = ENJIN_SCRIPT_COMPONENT(TimerComponent, id);
+    return tc ? tc->loopCount : 0;
 }
 
 static bool Timer_GetLoop(u64 id) {
@@ -2811,6 +2821,7 @@ void RegisterComponentBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction("void Timer_SetLoop(uint64, bool)", ENJIN_AS_FN(Timer_SetLoop), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("float Timer_GetProgress(uint64)", ENJIN_AS_FN(Timer_GetProgress), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("float Timer_GetRemaining(uint64)", ENJIN_AS_FN(Timer_GetRemaining), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("int Timer_GetLoopCount(uint64)", ENJIN_AS_FN(Timer_GetLoopCount), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool Timer_IsComplete(uint64)", ENJIN_AS_FN(Timer_IsComplete), ENJIN_AS_CALL_CDECL));
 
     // Extended Health

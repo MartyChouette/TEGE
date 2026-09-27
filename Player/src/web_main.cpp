@@ -4,6 +4,7 @@
 
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/ECS/EntityEventBridge.h"
+#include "Enjin/ECS/Timers.h"
 #include "Enjin/ECS/PostProcessVolumeBlend.h"
 #include <filesystem>
 #include <set>
@@ -1712,6 +1713,7 @@ public:
         // BEFORE visual scripts, so graphs see this frame's FSM state, not last
         // frame's (the web order was reversed until the 08-31 parity audit).
         m_ActionTriggerSystem.Update(m_World.get(), deltaTime);
+        Enjin::ECS::UpdateTimers(m_World.get(), deltaTime, &m_EntityEventBus);
         m_GameplaySystem.Update(m_World.get(), deltaTime);
         // The active camera's ArtStyleComponent drives the scene-wide half of its
         // style (grain, CRT, VHS, palettes, outlines, stipple). Around twenty-five

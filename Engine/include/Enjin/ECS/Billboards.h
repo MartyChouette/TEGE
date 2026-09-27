@@ -1,5 +1,6 @@
 #pragma once
 #include "Enjin/Platform/Platform.h"
+#include "Enjin/Platform/Types.h"
 #include "Enjin/Math/Vector.h"
 
 namespace Enjin {

@@ -1115,10 +1115,15 @@ struct TimerComponent {
     bool isRunning = false;
     bool loop = false;
     bool autoStart = false;
-    i32 loopCount = 0;             // Number of times looped
+    i32 loopCount = 0;             // Laps completed this play (runtime)
 
-    // Event
-    Entity onCompleteNotify = 0;
+    // Event sent on completion (ECS::UpdateTimers). Empty sends nothing.
+    // Rename it per timer so a visual script, which hears events by name
+    // only, can tell timers apart.
+    std::string completeEvent = "Timer_Complete";
+    Entity onCompleteNotify = 0;   // the event's "target" when set
+
+    bool autoStarted = false;      // runtime: Auto Start has fired this play
 
     // Helper
     f32 GetProgress() const { return duration > 0 ? elapsed / duration : 0; }

@@ -7165,6 +7165,7 @@ json SerializeTimerComponent(const ECS::TimerComponent& t) {
     j["loop"] = t.loop;
     j["autoStart"] = t.autoStart;
     j["onCompleteNotify"] = static_cast<u64>(t.onCompleteNotify);
+    j["completeEvent"] = t.completeEvent;
     return j;
 }
 
@@ -7174,6 +7175,7 @@ ECS::TimerComponent DeserializeTimerComponent(const json& j) {
     if (j.contains("loop")) t.loop = JB(j["loop"]);
     if (j.contains("autoStart")) t.autoStart = JB(j["autoStart"]);
     if (j.contains("onCompleteNotify")) t.onCompleteNotify = static_cast<ECS::Entity>(j["onCompleteNotify"].get<u64>());
+    if (j.contains("completeEvent")) t.completeEvent = SafeStr(j["completeEvent"]);
     return t;
 }
 

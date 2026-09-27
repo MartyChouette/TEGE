@@ -6717,6 +6717,21 @@ void EditorLayer::DrawTimerComponent(ECS::Entity entity) {
         InspectorUndo::DragFloat(m_UndoRedo, "Duration", &timer->duration, 0.1f, 0.01f, 3600.0f);
         InspectorUndo::Checkbox(m_UndoRedo, "Loop", &timer->loop);
         InspectorUndo::Checkbox(m_UndoRedo, "Auto Start", &timer->autoStart);
+        {
+            char evBuf[128];
+            strncpy(evBuf, timer->completeEvent.c_str(), sizeof(evBuf) - 1);
+            evBuf[sizeof(evBuf) - 1] = '\0';
+            ECS::World* world = m_World;
+            InspectorUndo::InputText(m_UndoRedo, "Complete Event", evBuf, sizeof(evBuf),
+                [world, entity](const std::string& val) {
+                    if (auto* t = world->GetComponent<ECS::TimerComponent>(entity)) t->completeEvent = val;
+                });
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Sent when the timer finishes. Scripts hear it with Events_Listen,\n"
+                                  "visual scripts with a Custom Event node of the same name.\n"
+                                  "Empty sends nothing.");
+            }
+        }
 
         // Progress bar
         f32 progress = timer->GetProgress();

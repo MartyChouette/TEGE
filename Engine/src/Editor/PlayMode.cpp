@@ -1,5 +1,6 @@
 #include "Enjin/Editor/PlayMode.h"
 #include "Enjin/ECS/EntityEventBridge.h"
+#include "Enjin/ECS/Timers.h"
 #include "Enjin/Assets/Prefab.h"
 #include "Enjin/Input/TouchActionBridge.h"
 #include "Enjin/Effects/TreeRenderer.h"
@@ -1270,6 +1271,7 @@ void PlayMode::Update(f32 deltaTime) {
 
         // Gameplay systems
         m_ActionTriggerSystem.Update(m_World, deltaTime);
+        ECS::UpdateTimers(m_World, deltaTime, &m_EntityEventBus);
         m_GameplaySystem.Update(m_World, deltaTime);
         // The active camera's ArtStyleComponent drives the scene-wide half of its
         // style (grain, CRT, VHS, palettes, outlines, stipple). Around twenty-five

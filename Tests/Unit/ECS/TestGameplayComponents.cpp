@@ -1,10 +1,14 @@
 #include "EnjinTest.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Billboards.h"
+#include "Enjin/ECS/Timers.h"
+#include "Enjin/ECS/EntityEventBus.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include <cmath>
+#include <vector>
+#include <string>
 
 using namespace Enjin;
 using namespace Enjin::ECS;
@@ -443,6 +447,107 @@ ENJIN_TEST(Billboard, ParentedFacesInWorldAndDirtiesChildren) {
     // re-placed rather than served last frame's matrix
     const Math::Matrix4 cm = ComputeWorldMatrix(&w, child);
     ENJIN_EXPECT_TRUE(Near3(Math::Vector3(cm.m[12], cm.m[13], cm.m[14]), Math::Vector3(5.0f, 0.0f, -1.0f)));
+}
+
+// ===========================================================================
+// Timer: nothing ever ticked one (SD-27)
+// ===========================================================================
+
+namespace {
+struct TimerRig {
+    World w;
+    EntityEventBus bus;
+    std::vector<EntityEvent> heard;
+    TimerRig() {
+        bus.SetForwarder([this](const std::string&, const EntityEvent& ev) { heard.push_back(ev); });
+    }
+    Entity Add(const TimerComponent& t) {
+        Entity e = w.CreateEntity();
+        w.AddComponent<TimerComponent>(e, t);
+        return e;
+    }
+    TimerComponent& T(Entity e) { return *w.GetComponent<TimerComponent>(e); }
+};
+}
+
+ENJIN_TEST(Timer, AutoStartRunsAndCompletesOnce) {
+    TimerRig r;
+    TimerComponent t;
+    t.duration = 1.0f;
+    t.autoStart = true;
+    Entity e = r.Add(t);
+    UpdateTimers(&r.w, 0.6f, &r.bus);
+    ENJIN_EXPECT_TRUE(r.T(e).isRunning);
+    ENJIN_EXPECT_TRUE(r.heard.empty());
+    UpdateTimers(&r.w, 0.6f, &r.bus);
+    ENJIN_EXPECT_FALSE(r.T(e).isRunning);
+    ENJIN_EXPECT_FLOAT_EQ(r.T(e).elapsed, 1.0f);
+    ENJIN_EXPECT_EQ(r.T(e).loopCount, 1);
+    ENJIN_ASSERT_EQ(r.heard.size(), size_t(1));
+    ENJIN_EXPECT_EQ(r.heard[0].name, std::string("Timer_Complete"));
+    ENJIN_EXPECT_EQ(r.heard[0].sender, e);
+    ENJIN_EXPECT_EQ(r.heard[0].ints.at("loops"), 1);
+    // Stopped: no second event
+    UpdateTimers(&r.w, 5.0f, &r.bus);
+    ENJIN_EXPECT_EQ(r.heard.size(), size_t(1));
+}
+
+ENJIN_TEST(Timer, WithoutAutoStartItWaits) {
+    TimerRig r;
+    TimerComponent t;
+    Entity e = r.Add(t);
+    UpdateTimers(&r.w, 5.0f, &r.bus);
+    ENJIN_EXPECT_FLOAT_EQ(r.T(e).elapsed, 0.0f);
+    ENJIN_EXPECT_TRUE(r.heard.empty());
+}
+
+ENJIN_TEST(Timer, LoopCarriesTheOvershootAndCountsEveryLap) {
+    TimerRig r;
+    TimerComponent t;
+    t.duration = 0.5f;
+    t.loop = true;
+    t.isRunning = true;
+    Entity e = r.Add(t);
+    UpdateTimers(&r.w, 0.7f, &r.bus);
+    ENJIN_EXPECT_TRUE(r.T(e).isRunning);
+    ENJIN_EXPECT_TRUE(std::abs(r.T(e).elapsed - 0.2f) < 1e-4f);
+    ENJIN_EXPECT_EQ(r.T(e).loopCount, 1);
+    // A frame longer than two laps: counted as two, one event
+    UpdateTimers(&r.w, 1.1f, &r.bus);
+    ENJIN_EXPECT_EQ(r.T(e).loopCount, 3);
+    ENJIN_EXPECT_EQ(r.heard.size(), size_t(2));
+}
+
+ENJIN_TEST(Timer, ZeroDurationLoopDoesNotSpin) {
+    TimerRig r;
+    TimerComponent t;
+    t.duration = 0.0f;
+    t.loop = true;
+    t.isRunning = true;
+    Entity e = r.Add(t);
+    UpdateTimers(&r.w, 0.016f, &r.bus);
+    ENJIN_EXPECT_FALSE(r.T(e).isRunning);
+    ENJIN_EXPECT_EQ(r.heard.size(), size_t(1));
+}
+
+ENJIN_TEST(Timer, EventNameAndTargetComeFromTheTimer) {
+    TimerRig r;
+    Entity door = r.w.CreateEntity();
+    TimerComponent t;
+    t.duration = 0.1f;
+    t.isRunning = true;
+    t.completeEvent = "door_close";
+    t.onCompleteNotify = door;
+    r.Add(t);
+    TimerComponent quiet;
+    quiet.duration = 0.1f;
+    quiet.isRunning = true;
+    quiet.completeEvent.clear();   // empty sends nothing
+    r.Add(quiet);
+    UpdateTimers(&r.w, 0.2f, &r.bus);
+    ENJIN_ASSERT_EQ(r.heard.size(), size_t(1));
+    ENJIN_EXPECT_EQ(r.heard[0].name, std::string("door_close"));
+    ENJIN_EXPECT_EQ(r.heard[0].target, door);
 }
 
 ENJIN_TEST_MAIN()

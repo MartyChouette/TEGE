@@ -206,6 +206,24 @@ ENJIN_TEST(SerdesCoverage, SwimTuningSurvivesASave) {
     ENJIN_EXPECT_TRUE(Near(r->cameraCollisionRadius, 0.75f));
 }
 
+ENJIN_TEST(SerdesCoverage, TimerCompleteEventSurvivesASave) {
+    World src;
+    Entity e = Base(src);
+    TimerComponent c;
+    c.duration = 2.5f;
+    c.autoStart = true;
+    c.completeEvent = "gate_open";
+    src.AddComponent<TimerComponent>(e, c);
+
+    World dst;
+    Entity loaded = RoundTrip(src, e, dst);
+    const auto* r = dst.GetComponent<TimerComponent>(loaded);
+    ENJIN_ASSERT_TRUE(r != nullptr);
+    ENJIN_EXPECT_TRUE(Near(r->duration, 2.5f));
+    ENJIN_EXPECT_TRUE(r->autoStart);
+    ENJIN_EXPECT_EQ(r->completeEvent, std::string("gate_open"));
+}
+
 ENJIN_TEST(SerdesCoverage, WaypointLinkSurvivesASave) {
     // nextWaypoint is the field that makes a path a path, and it was the one
     // waypoint field not saved.

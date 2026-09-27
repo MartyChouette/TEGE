@@ -1,5 +1,6 @@
 #include "Enjin/Core/Application.h"
 #include "Enjin/ECS/EntityEventBridge.h"
+#include "Enjin/ECS/Timers.h"
 #include "Enjin/ECS/PostProcessVolumeBlend.h"
 #include <cstdio>
 #include "Enjin/Scripting/ScriptChecker.h"
@@ -1508,6 +1509,7 @@ public:
 
         // --- Gameplay systems ---
         m_ActionTriggerSystem.Update(m_World.get(), deltaTime);
+        Enjin::ECS::UpdateTimers(m_World.get(), deltaTime, &m_EntityEventBus);
         m_GameplaySystem.Update(m_World.get(), deltaTime);
         // The active camera's ArtStyleComponent drives the scene-wide half of its
         // style (grain, CRT, VHS, palettes, outlines, stipple). Around twenty-five
