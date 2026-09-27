@@ -1,4 +1,5 @@
 #include "Enjin/GUI/UISystem.h"
+#include "Enjin/GUI/TextSpacing.h"
 #include "Enjin/GUI/UIFontRegistry.h"
 #include "Enjin/GUI/UICanvas.h"
 #include "Enjin/Platform/Input.h"
@@ -80,7 +81,7 @@ static void DrawCenteredText(ImDrawList* dl, const UIRect& rect, const char* tex
     // unchanged; over-long single words fall back to ImGui's character wrapping.
     f32 wrapWidth = (rect.w > 8.0f) ? rect.w - 8.0f : 0.0f;
 
-    ImVec2 textSize = font->CalcTextSizeA(fontSize, FLT_MAX, wrapWidth, text);
+    ImVec2 textSize = CalcTextSizeSpaced(font, fontSize, text, wrapWidth);
 
     f32 x = rect.x;
     f32 y = rect.y;
@@ -98,7 +99,7 @@ static void DrawCenteredText(ImDrawList* dl, const UIRect& rect, const char* tex
 
     // wrap_width is relative to the draw position; anchoring x to the left edge
     // keeps the wrap column inside the box (centered short text doesn't wrap).
-    dl->AddText(font, fontSize, ImVec2(x, y), color, text, nullptr, wrapWidth);
+    AddTextSpaced(dl, font, fontSize, ImVec2(x, y), color, text, wrapWidth);
 }
 
 // ============================================================================

@@ -4,6 +4,7 @@
 #include "Enjin/Accessibility/SubtitleSystem.h"
 #include "Enjin/Accessibility/Announcer.h"
 #include "Enjin/GUI/UISystem.h"
+#include "Enjin/GUI/TextSpacing.h"
 #include "Enjin/Logging/Log.h"
 #include <nlohmann/json.hpp>
 
@@ -106,6 +107,12 @@ void ApplyTextScale(const RuntimeAccessibilitySettings& settings,
     // it used to reach only ImGui's atlas via FontLibrary, which is why the
     // toggle never changed a word the game drew.
     SetDyslexiaFontEnabled(settings.dyslexiaFriendly);
+    // The spacing goes with it, for the same reason: FontLibrary was its only
+    // reader and that only styles ImGui, which cannot space letters, so the
+    // three options did nothing on any platform (WP-10)
+    GUI::SetTextLetterSpacing(settings.letterSpacing);
+    GUI::SetTextWordSpacing(settings.wordSpacing);
+    GUI::SetTextLineSpacing(settings.lineSpacing);
 
     if (ui) ui->SetFontScale(settings.fontScale);
     if (subtitles) {

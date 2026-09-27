@@ -10,6 +10,9 @@
 // accessibility face and the toggle had nothing left to switch. Both halves
 // are covered here.
 #include "EnjinTest.h"
+#include "Enjin/GUI/TextSpacing.h"
+#include <imgui.h>
+#include <cfloat>
 #include "Enjin/Accessibility/TextFont.h"
 #include "Enjin/Accessibility/AccessibilitySettings.h"
 #include "Enjin/Accessibility/OpenDyslexicFont.h"
@@ -128,6 +131,47 @@ ENJIN_TEST(TextFont, ApplyTextScaleIsWhatPushesTheChoice) {
     settings.dyslexiaFriendly = false;
     ApplyTextScale(settings, nullptr, nullptr, nullptr);
     ENJIN_EXPECT_TRUE(!IsDyslexiaFontEnabled());
+}
+
+// ===========================================================================
+// Letter spacing: the option reached only FontLibrary, which cannot space
+// letters, so it did nothing anywhere (WP-10)
+// ===========================================================================
+
+ENJIN_TEST(TextSpacing, SpacingWidensALineAndIsExactlyAddTextWhenOff) {
+    ImGuiContext* ctx = ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO();
+    ImFont* font = io.Fonts->AddFontDefault();
+    io.Fonts->Build();
+    io.DisplaySize = ImVec2(800.0f, 600.0f);
+
+    GUI::SetTextLetterSpacing(0.0f);
+    const ImVec2 plain = GUI::CalcTextSizeSpaced(font, 16.0f, "abcd");
+    const ImVec2 imgui = font->CalcTextSizeA(16.0f, FLT_MAX, 0.0f, "abcd");
+    ENJIN_EXPECT_FLOAT_EQ(plain.x, imgui.x);
+
+    // Four glyphs, three gaps
+    GUI::SetTextLetterSpacing(5.0f);
+    const ImVec2 spaced = GUI::CalcTextSizeSpaced(font, 16.0f, "abcd");
+    ENJIN_EXPECT_FLOAT_NEAR(spaced.x, imgui.x + 15.0f, 0.01f);
+
+    // Wrapping at a space: two lines, each narrower than the wrap width
+    const ImVec2 wrapped = GUI::CalcTextSizeSpaced(font, 16.0f, "abcd abcd", spaced.x + 1.0f);
+    ENJIN_EXPECT_FLOAT_NEAR(wrapped.y, 32.0f, 0.01f);
+    ENJIN_EXPECT_TRUE(wrapped.x <= spaced.x + 1.0f);
+
+    // Word spacing lands on the space; line spacing between lines only
+    GUI::SetTextLetterSpacing(0.0f);
+    GUI::SetTextWordSpacing(10.0f);
+    const ImVec2 words = GUI::CalcTextSizeSpaced(font, 16.0f, "ab cd");
+    ENJIN_EXPECT_FLOAT_NEAR(words.x, font->CalcTextSizeA(16.0f, FLT_MAX, 0.0f, "ab cd").x + 10.0f, 0.01f);
+    GUI::SetTextWordSpacing(0.0f);
+    GUI::SetTextLineSpacing(2.0f);
+    ENJIN_EXPECT_FLOAT_NEAR(GUI::CalcTextSizeSpaced(font, 16.0f, "ab").y, 16.0f, 0.01f);
+    ENJIN_EXPECT_FLOAT_NEAR(GUI::CalcTextSizeSpaced(font, 16.0f, "ab\ncd").y, 48.0f, 0.01f);
+
+    GUI::SetTextLineSpacing(1.0f);
+    ImGui::DestroyContext(ctx);
 }
 
 ENJIN_TEST_MAIN()

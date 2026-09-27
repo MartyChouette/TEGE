@@ -2914,6 +2914,9 @@ private:
             if (j.contains("screenReaderEnabled")) s.screenReaderEnabled = j["screenReaderEnabled"].get<bool>();
             if (j.contains("audioIndicatorsEnabled")) s.audioIndicatorsEnabled = j["audioIndicatorsEnabled"].get<bool>();
             if (j.contains("dyslexiaFriendly")) s.dyslexiaFriendly = j["dyslexiaFriendly"].get<bool>();
+            if (j.contains("letterSpacing")) s.letterSpacing = j["letterSpacing"].get<Enjin::f32>();
+            if (j.contains("wordSpacing")) s.wordSpacing = j["wordSpacing"].get<Enjin::f32>();
+            if (j.contains("lineSpacing")) s.lineSpacing = j["lineSpacing"].get<Enjin::f32>();
             if (j.contains("dwellClickEnabled")) s.dwellClickEnabled = j["dwellClickEnabled"].get<bool>();
             if (j.contains("dwellClickTime")) s.dwellClickTime = j["dwellClickTime"].get<Enjin::f32>();
             if (j.contains("switchAccessEnabled")) s.switchAccessEnabled = j["switchAccessEnabled"].get<bool>();
@@ -2958,6 +2961,9 @@ private:
             j["screenReaderEnabled"] = s.screenReaderEnabled;
             j["audioIndicatorsEnabled"] = s.audioIndicatorsEnabled;
             j["dyslexiaFriendly"] = s.dyslexiaFriendly;
+            j["letterSpacing"] = s.letterSpacing;
+            j["wordSpacing"] = s.wordSpacing;
+            j["lineSpacing"] = s.lineSpacing;
             j["dwellClickEnabled"] = s.dwellClickEnabled;
             j["dwellClickTime"] = s.dwellClickTime;
             j["switchAccessEnabled"] = s.switchAccessEnabled;

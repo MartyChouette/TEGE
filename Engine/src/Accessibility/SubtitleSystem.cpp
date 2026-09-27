@@ -1,4 +1,5 @@
 #include "Enjin/Accessibility/SubtitleSystem.h"
+#include "Enjin/GUI/TextSpacing.h"
 #include <imgui.h>
 #include <algorithm>
 #include <cfloat>
@@ -135,15 +136,16 @@ void SubtitleSystem::RenderOverlay(f32 originX, f32 originY,
                     ImVec4(entry.speakerColor.x, entry.speakerColor.y, entry.speakerColor.z, alpha));
                 std::string speakerText = entry.speaker + ": ";
 
-                ImVec2 textSize = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, speakerText.c_str());
-                f32 fullLineW = textSize.x + font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, entry.text.c_str()).x;
+                ImVec2 textSize = GUI::CalcTextSizeSpaced(font, fontSize, speakerText.c_str());
+                f32 fullLineW = textSize.x + GUI::CalcTextSizeSpaced(font, fontSize, entry.text.c_str()).x;
                 f32 lineX = centerX - fullLineW * 0.5f;
 
-                drawList->AddText(font, fontSize, ImVec2(lineX, y), speakerCol, speakerText.c_str());
+                GUI::AddTextSpaced(drawList, font, fontSize, ImVec2(lineX, y), speakerCol, speakerText.c_str());
 
                 // Then draw dialogue text in white
                 ImU32 textCol = ImGui::ColorConvertFloat4ToU32(ImVec4(1.0f, 1.0f, 1.0f, alpha));
-                drawList->AddText(font, fontSize, ImVec2(lineX + textSize.x, y), textCol, entry.text.c_str());
+                GUI::AddTextSpaced(drawList, font, fontSize, ImVec2(lineX + textSize.x + GUI::GetTextLetterSpacing(), y),
+                                   textCol, entry.text.c_str());
 
                 y += lineHeight;
                 continue;
@@ -152,7 +154,7 @@ void SubtitleSystem::RenderOverlay(f32 originX, f32 originY,
         }
 
         // Center the text
-        ImVec2 textSize = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, line.c_str());
+        ImVec2 textSize = GUI::CalcTextSizeSpaced(font, fontSize, line.c_str());
         f32 textX = centerX - textSize.x * 0.5f;
 
         ImU32 textCol = ImGui::ColorConvertFloat4ToU32(
@@ -161,8 +163,8 @@ void SubtitleSystem::RenderOverlay(f32 originX, f32 originY,
         // Drop shadow for readability
         ImU32 shadowCol = ImGui::ColorConvertFloat4ToU32(
             ImVec4(0.0f, 0.0f, 0.0f, alpha * 0.8f));
-        drawList->AddText(font, fontSize, ImVec2(textX + 1.0f, y + 1.0f), shadowCol, line.c_str());
-        drawList->AddText(font, fontSize, ImVec2(textX, y), textCol, line.c_str());
+        GUI::AddTextSpaced(drawList, font, fontSize, ImVec2(textX + 1.0f, y + 1.0f), shadowCol, line.c_str());
+        GUI::AddTextSpaced(drawList, font, fontSize, ImVec2(textX, y), textCol, line.c_str());
 
         y += lineHeight;
     }
