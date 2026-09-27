@@ -1231,20 +1231,14 @@ void EditorLayer::DrawMaterialComponent(ECS::Entity entity) {
             }
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Path to grayscale height map texture");
 
-            InspectorUndo::DragFloat(m_UndoRedo, "Parallax Scale", &material->parallaxScale, 0.001f, 0.0f, 0.2f, "%.3f");
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Height displacement intensity (0.03-0.05 typical)");
-
-            const char* parallaxModes[] = { "Basic", "Steep", "Occlusion Mapping", "Relief Mapping" };
-            int pMode = static_cast<int>(material->parallaxMode);
-            if (ImGui::Combo("Parallax Mode", &pMode, parallaxModes, 4)) {
-                material->parallaxMode = static_cast<u32>(pMode);
-            }
-            if (material->parallaxMode >= 1) {
+            InspectorUndo::DragFloat(m_UndoRedo, "Height Scale", &material->parallaxScale, 0.001f, 0.0f, 0.2f, "%.3f");
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("How deep the height map reads (0.03-0.05 typical). 0 turns parallax off.");
+            {
                 int steps = static_cast<int>(material->pomMaxSteps);
-                if (ImGui::DragInt("POM Max Steps", &steps, 1, 8, 128)) {
+                if (InspectorUndo::DragInt(m_UndoRedo, "Max Steps", &steps, 1, 8, 128)) {
                     material->pomMaxSteps = static_cast<u32>(steps);
                 }
-                ImGui::DragFloat("POM Height Scale", &material->pomHeightScale, 0.001f, 0.0f, 0.3f, "%.3f");
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Steps the parallax march takes at grazing angles. More is smoother\nand costs more; a straight-on view uses fewer.");
             }
 
             ImGui::TreePop();

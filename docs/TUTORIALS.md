@@ -224,7 +224,7 @@ Enjin uses a physically-based rendering (PBR) pipeline. Each `MaterialComponent`
 2. In the Inspector, find **Base Color Texture** and enter the path to a `.png` or `.jpg` file.
 3. Optional texture channels:
    - **Normal Map** — Adds surface detail without geometry
-   - **Height Map** — Enables parallax mapping (4 modes: Simple, Steep, Occlusion, Relief)
+   - **Height Map** — Enables parallax occlusion mapping. Height Scale sets how deep it reads, Max Steps how finely it marches at grazing angles
    - **Metallic-Roughness Map** — Packed PBR texture
 
 ### Light Types

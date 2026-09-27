@@ -52,6 +52,20 @@ struct PushConstants {
 inline constexpr f32 kIndirectModeStatic = -1.0f;  // ObjectData at binding 24: GPU culling, textured batcher, DGC
 inline constexpr f32 kIndirectModeArena  = -2.0f;  // ObjectData at binding 13: bone-arena instanced draws
 
+// A material's parallax height scale and its march step limit, in the one
+// float slot that carries parallax (push constants and MaterialGPU are both
+// full). Integer part = Max Steps, fraction = Height Scale, which the inspector
+// keeps below 1. An unpacked value (integer part 0) decodes as the old fixed
+// 32 steps, so a writer that does not pack still draws as it did. A scale of 0
+// packs to 0, which the shaders read as "no parallax". Positive, so it never
+// meets the negative indirect-mode sentinels above.
+inline f32 PackParallax(f32 heightScale, u32 maxSteps) {
+    if (!(heightScale > 0.0f)) return 0.0f;
+    const f32 scale = heightScale < 0.999f ? heightScale : 0.999f;
+    const u32 steps = maxSteps < 1u ? 1u : (maxSteps > 256u ? 256u : maxSteps);
+    return static_cast<f32>(steps) + scale;
+}
+
 // Note: LightingUBO is defined in Enjin/ECS/Components/Light.h
 // Use ECS::LightingUBO for multi-light support
 

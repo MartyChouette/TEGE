@@ -878,16 +878,21 @@ float calcAttenuation(float distance, float constant, float linear, float quadra
 
 // Parallax Occlusion Mapping - ray marches through the height map
 vec2 parallaxOcclusionMapping(vec2 texCoords, vec3 viewDirTangent) {
+    // The material's Max Steps rides in the integer part of the parallax
+    // value and its Height Scale in the fraction (Renderer::PackParallax).
+    // An unpacked value has no integer part and marches the old fixed 32.
+    float packedSteps = floor(mat_parallaxScale);
+    float heightScale = mat_parallaxScale - packedSteps;
+    float maxLayers = packedSteps >= 1.0 ? packedSteps : 32.0;
+    float minLayers = min(8.0, maxLayers);
     // Adaptive layer count: more layers at grazing angles for quality
-    const float minLayers = 8.0;
-    const float maxLayers = 32.0;
     float numLayers = mix(maxLayers, minLayers, abs(dot(vec3(0, 0, 1), viewDirTangent)));
 
     float layerDepth = 1.0 / numLayers;
     float currentLayerDepth = 0.0;
 
     // Direction to shift UV per layer (scaled by parallax amount)
-    vec2 P = viewDirTangent.xy * mat_parallaxScale;
+    vec2 P = viewDirTangent.xy * heightScale;
     vec2 deltaTexCoords = P / numLayers;
 
     vec2 currentTexCoords = texCoords;

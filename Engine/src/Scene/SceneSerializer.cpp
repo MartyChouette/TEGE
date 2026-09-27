@@ -405,9 +405,7 @@ json SerializeMaterialComponent(const ECS::MaterialComponent& material) {
     // Height/parallax mapping
     if (material.heightTexturePath != kDefaultMaterial.heightTexturePath) j["heightTexturePath"] = material.heightTexturePath;
     if (material.parallaxScale != kDefaultMaterial.parallaxScale) j["parallaxScale"] = RF(material.parallaxScale);
-    if (material.parallaxMode != kDefaultMaterial.parallaxMode) j["parallaxMode"] = material.parallaxMode;
     if (material.pomMaxSteps != kDefaultMaterial.pomMaxSteps) j["pomMaxSteps"] = material.pomMaxSteps;
-    if (material.pomHeightScale != kDefaultMaterial.pomHeightScale) j["pomHeightScale"] = RF(material.pomHeightScale);
     // Retro rendering flags
     if (material.flatShading != kDefaultMaterial.flatShading) j["flatShading"] = material.flatShading;
     if (material.affineTexturing != kDefaultMaterial.affineTexturing) j["affineTexturing"] = material.affineTexturing;
@@ -819,9 +817,7 @@ ECS::MaterialComponent DeserializeMaterialComponent(const json& j) {
     // Height/parallax mapping (optional, added in later versions)
     if (j.contains("heightTexturePath")) material.heightTexturePath = SafeStr(j["heightTexturePath"], MAX_STR_PATH);
     if (j.contains("parallaxScale")) material.parallaxScale = j["parallaxScale"].get<f32>();
-    if (j.contains("parallaxMode")) { u32 v = j["parallaxMode"].get<u32>(); if (v <= 3) material.parallaxMode = v; }
     if (j.contains("pomMaxSteps")) { u32 v = j["pomMaxSteps"].get<u32>(); if (v >= 1 && v <= 256) material.pomMaxSteps = v; }
-    if (j.contains("pomHeightScale")) material.pomHeightScale = j["pomHeightScale"].get<f32>();
     // Retro rendering flags (optional, added in later versions)
     if (j.contains("flatShading")) material.flatShading = JB(j["flatShading"]);
     if (j.contains("affineTexturing")) material.affineTexturing = JB(j["affineTexturing"]);
@@ -2658,6 +2654,27 @@ ECS::ElementalVolumeComponent DeserializeElementalVolumeComponent(const json& j)
 // it on by loading would change a picture nobody asked to change. Director
 // style, rig, lighting ratios, dynamics, target and framing had no feature
 // behind them and are dropped.
+// Fields a component used to have and dropped on purpose. Old scenes still
+// carry them and they are ignored deliberately, so the unknown-field warning
+// on load skips them; a warning for every old scene would teach people to
+// stop reading the warnings. An empty component matches any component.
+static bool IsRetiredField(std::string_view component, std::string_view field) {
+    static const std::pair<std::string_view, std::string_view> kRetired[] = {
+        // SD-27: the controller key checkboxes, which the controls bindings replace
+        {"", "useWASD"}, {"", "useArrowKeys"}, {"", "useGamepad"},
+        // SD-27: three controller features hidden until they are built
+        {"platformer2D", "enableWallJump"}, {"platformer2D", "wallJumpForce"},
+        {"topDown3D", "enableClickToMove"}, {"topDown3D", "arrivalThreshold"},
+        {"thirdPerson", "enableLockOn"}, {"thirdPerson", "lockOnRange"},
+        // SD-27: one parallax algorithm; the mode and its second height scale were never read
+        {"material", "parallaxMode"}, {"material", "pomHeightScale"},
+    };
+    for (const auto& [c, f] : kRetired) {
+        if (f == field && (c.empty() || c == component)) return true;
+    }
+    return false;
+}
+
 static void MigrateRetiredCineComponent(ECS::World* world, ECS::Entity entity, const json& j) {
     if (!j.is_object()) return;
     const bool enabled = !j.contains("enabled") || JB(j["enabled"]);
@@ -10810,6 +10827,7 @@ void SceneSerializer::DeserializeEntities(const json& sceneJson, Deserialization
 
                 for (auto it = componentJson.begin(); it != componentJson.end(); ++it) {
                     if (result.warnings.size() >= kMaxLoadWarnings) break;
+                    if (IsRetiredField(reg.key, it.key())) continue;
 
                     const json& v = it.value();
 

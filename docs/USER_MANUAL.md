@@ -488,7 +488,8 @@ Controls the visual surface properties of a mesh. Supports PBR rendering, textur
 | `metallicRoughnessTexturePath` | string | "" | Path to metallic-roughness texture (G=roughness, B=metallic). |
 | `emissiveTexturePath` | string | "" | Path to emissive texture. |
 | `heightTexturePath` | string | "" | Path to height map for parallax mapping. |
-| `parallaxScale` | f32 | 0.05 | Parallax occlusion mapping depth. |
+| `parallaxScale` | f32 | 0.05 | Parallax occlusion mapping depth (Height Scale). 0 turns it off. |
+| `pomMaxSteps` | u32 | 32 | Parallax march steps at grazing angles (Max Steps), 1 to 256. |
 | `parallaxMode` | u32 | 0 | 0=Basic, 1=Steep, 2=OcclusionMapping, 3=ReliefMapping. |
 | `pomMaxSteps` | u32 | 32 | Max ray-march steps for POM modes. |
 | `pomHeightScale` | f32 | 0.05 | Height scale for POM. |

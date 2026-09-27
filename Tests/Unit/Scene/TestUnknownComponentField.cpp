@@ -245,4 +245,24 @@ ENJIN_TEST(UnknownComponentField, ARealAuthoredMaterialWarnsAboutNothing) {
     ENJIN_EXPECT_TRUE(result.warnings.empty());
 }
 
+ENJIN_TEST(UnknownComponentField, FieldsRetiredOnPurposeAreNotReported) {
+    // SD-27 dropped the controller key checkboxes and three unbuilt features.
+    // Old scenes still carry those keys and they are ignored deliberately, so
+    // a warning for each would only be noise; a misspelled field next to them
+    // is still caught.
+    ECS::World world;
+    Scene::SceneSerializer s(&world);
+    const std::string scene =
+        R"({"version":"1.0","entities":[{"id":1,"name":{"name":"Hero"},)"
+        R"("transform":{"position":[0,0,0],"rotation":[0,0,0,1],"scale":[1,1,1],"visible":true},)"
+        R"("thirdPerson":{"useWASD":true,"useGamepad":true,"enableLockOn":true,"lockOnRange":25.0,"moveSpeedd":4.0}}]})";
+    const auto result = s.LoadFromString(scene);
+    ENJIN_ASSERT_TRUE(result.success);
+    ENJIN_EXPECT_TRUE(!MentionsField(result, "useWASD"));
+    ENJIN_EXPECT_TRUE(!MentionsField(result, "useGamepad"));
+    ENJIN_EXPECT_TRUE(!MentionsField(result, "enableLockOn"));
+    ENJIN_EXPECT_TRUE(!MentionsField(result, "lockOnRange"));
+    ENJIN_EXPECT_TRUE(MentionsField(result, "moveSpeedd"));
+}
+
 ENJIN_TEST_MAIN()

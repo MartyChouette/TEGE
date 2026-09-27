@@ -145,11 +145,11 @@ struct MaterialComponent {
     Math::Vector3 ditherTransBlendColor = Math::Vector3(0.7f, 0.85f, 1.0f); // light blue default
     f32 ditherTransOpacity = 0.5f; // 0=all blend color, 1=all original, 0.5=even mix
 
-    // Height/parallax mapping
-    f32 parallaxScale = 0.05f;
-    u32 parallaxMode = 0;       // 0=Basic, 1=Steep, 2=OcclusionMapping, 3=ReliefMapping
-    u32 pomMaxSteps = 32;       // Max ray-march steps for POM modes
-    f32 pomHeightScale = 0.05f; // Height scale for POM
+    // Height/parallax mapping: one algorithm, parallax occlusion mapping.
+    // There used to be a four-way mode and a second "POM Height Scale" that
+    // nothing read; the renderer always ran POM with parallaxScale.
+    f32 parallaxScale = 0.05f;  // Height Scale, below 1
+    u32 pomMaxSteps = 32;       // Max Steps of the ray march (1..256), grazing angles use the most
 
     // 64-bit material sort key for fast radix-friendly sorting.
     // Layout: [8:pipeline][16:material hash][24:texture hash][16:depth]

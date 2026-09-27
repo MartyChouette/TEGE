@@ -273,22 +273,26 @@ fn vs_main(in: VertexInput, @builtin(instance_index) instanceIdx: u32) -> Vertex
 // anywhere, and a parallax march wants the base mip regardless.
 fn parallaxOcclusionMapping(texCoords: vec2<f32>, viewDirTangent: vec3<f32>,
                             parallaxScale: f32) -> vec2<f32> {
-    let minLayers = 8.0;
-    let maxLayers = 32.0;
+    // Max Steps in the integer part, Height Scale in the fraction
+    // (Renderer::PackParallax); an unpacked value marches the old fixed 32.
+    let packedSteps = floor(parallaxScale);
+    let heightScale = parallaxScale - packedSteps;
+    let maxLayers = select(32.0, packedSteps, packedSteps >= 1.0);
+    let minLayers = min(8.0, maxLayers);
     let numLayers = mix(maxLayers, minLayers, abs(dot(vec3<f32>(0.0, 0.0, 1.0), viewDirTangent)));
 
     let layerDepth = 1.0 / numLayers;
-    let P = viewDirTangent.xy * parallaxScale;
+    let P = viewDirTangent.xy * heightScale;
     let deltaTexCoords = P / numLayers;
 
     var currentLayerDepth = 0.0;
     var currentTexCoords = texCoords;
     var currentDepthMapValue = textureSampleLevel(heightTex, heightSmp, currentTexCoords, 0.0).r;
 
-    // Bounded, unlike the desktop while-loop: maxLayers is 32, and a runaway
-    // here would hang the GPU rather than drop a frame.
-    for (var i = 0; i < 32; i = i + 1) {
-        if (currentLayerDepth >= currentDepthMapValue) { break; }
+    // Bounded, unlike the desktop while-loop: at most 256 steps (the Max Steps
+    // ceiling), and a runaway here would hang the GPU rather than drop a frame.
+    for (var i = 0; i < 256; i = i + 1) {
+        if (currentLayerDepth >= currentDepthMapValue || f32(i) >= numLayers) { break; }
         currentTexCoords = currentTexCoords - deltaTexCoords;
         currentDepthMapValue = textureSampleLevel(heightTex, heightSmp, currentTexCoords, 0.0).r;
         currentLayerDepth = currentLayerDepth + layerDepth;

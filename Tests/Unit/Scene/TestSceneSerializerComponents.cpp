@@ -539,9 +539,7 @@ ENJIN_TEST(Material, ParallaxRoundTrip) {
     w1.AddComponent<TransformComponent>(e);
     auto& mat = w1.AddComponent<MaterialComponent>(e);
     mat.parallaxScale = 0.1f;
-    mat.parallaxMode = 3;  // ReliefMapping
     mat.pomMaxSteps = 64;
-    mat.pomHeightScale = 0.08f;
 
     World w2;
     Entity e2 = RoundTrip(w1, w2);
@@ -549,9 +547,7 @@ ENJIN_TEST(Material, ParallaxRoundTrip) {
     auto* m = w2.GetComponent<MaterialComponent>(e2);
     ENJIN_ASSERT_NOT_NULL(m);
     ENJIN_EXPECT_FLOAT_EQ(m->parallaxScale, 0.1f);
-    ENJIN_EXPECT_EQ(m->parallaxMode, 3u);
     ENJIN_EXPECT_EQ(m->pomMaxSteps, 64u);
-    ENJIN_EXPECT_FLOAT_EQ(m->pomHeightScale, 0.08f);
 }
 
 ENJIN_TEST(Material, TexturePathsRoundTrip) {

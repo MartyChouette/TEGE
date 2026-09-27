@@ -4718,6 +4718,11 @@ void RenderSystem::Update(f32 deltaTime) {
                 // triangle.frag:1199 -- both, so a material with a height map
                 // and a zero scale costs nothing.
                 if (rd.hasHeight) obj.flags |= (1 << 10);
+                // The scale itself was never written here -- only water set
+                // obj.parallaxScale, for its freeze -- so the > 0 gate above
+                // failed and parallax was dead in every browser (WP-13). Water
+                // overwrites this below with its freeze progress, as before.
+                obj.parallaxScale = Renderer::PackParallax(mat->parallaxScale, mat->pomMaxSteps);
                 if (mat->flatShading)  obj.flags |= (1 << 20);
                 if (mat->uvQuantize)   obj.flags |= (1 << 12);
                 if (mat->gouraudOnly)  obj.flags |= (1 << 13);
@@ -11451,7 +11456,7 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                         }
                     }
                 }
-                pushConstants.parallaxScale = material->parallaxScale;
+                pushConstants.parallaxScale = Renderer::PackParallax(material->parallaxScale, material->pomMaxSteps);
             } else {
                 pushConstants.baseColor = Math::Vector3(0.8f, 0.8f, 0.8f);
                 pushConstants.metallic = 0.0f;
@@ -12157,7 +12162,7 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
                         pushConstants.surfaceParam3 = ds.surfaceParam3;
                     }
                 }
-                pushConstants.parallaxScale = material->parallaxScale;
+                pushConstants.parallaxScale = Renderer::PackParallax(material->parallaxScale, material->pomMaxSteps);
             } else {
                 pushConstants.baseColor = Math::Vector3(0.8f, 0.8f, 0.8f);
                 pushConstants.metallic = 0.0f;
@@ -13129,7 +13134,7 @@ void RenderSystem::UploadObjectData() {
             global.gouraudOnly         = m_GlobalGouraudOnly;
 
             obj.flags = Renderer::BuildMaterialFlagWord(*material, texBind, global);
-            obj.parallaxScale = material->parallaxScale;
+            obj.parallaxScale = Renderer::PackParallax(material->parallaxScale, material->pomMaxSteps);
         } else {
             obj.baseColor = Math::Vector3(1.0f);
             obj.metallic = 0.0f;
@@ -15852,7 +15857,7 @@ void RenderSystem::BuildSlotPushConstants(const MaterialComponent& slotMat,
     out.emissiveStrength = slotMat.emissiveStrength;
     out.opacity          = slotMat.opacity;
     out.alphaCutoff      = slotMat.alphaCutoff;
-    out.parallaxScale    = slotMat.parallaxScale;
+    out.parallaxScale    = Renderer::PackParallax(slotMat.parallaxScale, slotMat.pomMaxSteps);
 
     // Keep only the flags that describe the DRAW (skinning, wind, water); every
     // material-owned bit is rebuilt from the slot below.
@@ -16752,7 +16757,7 @@ void RenderSystem::RenderEntity(Entity entity) {
                 }
             }
         }
-        pushConstants.parallaxScale = material->parallaxScale;
+        pushConstants.parallaxScale = Renderer::PackParallax(material->parallaxScale, material->pomMaxSteps);
     } else {
         // Default material (light gray, non-metallic)
         pushConstants.baseColor = Math::Vector3(0.8f, 0.8f, 0.8f);
@@ -17018,7 +17023,7 @@ void RenderSystem::RenderEntityGhost(Entity entity, const Math::Matrix4& modelMa
         pushConstants.emissiveColor = mat->emissiveColor;
         pushConstants.roughness = mat->roughness;
         pushConstants.emissiveStrength = mat->emissiveStrength;
-        pushConstants.parallaxScale = mat->parallaxScale;
+        pushConstants.parallaxScale = Renderer::PackParallax(mat->parallaxScale, mat->pomMaxSteps);
         // Real material flags, but force ALPHA_MODE_BLEND so the reflection composites.
         i32 f = MaterialGPU::FromComponent(*mat).flags;
         f = (f & ~(0x3 << 8)) | (2 << 8);
@@ -19305,7 +19310,7 @@ static void FillArenaMaterial(ObjectDataGPU& od, const MaterialComponent* m, boo
     }
     od.baseColor = m->baseColor; od.metallic = m->metallic; od.emissiveColor = m->emissiveColor;
     od.roughness = m->roughness; od.emissiveStrength = m->emissiveStrength; od.opacity = m->opacity;
-    od.alphaCutoff = m->alphaCutoff; od.parallaxScale = m->parallaxScale;
+    od.alphaCutoff = m->alphaCutoff; od.parallaxScale = Renderer::PackParallax(m->parallaxScale, m->pomMaxSteps);
     i32 f = skinFlag;   // FLAG_SKINNED (cleared when pre-skinned by pose-dedup)
     if (m->doubleSided) f |= 1;
     if (m->castShadows) f |= 2;
