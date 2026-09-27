@@ -97,9 +97,9 @@ ENJIN_TEST(ControlsMenu, AClashIsNamedUnderTheRow) {
     InputSystem::InputActionMap map;
     const i32 sprint = static_cast<i32>(InputSystem::GameAction::Sprint);
     const i32 dash = static_cast<i32>(InputSystem::GameAction::Dash);
-    // The default no longer clashes (IN-9: Dash is Left Alt)
-    const auto dashDefault = map.FindConflicts(dash);
-    ENJIN_EXPECT_TRUE(std::find(dashDefault.begin(), dashDefault.end(), sprint) == dashDefault.end());
+    // Dash's defaults clash with nothing (IN-9: Left Alt and the right
+    // bumper; B would have met Crouch)
+    ENJIN_EXPECT_TRUE(map.FindConflicts(dash).empty());
     map.RebindAction(dash, static_cast<i32>(KeyCode::LeftShift));
     const auto clashes = map.FindConflicts(sprint);
     ENJIN_EXPECT_TRUE(std::find(clashes.begin(), clashes.end(), dash) != clashes.end());

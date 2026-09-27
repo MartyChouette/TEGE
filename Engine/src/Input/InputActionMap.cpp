@@ -36,7 +36,7 @@ namespace {
         { "Jump",              AC::Movement, K(KeyCode::Space), N,                 N,             P(GamepadButton::A),          N,                       N,       true,  0.5f, PRESS, TH::Button,   "JMP",  "jump" },
         { "Sprint",            AC::Movement, K(KeyCode::LeftShift), K(KeyCode::RightShift), N,    P(GamepadButton::LeftStick),  P(GamepadButton::LeftBumper), N,  true,  0.5f, HOLD,  TH::Button,   "RUN",  "sprint" },
         { "Crouch",            AC::Movement, K(KeyCode::LeftControl), K(KeyCode::C), N,           P(GamepadButton::B),          N,                       N,       true,  0.5f, TOGGLE, TH::NotShown, "",     "crouch" },
-        { "Dash",              AC::Movement, K(KeyCode::LeftAlt), N,               N,             P(GamepadButton::B),           N,                      N,       true,  0.5f, PRESS, TH::NotShown, "",     "dash" },
+        { "Dash",              AC::Movement, K(KeyCode::LeftAlt), N,               N,             P(GamepadButton::RightBumper), N,                      N,       true,  0.5f, PRESS, TH::NotShown, "",     "dash" },
         { "Interact",          AC::Actions,  K(KeyCode::E),     N,                 N,             P(GamepadButton::X),          N,                       N,       true,  0.5f, PRESS, TH::Button,   "USE",  "interact" },
         { "Attack",            AC::Actions,  N,                 N,                 M(MouseButton::Left),  N,                    N,   AX(GamepadAxis::RightTrigger), true, 0.3f, PRESS, TH::Button,   "FIRE", "attack" },
         { "Block",             AC::Actions,  N,                 N,                 M(MouseButton::Right), N,                    N,   AX(GamepadAxis::LeftTrigger),  true, 0.3f, HOLD,  TH::NotShown, "",     "block" },
