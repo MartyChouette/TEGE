@@ -1546,13 +1546,15 @@ void ControllerSystem::UpdateThirdPerson(Entity entity, ThirdPersonController& c
             ctrl.cameraPitch = Math::Clamp(ctrl.cameraPitch, ctrl.cameraMinPitch, ctrl.cameraMaxPitch);
         }
 
-        // Gamepad right stick for camera orbit
+        // Gamepad right stick for camera orbit. The player's look sensitivity
+        // scales the stick as it scales the mouse; the stick ignored it, so the
+        // Controls menu's slider did nothing for a pad player (IN-19).
         if (Input::IsGamepadConnected(ctrl.gamepadIndex)) {
             Math::Vector2 rightStick = Input::GetGamepadRightStick(ctrl.gamepadIndex);
             if (rightStick.x != 0.0f || rightStick.y != 0.0f) {
-                ctrl.cameraYaw += rightStick.x * ctrl.gamepadLookSensitivity * 100.0f * dt;
+                ctrl.cameraYaw += rightStick.x * ctrl.gamepadLookSensitivity * MouseSensitivityScale() * 100.0f * dt;
                 f32 gpPitchSign = InvertYFromMap() ? 1.0f : -1.0f;
-                ctrl.cameraPitch += rightStick.y * ctrl.gamepadLookSensitivity * 100.0f * dt * gpPitchSign;
+                ctrl.cameraPitch += rightStick.y * ctrl.gamepadLookSensitivity * MouseSensitivityScale() * 100.0f * dt * gpPitchSign;
                 ctrl.cameraPitch = Math::Clamp(ctrl.cameraPitch, ctrl.cameraMinPitch, ctrl.cameraMaxPitch);
             }
         }
@@ -1887,15 +1889,15 @@ void ControllerSystem::UpdateFirstPerson(Entity entity, FirstPersonController& c
             Math::Vector2 rightStick = Input::GetGamepadRightStick(ctrl.gamepadIndex);
             if (rightStick.x != 0.0f || rightStick.y != 0.0f) {
                 if (!lockYaw) {
-                    ctrl.yaw -= rightStick.x * ctrl.gamepadLookSensitivity * 100.0f * dt;
+                    ctrl.yaw -= rightStick.x * ctrl.gamepadLookSensitivity * MouseSensitivityScale() * 100.0f * dt;
                 }
                 // XOR per-controller invertY with global accessibility invertMouseY
                 // (same sign convention as mouse — see above)
                 bool effectiveInvertYGP = ctrl.invertY != InvertYFromMap();
                 if (effectiveInvertYGP) {
-                    ctrl.pitch += rightStick.y * ctrl.gamepadLookSensitivity * 100.0f * dt;
+                    ctrl.pitch += rightStick.y * ctrl.gamepadLookSensitivity * MouseSensitivityScale() * 100.0f * dt;
                 } else {
-                    ctrl.pitch -= rightStick.y * ctrl.gamepadLookSensitivity * 100.0f * dt;
+                    ctrl.pitch -= rightStick.y * ctrl.gamepadLookSensitivity * MouseSensitivityScale() * 100.0f * dt;
                 }
                 ctrl.pitch = Math::Clamp(ctrl.pitch, ctrl.minPitch, ctrl.maxPitch);
             }
@@ -2744,9 +2746,9 @@ void ControllerSystem::UpdateSurfaceAligned(Entity entity, SurfaceAlignedControl
         if (Input::IsGamepadConnected(ctrl.gamepadIndex)) {
             Math::Vector2 rightStick = Input::GetGamepadRightStick(ctrl.gamepadIndex);
             if (rightStick.x != 0.0f || rightStick.y != 0.0f) {
-                ctrl.cameraYaw += rightStick.x * ctrl.gamepadLookSensitivity * 100.0f * dt;
+                ctrl.cameraYaw += rightStick.x * ctrl.gamepadLookSensitivity * MouseSensitivityScale() * 100.0f * dt;
                 f32 saGpPitchSign = InvertYFromMap() ? 1.0f : -1.0f;
-                ctrl.cameraPitch += rightStick.y * ctrl.gamepadLookSensitivity * 100.0f * dt * saGpPitchSign;
+                ctrl.cameraPitch += rightStick.y * ctrl.gamepadLookSensitivity * MouseSensitivityScale() * 100.0f * dt * saGpPitchSign;
                 ctrl.cameraPitch = Math::Clamp(ctrl.cameraPitch, ctrl.cameraMinPitch, ctrl.cameraMaxPitch);
             }
         }
