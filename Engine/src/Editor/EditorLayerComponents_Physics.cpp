@@ -1,6 +1,7 @@
 // EditorLayerComponents_Physics.cpp — Physics component inspector draw functions
 // Split from EditorLayerComponents.cpp for faster incremental builds.
 #include "Enjin/Editor/EditorLayer.h"
+#include "Enjin/Physics/Polygon2D.h"
 #include "Enjin/Editor/EntityPicker.h"
 #include "Enjin/Editor/EditorTheme.h"
 #include "Enjin/Editor/InspectorUndo.h"
@@ -199,6 +200,48 @@ void EditorLayer::DrawBody2DComponent(ECS::Entity entity) {
                 body->box.offset = Math::Vector2(off[0], off[1]);
             }
             InspectorUndo::DragFloat(m_UndoRedo, "Rotation##BoxRot", &body->box.rotation, 0.01f, -3.15f, 3.15f);
+        } else if (body->shapeType == Physics::Shape2DType::Polygon) {
+            // The vertex editor lived on the Polygon Collider 2D, which nothing
+            // read; choosing Polygon here gave a shape nobody could edit.
+            auto& verts = body->polygon.vertices;
+            ImGui::Text("Vertices: %zu of %zu", verts.size(), Physics::kMaxPolygon2DVertices);
+            for (usize i = 0; i < verts.size(); i++) {
+                ImGui::PushID(static_cast<int>(i));
+                f32 v[2] = { verts[i].x, verts[i].y };
+                char label[32];
+                snprintf(label, sizeof(label), "V%zu##Poly", i);
+                if (ImGui::DragFloat2(label, v, 0.01f)) verts[i] = Math::Vector2(v[0], v[1]);
+                ImGui::SameLine();
+                if (ImGui::SmallButton("X##PolyDel")) {
+                    verts.erase(verts.begin() + static_cast<std::ptrdiff_t>(i));
+                    ImGui::PopID();
+                    break;
+                }
+                ImGui::PopID();
+            }
+            ImGui::BeginDisabled(verts.size() >= Physics::kMaxPolygon2DVertices);
+            if (ImGui::Button("Add Vertex##Poly")) verts.push_back(Math::Vector2(0, 0));
+            ImGui::EndDisabled();
+            if (auto* sprite = m_World->GetComponent<ECS::Sprite2DComponent>(entity);
+                sprite && !sprite->texturePath.empty()) {
+                ImGui::SameLine();
+                if (ImGui::Button("Trace Silhouette##Poly")) {
+                    int w, h, channels;
+                    u8* pixels = stbi_load(sprite->texturePath.c_str(), &w, &h, &channels, 4);
+                    if (pixels) {
+                        Math::Vector2 sprSize(sprite->size.x > 0 ? sprite->size.x : 1.0f,
+                                              sprite->size.y > 0 ? sprite->size.y : 1.0f);
+                        auto outline = SpriteColliderGenerator::FitPolygonCollider(
+                            pixels, (u32)w, (u32)h, sprSize, sprite->pivot);
+                        if (outline.size() >= 3) verts = outline;
+                        stbi_image_free(pixels);
+                    }
+                }
+                ImGui::SetItemTooltip("Trace the sprite's outline: convex, at most 8 corners, which is what Box2D takes.");
+            }
+            f32 off[2] = { body->polygon.offset.x, body->polygon.offset.y };
+            if (ImGui::DragFloat2("Offset##PolyOff", off, 0.1f)) body->polygon.offset = Math::Vector2(off[0], off[1]);
+            ImGui::TextDisabled("Box2D uses the convex outline of these points.");
         } else if (body->shapeType == Physics::Shape2DType::Capsule) {
             InspectorUndo::DragFloat(m_UndoRedo, "Radius##Cap", &body->capsule.radius, 0.05f, 0.01f, 50.0f);
             InspectorUndo::DragFloat(m_UndoRedo, "Height##Cap", &body->capsule.height, 0.05f, 0.01f, 100.0f);
@@ -655,78 +698,6 @@ void EditorLayer::DrawPerFrameColliderComponent(ECS::Entity entity) {
 
         if (ImGui::Button("Add Frame##PFC")) {
             pfc->frameColliders.push_back(ECS::PerFrameColliderComponent::FrameCollider{});
-        }
-    }
-}
-
-void EditorLayer::DrawPolygonCollider2DComponent(ECS::Entity entity) {
-    bool open = ImGui::CollapsingHeader("Polygon Collider 2D", ImGuiTreeNodeFlags_DefaultOpen);
-    if (ImGui::BeginPopupContextItem("PolygonCollider2DCtx")) {
-        if (ImGui::MenuItem("Remove Component")) {
-            RemoveComponentWithUndo<ECS::PolygonCollider2DComponent>(entity, "polygonCollider2D", "Polygon Collider 2D");
-            ImGui::EndPopup();
-            return;
-        }
-        ImGui::EndPopup();
-    }
-    if (open) {
-        auto* poly = m_World->GetComponent<ECS::PolygonCollider2DComponent>(entity);
-        if (!poly) return;
-        DrawComponentHelp("polygonCollider2D", m_World, entity);
-
-        InspectorUndo::Checkbox(m_UndoRedo, "Is Trigger##Poly2D", &poly->isTrigger);
-
-        if (ImGui::TreeNode("Physics Material##Poly2D")) {
-            InspectorUndo::DragFloat(m_UndoRedo, "Friction##Poly2D", &poly->friction, 0.05f, 0.0f, 1.0f);
-            InspectorUndo::DragFloat(m_UndoRedo, "Bounciness##Poly2D", &poly->bounciness, 0.05f, 0.0f, 1.0f);
-            ImGui::TreePop();
-        }
-
-        DrawCollisionFilteringUI(poly->categoryBits, poly->collisionMask);
-
-        ImGui::Text("Vertices: %zu", poly->vertices.size());
-        for (usize i = 0; i < poly->vertices.size(); i++) {
-            ImGui::PushID(static_cast<int>(i));
-            f32 v[2] = { poly->vertices[i].x, poly->vertices[i].y };
-            char label[32];
-            snprintf(label, sizeof(label), "V%zu##Poly", i);
-            if (ImGui::DragFloat2(label, v, 0.01f)) {
-                poly->vertices[i] = Math::Vector2(v[0], v[1]);
-            }
-            ImGui::SameLine();
-            if (ImGui::SmallButton("X##PolyDel")) {
-                poly->vertices.erase(poly->vertices.begin() + i);
-                ImGui::PopID();
-                break;
-            }
-            ImGui::PopID();
-        }
-
-        if (ImGui::Button("Add Vertex##Poly")) {
-            poly->vertices.push_back(Math::Vector2(0, 0));
-        }
-
-        // Auto-generate from sprite
-        if (m_World->HasComponent<ECS::Sprite2DComponent>(entity)) {
-            auto* sprite = m_World->GetComponent<ECS::Sprite2DComponent>(entity);
-            if (sprite && !sprite->texturePath.empty()) {
-                ImGui::SameLine();
-                if (ImGui::Button("Trace Silhouette##Poly")) {
-                    int w, h, channels;
-                    u8* pixels = stbi_load(sprite->texturePath.c_str(), &w, &h, &channels, 4);
-                    if (pixels) {
-                        Math::Vector2 sprSize(sprite->size.x > 0 ? sprite->size.x : 1.0f,
-                                              sprite->size.y > 0 ? sprite->size.y : 1.0f);
-                        auto result = SpriteColliderGenerator::FitPolygonCollider(
-                            pixels, (u32)w, (u32)h, sprSize, sprite->pivot);
-                        poly->vertices = result.vertices;
-                        stbi_image_free(pixels);
-                    }
-                }
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Auto-trace polygon from sprite alpha silhouette");
-                }
-            }
         }
     }
 }

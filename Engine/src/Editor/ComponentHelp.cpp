@@ -156,12 +156,6 @@ static const std::unordered_map<std::string, ComponentHelp>& Registry() {
             r["capsuleCollider"] = { "A capsule collision volume (good for characters).",  howCol, nullptr, colRel };
             r["meshCollider"]    = { "A collision shape built from the mesh geometry.",    howCol, nullptr, colRel };
         }
-        r["polygonCollider2D"] = {
-            "A 2D polygon collision shape (Box2D).",
-            "For 2D scenes only. Pair with a 2D body to make it dynamic.",
-            nullptr,
-            { { RelationKind::FeedsPhysics, "Physics 2D", nullptr, nullptr } }
-        };
 
         // ---- Sprites / 2D --------------------------------------------------
         r["sprite2D"] = {

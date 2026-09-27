@@ -15,6 +15,7 @@
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/Components/Gameplay.h"
+#include "Enjin/Physics/Polygon2D.h"
 #include "Enjin/ECS/Components/Lens.h"
 #include "Enjin/ECS/Components/Camera.h"
 #include "Enjin/ECS/Components/BoundaryPolygon.h"
@@ -206,6 +207,63 @@ ENJIN_TEST(SerdesCoverage, SwimTuningSurvivesASave) {
     ENJIN_EXPECT_TRUE(Near(r->swimSurfaceBand, 0.4f));
     ENJIN_EXPECT_TRUE(Near(r->swimSurfaceStrokeScale, 0.15f));
     ENJIN_EXPECT_TRUE(Near(r->cameraCollisionRadius, 0.75f));
+}
+
+ENJIN_TEST(Polygon2DFit, AConcaveOutlineBecomesItsConvexHull) {
+    // An L shape: the inner corner (1,1) is inside the hull, so five corners remain
+    std::vector<Vector2> l = {{0,0},{2,0},{2,1},{1,1},{1,2},{0,2}};
+    auto fit = Physics::FitBox2DPolygon(l);
+    ENJIN_EXPECT_EQ(fit.size(), size_t(5));
+    for (const auto& v : fit) ENJIN_EXPECT_FALSE(v.x == 1.0f && v.y == 1.0f);
+}
+
+ENJIN_TEST(Polygon2DFit, ManyPointsComeDownToEightAndKeepTheirArea) {
+    // A 40-sided circle: eight corners keep most of the area and stay convex
+    std::vector<Vector2> circle;
+    for (int i = 0; i < 40; ++i) {
+        const f32 a = 6.2831853f * static_cast<f32>(i) / 40.0f;
+        circle.push_back(Vector2(std::cos(a), std::sin(a)));
+    }
+    auto fit = Physics::FitBox2DPolygon(circle);
+    ENJIN_ASSERT_EQ(fit.size(), size_t(8));
+    f32 area = 0.0f;
+    for (size_t i = 0; i < fit.size(); ++i) {
+        const Vector2& a = fit[i];
+        const Vector2& b = fit[(i + 1) % fit.size()];
+        area += a.x * b.y - b.x * a.y;
+    }
+    area *= 0.5f;
+    ENJIN_EXPECT_TRUE(area > 0.0f);                  // counter-clockwise
+    ENJIN_EXPECT_TRUE(area > 0.85f * 3.14159f);      // a regular octagon keeps 90%
+}
+
+ENJIN_TEST(SerdesCoverage, ARetiredPolygonCollider2DBecomesAStaticBody2D) {
+    // It never collided, so it becomes a static body rather than one that falls
+    World w;
+    const std::string jsonText = R"({
+        "polygonCollider2D": {"vertices": [[0,0],[2,0],[2,1],[1,1],[1,2],[0,2]],
+                              "isTrigger": true, "friction": 0.2, "bounciness": 0.4, "categoryBits": 4}
+    })";
+    Entity e = Scene::SceneSerializer::DeserializeEntityFromString(&w, jsonText);
+    const auto* b = w.GetComponent<Physics::Body2DComponent>(e);
+    ENJIN_ASSERT_TRUE(b != nullptr);
+    ENJIN_EXPECT_TRUE(b->shapeType == Physics::Shape2DType::Polygon);
+    ENJIN_EXPECT_EQ(b->polygon.vertices.size(), size_t(5));
+    ENJIN_EXPECT_TRUE(b->isStatic);
+    ENJIN_EXPECT_TRUE(b->isSensor);
+    ENJIN_EXPECT_TRUE(Near(b->material.friction, 0.2f));
+    ENJIN_EXPECT_TRUE(Near(b->material.restitution, 0.4f));
+    ENJIN_EXPECT_EQ(b->categoryBits, 4u);
+
+    // An entity that already had a Body2D keeps its own shape
+    World w2;
+    Entity e2 = Scene::SceneSerializer::DeserializeEntityFromString(&w2, R"({
+        "body2D": {"shapeType": 0},
+        "polygonCollider2D": {"vertices": [[0,0],[1,0],[0,1]]}
+    })");
+    const auto* b2 = w2.GetComponent<Physics::Body2DComponent>(e2);
+    ENJIN_ASSERT_TRUE(b2 != nullptr);
+    ENJIN_EXPECT_TRUE(b2->shapeType == Physics::Shape2DType::Circle);
 }
 
 ENJIN_TEST(SerdesCoverage, EntityLinksPointAtTheRightEntityAfterAReload) {

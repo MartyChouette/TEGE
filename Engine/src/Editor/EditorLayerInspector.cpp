@@ -384,11 +384,6 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::MeshColliderComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::MeshColliderComponent>(e); },
             "meshCollider"},
-        {"Polygon Collider 2D", "Physics", nullptr,
-            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::PolygonCollider2DComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::PolygonCollider2DComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::PolygonCollider2DComponent>(e); },
-            "polygonCollider2D", DimensionTag::Only2D},
         {"Per-Frame Collider", "Physics", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::PerFrameColliderComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::PerFrameColliderComponent>(e); },
@@ -3164,9 +3159,6 @@ void EditorLayer::DrawInspectorPanel() {
         if (m_World->HasComponent<ECS::MeshColliderComponent>(m_PrimarySelected)) {
             DrawMeshColliderComponent(m_PrimarySelected);
         }
-        if (m_World->HasComponent<ECS::PolygonCollider2DComponent>(m_PrimarySelected)) {
-            DrawPolygonCollider2DComponent(m_PrimarySelected);
-        }
         if (m_World->HasComponent<ECS::PerFrameColliderComponent>(m_PrimarySelected)) {
             DrawPerFrameColliderComponent(m_PrimarySelected);
         }
@@ -5581,7 +5573,7 @@ static bool EntityHasAnyCollider(ECS::World* world, ECS::Entity entity) {
            world->HasComponent<ECS::SphereColliderComponent>(entity) ||
            world->HasComponent<ECS::CapsuleColliderComponent>(entity) ||
            world->HasComponent<ECS::MeshColliderComponent>(entity) ||
-           world->HasComponent<ECS::PolygonCollider2DComponent>(entity) ||
+           world->HasComponent<Physics::Body2DComponent>(entity) ||
            world->HasComponent<ECS::TriggerZoneComponent>(entity);
 }
 

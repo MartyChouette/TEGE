@@ -33,7 +33,9 @@ public:
         u8 alphaThreshold = 10);
 
     // Fit a polygon collider from sprite alpha contour
-    static ECS::PolygonCollider2DComponent FitPolygonCollider(
+    // A Body2D polygon traced from the sprite's alpha: convex, CCW, at most 8
+    // corners (Physics::FitBox2DPolygon), in world units about the pivot.
+    static std::vector<Math::Vector2> FitPolygonCollider(
         const u8* pixels, u32 w, u32 h,
         const Math::Vector2& spriteSize,
         const Math::Vector2& pivot = Math::Vector2(0.5f, 0.5f),

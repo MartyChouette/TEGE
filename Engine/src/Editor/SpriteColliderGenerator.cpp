@@ -1,4 +1,5 @@
 #include "Enjin/Editor/SpriteColliderGenerator.h"
+#include "Enjin/Physics/Polygon2D.h"
 #include "Enjin/Editor/SpriteContourTracer.h"
 #include <algorithm>
 #include <cmath>
@@ -133,33 +134,35 @@ ECS::SphereColliderComponent SpriteColliderGenerator::FitSphereCollider(
     return sphere;
 }
 
-ECS::PolygonCollider2DComponent SpriteColliderGenerator::FitPolygonCollider(
+std::vector<Math::Vector2> SpriteColliderGenerator::FitPolygonCollider(
     const u8* pixels, u32 w, u32 h,
     const Math::Vector2& spriteSize,
     const Math::Vector2& pivot, f32 tolerance, u8 alphaThreshold) {
 
-    ECS::PolygonCollider2DComponent poly;
-    if (!pixels || w == 0 || h == 0) return poly;
+    std::vector<Math::Vector2> outline;
+    if (!pixels || w == 0 || h == 0) return outline;
 
     // Trace contour in pixel space
     auto contour = SpriteContourTracer::TraceContour(pixels, w, h, alphaThreshold);
-    if (contour.size() < 3) return poly;
+    if (contour.size() < 3) return outline;
 
     // Simplify
     auto simplified = SpriteContourTracer::Simplify(contour, tolerance);
     if (simplified.size() < 3) simplified = contour;
 
     // Convert from pixel coordinates to world-space relative to pivot
-    poly.vertices.reserve(simplified.size());
+    outline.reserve(simplified.size());
     for (const auto& pt : simplified) {
         f32 normX = pt.x / static_cast<f32>(w);
         f32 normY = pt.y / static_cast<f32>(h);
         f32 worldX = (normX - pivot.x) * spriteSize.x;
         f32 worldY = (pivot.y - normY) * spriteSize.y; // Y flipped
-        poly.vertices.push_back(Math::Vector2(worldX, worldY));
+        outline.push_back(Math::Vector2(worldX, worldY));
     }
 
-    return poly;
+    // Box2D takes a convex polygon of at most 8 corners; a traced outline is
+    // neither, and over 8 it used to be swapped for a unit box.
+    return Physics::FitBox2DPolygon(outline);
 }
 
 } // namespace Editor

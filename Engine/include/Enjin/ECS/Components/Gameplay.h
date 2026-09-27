@@ -2670,19 +2670,6 @@ struct PerFrameColliderComponent {
 };
 
 // ============================================================================
-// POLYGON COLLIDER 2D (sprite silhouette)
-// ============================================================================
-
-struct PolygonCollider2DComponent {
-    std::vector<Math::Vector2> vertices; // CCW winding, local space
-    bool isTrigger = false;
-    f32 friction = 0.5f;
-    f32 bounciness = 0.0f;
-    u32 categoryBits = 1;
-    u32 collisionMask = 0xFFFFFFFF;
-};
-
-// ============================================================================
 // NETWORKING COMPONENTS
 // ============================================================================
 

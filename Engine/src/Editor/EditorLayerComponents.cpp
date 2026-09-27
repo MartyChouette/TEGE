@@ -5544,11 +5544,20 @@ void EditorLayer::DrawSprite2DComponent(ECS::Entity entity) {
                 if (pixels) {
                     Math::Vector2 sprSize(sprite->size.x > 0 ? sprite->size.x : 1.0f,
                                           sprite->size.y > 0 ? sprite->size.y : 1.0f);
-                    auto poly = SpriteColliderGenerator::FitPolygonCollider(
+                    auto outline = SpriteColliderGenerator::FitPolygonCollider(
                         pixels, (u32)w, (u32)h, sprSize, sprite->pivot);
-                    if (!m_World->HasComponent<ECS::PolygonCollider2DComponent>(entity))
-                        m_World->AddComponent<ECS::PolygonCollider2DComponent>(entity);
-                    *m_World->GetComponent<ECS::PolygonCollider2DComponent>(entity) = poly;
+                    // Onto the Body2D, the one 2D shape Box2D reads. It used to
+                    // make a Polygon Collider 2D, which nothing read. A new body
+                    // is static, like the other Fit buttons' colliders.
+                    if (outline.size() >= 3) {
+                        if (!m_World->HasComponent<Physics::Body2DComponent>(entity)) {
+                            auto& b = m_World->AddComponent<Physics::Body2DComponent>(entity);
+                            b.isStatic = true;
+                        }
+                        auto* body = m_World->GetComponent<Physics::Body2DComponent>(entity);
+                        body->shapeType = Physics::Shape2DType::Polygon;
+                        body->polygon.vertices = outline;
+                    }
                     stbi_image_free(pixels);
                 }
             }
@@ -11940,7 +11949,6 @@ template void EditorLayer::RemoveComponentWithUndo<ECS::CapsuleColliderComponent
 template void EditorLayer::RemoveComponentWithUndo<ECS::MeshColliderComponent>(ECS::Entity, const std::string&, const std::string&);
 template void EditorLayer::RemoveComponentWithUndo<ECS::TriggerZoneComponent>(ECS::Entity, const std::string&, const std::string&);
 template void EditorLayer::RemoveComponentWithUndo<ECS::PerFrameColliderComponent>(ECS::Entity, const std::string&, const std::string&);
-template void EditorLayer::RemoveComponentWithUndo<ECS::PolygonCollider2DComponent>(ECS::Entity, const std::string&, const std::string&);
 template void EditorLayer::RemoveComponentWithUndo<ECS::RagdollComponent>(ECS::Entity, const std::string&, const std::string&);
 template void EditorLayer::RemoveComponentWithUndo<ECS::DistanceJointComponent>(ECS::Entity, const std::string&, const std::string&);
 template void EditorLayer::RemoveComponentWithUndo<ECS::HingeJointComponent>(ECS::Entity, const std::string&, const std::string&);

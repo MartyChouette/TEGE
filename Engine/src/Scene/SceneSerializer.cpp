@@ -1,6 +1,7 @@
 #include <vector>
 #include <unordered_set>
 #include "Enjin/Scene/SceneSerializer.h"
+#include "Enjin/Physics/Polygon2D.h"
 #include "Enjin/AI/Navmesh.h"
 #include "Enjin/Effects/SplineIKDeformer.h"
 #include "Enjin/ECS/Components/GeneratedGeometry.h"
@@ -2675,6 +2676,41 @@ static bool IsRetiredField(std::string_view component, std::string_view field) {
     return false;
 }
 
+// Polygon Collider 2D was removed (SD-27): nothing read it, so it never
+// collided, and the 2D body is the one shape Box2D reads. A saved one becomes
+// a Body2D polygon on load -- fitted to what Box2D accepts, sensor if it was a
+// trigger, same friction, bounce and filter -- and STATIC, because a collider
+// with no body behaves as a static one and a dynamic body would start
+// falling. An entity that already has a Body2D keeps it untouched: that shape
+// is what actually simulated, and swapping it would change the game.
+static void MigrateRetiredPolygonCollider2D(ECS::World* world, ECS::Entity entity, const json& j) {
+    if (!j.is_object()) return;
+    if (world->HasComponent<Physics::Body2DComponent>(entity)) {
+        ENJIN_LOG_INFO(Asset, "Entity %llu: dropped a retired Polygon Collider 2D; its Body2D already sets the shape.",
+                       static_cast<unsigned long long>(entity));
+        return;
+    }
+    std::vector<Math::Vector2> pts;
+    if (j.contains("vertices") && j["vertices"].is_array()) {
+        for (const auto& v : j["vertices"]) {
+            if (v.is_array() && v.size() >= 2) pts.push_back(Math::Vector2(v[0].get<f32>(), v[1].get<f32>()));
+        }
+    }
+    pts = Physics::FitBox2DPolygon(pts);
+    if (pts.size() < 3) return;
+    auto& body = world->AddComponent<Physics::Body2DComponent>(entity);
+    body.shapeType = Physics::Shape2DType::Polygon;
+    body.polygon.vertices = pts;
+    body.isStatic = true;
+    if (j.contains("isTrigger")) body.isSensor = JB(j["isTrigger"]);
+    if (j.contains("friction")) body.material.friction = j["friction"].get<f32>();
+    if (j.contains("bounciness")) body.material.restitution = j["bounciness"].get<f32>();
+    if (j.contains("categoryBits")) body.categoryBits = j["categoryBits"].get<u32>();
+    if (j.contains("collisionMask")) body.collisionMask = j["collisionMask"].get<u32>();
+    ENJIN_LOG_INFO(Asset, "Entity %llu: the retired Polygon Collider 2D became a static Body2D polygon.",
+                   static_cast<unsigned long long>(entity));
+}
+
 static void MigrateRetiredCineComponent(ECS::World* world, ECS::Entity entity, const json& j) {
     if (!j.is_object()) return;
     const bool enabled = !j.contains("enabled") || JB(j["enabled"]);
@@ -3873,38 +3909,6 @@ ECS::PerFrameColliderComponent DeserializePerFrameColliderComponent(const json& 
 // ============================================================================
 // Polygon Collider 2D Component
 // ============================================================================
-
-json SerializePolygonCollider2DComponent(const ECS::PolygonCollider2DComponent& poly) {
-    json j;
-    json verts = json::array();
-    for (const auto& v : poly.vertices) {
-        verts.push_back(json::array({v.x, v.y}));
-    }
-    j["vertices"] = verts;
-    j["isTrigger"] = poly.isTrigger;
-    j["friction"] = RF(poly.friction);
-    j["bounciness"] = RF(poly.bounciness);
-    j["categoryBits"] = poly.categoryBits;
-    j["collisionMask"] = poly.collisionMask;
-    return j;
-}
-
-ECS::PolygonCollider2DComponent DeserializePolygonCollider2DComponent(const json& j) {
-    ECS::PolygonCollider2DComponent poly;
-    if (j.contains("vertices") && j["vertices"].is_array()) {
-        for (const auto& v : j["vertices"]) {
-            if (v.is_array() && v.size() >= 2) {
-                poly.vertices.push_back(Math::Vector2(v[0].get<f32>(), v[1].get<f32>()));
-            }
-        }
-    }
-    if (j.contains("isTrigger")) poly.isTrigger = JB(j["isTrigger"]);
-    if (j.contains("friction")) poly.friction = j["friction"].get<f32>();
-    if (j.contains("bounciness")) poly.bounciness = j["bounciness"].get<f32>();
-    if (j.contains("categoryBits")) poly.categoryBits = j["categoryBits"].get<u32>();
-    if (j.contains("collisionMask")) poly.collisionMask = j["collisionMask"].get<u32>();
-    return poly;
-}
 
 // Body2D component
 json SerializeBody2DComponent(const Physics::Body2DComponent& body) {
@@ -10120,7 +10124,6 @@ static const std::vector<ComponentSerdes>& ComponentRegistry() {
         ENJIN_SERDES("perFrameCollider", ECS::PerFrameColliderComponent, SerializePerFrameColliderComponent, DeserializePerFrameColliderComponent),
         ENJIN_SERDES("pickup", ECS::PickupComponent, SerializePickupComponent, DeserializePickupComponent),
         ENJIN_SERDES("platformer2D", ECS::Platformer2DController, SerializePlatformer2D, DeserializePlatformer2D),
-        ENJIN_SERDES("polygonCollider2D", ECS::PolygonCollider2DComponent, SerializePolygonCollider2DComponent, DeserializePolygonCollider2DComponent),
         ENJIN_SERDES("poolable", ECS::PoolableComponent, SerializePoolableComponent, DeserializePoolableComponent),
         ENJIN_SERDES("poseLibrary", ECS::PoseLibraryComponent, SerializePoseLibraryComponent, DeserializePoseLibraryComponent),
         ENJIN_SERDES("possessable", ECS::PossessableComponent, SerializePossessable, DeserializePossessable),
@@ -10735,7 +10738,8 @@ void SceneSerializer::DeserializeEntities(const json& sceneJson, Deserialization
     // outside the registry below.
     std::unordered_set<std::string> knownEntityKeys = {
         "id", "stableId", "mesh", "parent", "morphTargets",
-        "cineComponent"   // retired; carried onto camera + Lens below
+        "cineComponent",      // retired; carried onto camera + Lens below
+        "polygonCollider2D"   // retired; carried onto a Body2D below
     };
     for (const auto& reg : ComponentRegistry()) knownEntityKeys.insert(reg.key);
     constexpr usize kMaxLoadWarnings = 25;
@@ -10910,6 +10914,9 @@ void SceneSerializer::DeserializeEntities(const json& sceneJson, Deserialization
         }
         if (auto cine = entityJson.find("cineComponent"); cine != entityJson.end()) {
             MigrateRetiredCineComponent(m_World, entity, *cine);
+        }
+        if (auto poly = entityJson.find("polygonCollider2D"); poly != entityJson.end()) {
+            MigrateRetiredPolygonCollider2D(m_World, entity, *poly);
         }
         if (entityJson.contains("mesh")) {
             auto mesh = DeserializeMeshComponent(entityJson["mesh"]);
@@ -11703,6 +11710,9 @@ ECS::Entity SceneSerializer::DeserializeEntityFromString(ECS::World* world, cons
         }
         if (auto cine = entityJson.find("cineComponent"); cine != entityJson.end()) {
             MigrateRetiredCineComponent(world, entity, *cine);
+        }
+        if (auto poly = entityJson.find("polygonCollider2D"); poly != entityJson.end()) {
+            MigrateRetiredPolygonCollider2D(world, entity, *poly);
         }
         if (entityJson.contains("mesh")) {
             world->AddComponent<ECS::MeshComponent>(entity, DeserializeMeshComponent(entityJson["mesh"]));

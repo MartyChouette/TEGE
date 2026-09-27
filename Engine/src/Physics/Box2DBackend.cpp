@@ -1,6 +1,7 @@
 #ifdef ENJIN_PHYSICS_BOX2D
 
 #include "Enjin/Physics/Box2DBackend.h"
+#include "Enjin/Physics/Polygon2D.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Gameplay.h"
@@ -323,7 +324,12 @@ void Box2DBackend::CreateBodyForEntity(ECS::Entity entity) {
             break;
         }
         case Shape2DType::Polygon: {
-            const auto& verts = body2d->polygon.vertices;
+            // More than 8 points (hand-edited, or an old scene) is fitted
+            // rather than thrown away for a unit box.
+            std::vector<Math::Vector2> fitted;
+            const std::vector<Math::Vector2>* src = &body2d->polygon.vertices;
+            if (src->size() > 8) { fitted = FitBox2DPolygon(*src); src = &fitted; }
+            const auto& verts = *src;
             if (verts.size() >= 3 && verts.size() <= 8) {
                 b2Vec2 points[8];
                 int count = static_cast<int>(std::min(verts.size(), static_cast<size_t>(8)));

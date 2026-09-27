@@ -980,7 +980,6 @@ private:
     void DrawFractureConfigComponent(ECS::Entity entity);
     void DrawMovingPlatformComponent(ECS::Entity entity);
     void DrawPerFrameColliderComponent(ECS::Entity entity);
-    void DrawPolygonCollider2DComponent(ECS::Entity entity);
     void DrawBody2DComponent(ECS::Entity entity);
     void DrawJoint2DComponent(ECS::Entity entity);
 

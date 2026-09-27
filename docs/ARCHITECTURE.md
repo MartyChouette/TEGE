@@ -278,7 +278,7 @@ Alternative render path: geometry-only pass writes triangle ID + instance ID to 
   - Joints (DistanceJoint, HingeJoint, BallSocketJoint, SpringJoint, FixedJoint, SliderJoint, Ragdoll)
   - Environment (WeatherZone, WaterVolume, GrassVolume, Vegetation, Temperature, Gravity, CameraTrigger)
   - Combat (Health, Damage, DamageResistance, Resource)
-  - Gameplay (QuestState, HUDWidget, CinematicCamera, Footstep, Poolable, SaveData [with PersistenceTier + tags], SaveLoadMenu, Interactable, Pickup, Inventory, Timer, Audio, Tag, SpawnPoint, Script, LOD, DialogueBoxComponent, PerFrameColliderComponent, PolygonCollider2DComponent, GameOver, ParallaxMachine)
+  - Gameplay (QuestState, HUDWidget, CinematicCamera, Footstep, Poolable, SaveData [with PersistenceTier + tags], SaveLoadMenu, Interactable, Pickup, Inventory, Timer, Audio, Tag, SpawnPoint, Script, LOD, DialogueBoxComponent, PerFrameColliderComponentComponent, GameOver, ParallaxMachine)
   - AI (AIController, FollowTarget, LookAtTarget, Waypoint, BehaviorTreeComponent)
   - Visual (Billboard, ParticleEmitter, Sprite2D, AnimatedSprite2D, Tilemap, Camera2DBounds)
   - Animation (Skeleton, Animator, BoneAttachment, TwoBoneIK, LookAtIK, InteractionIK, AnimationRecorder, Ragdoll)
