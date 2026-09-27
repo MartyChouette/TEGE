@@ -1,3 +1,4 @@
+#include <algorithm>
 #include "Enjin/Accessibility/TextFont.h"
 #include "Enjin/Accessibility/AccessibilitySettings.h"
 #include "Enjin/Renderer/PostProcessing.h"
@@ -36,6 +37,7 @@ std::string RuntimeAccessibilitySettings::ToJson() const {
     j["dwellClickEnabled"] = dwellClickEnabled;
     j["dwellClickTime"] = dwellClickTime;
     j["stickyDragEnabled"] = stickyDragEnabled;
+    j["touchMode"] = touchMode;
     j["switchAccessEnabled"] = switchAccessEnabled;
     j["switchScanSpeed"] = switchScanSpeed;
     j["eyeTrackingEnabled"] = eyeTrackingEnabled;
@@ -80,6 +82,7 @@ bool RuntimeAccessibilitySettings::FromJson(const std::string& jsonStr) {
         dwellClickEnabled = j.value("dwellClickEnabled", false);
         dwellClickTime = j.value("dwellClickTime", 1.0f);
         stickyDragEnabled = j.value("stickyDragEnabled", false);
+        touchMode = std::min(j.value("touchMode", 0u), 2u);
         switchAccessEnabled = j.value("switchAccessEnabled", false);
         switchScanSpeed = j.value("switchScanSpeed", 1.5f);
         eyeTrackingEnabled = j.value("eyeTrackingEnabled", false);

@@ -74,6 +74,9 @@ struct RuntimeAccessibilitySettings {
     bool dwellClickEnabled = false;  // Hover to auto-click
     f32 dwellClickTime = 1.0f;      // Seconds to hover before auto-click (0.3-3.0)
     bool stickyDragEnabled = false;  // Sliders lock once drag starts
+    // Touch controls: 0 Auto (follow the last device), 1 Always, 2 Never.
+    // Pushed to Input::SetTouchMode by every runtime's apply.
+    u32 touchMode = 0;
     bool switchAccessEnabled = false; // One-button scanning mode
     f32 switchScanSpeed = 1.5f;      // Seconds per element (0.5-5.0)
 

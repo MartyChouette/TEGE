@@ -1275,6 +1275,7 @@ public:
         T::SetOptionValue  (c, "options_gaze_dead_zone",  a.eyeDeadZone);
         T::SetOptionChecked(c, "options_gaze_indicator",  a.eyeShowGazeIndicator);
         T::SetOptionChecked(c, "options_sticky_drag",     a.stickyDragEnabled);
+        T::SetOptionSelected(c, "options_touch_mode",     static_cast<Enjin::i32>(a.touchMode));
 
         T::SetOptionChecked(c, "options_screen_reader",    a.screenReaderEnabled);
         T::SetOptionChecked(c, "options_audio_indicators", a.audioIndicatorsEnabled);
@@ -2569,6 +2570,13 @@ public:
             a11yFloat("options_gaze_dead_zone",  &A11y::eyeDeadZone);
             a11yBool ("options_gaze_indicator",  &A11y::eyeShowGazeIndicator);
             a11yBool ("options_sticky_drag",     &A11y::stickyDragEnabled);
+            m_UISystem.GetEventBus().Listen("options_touch_mode",
+                [this](const Enjin::GUI::UIEventData& e) {
+                    const Enjin::i32 idx = e.intValue < 0 ? 0 : (e.intValue > 2 ? 2 : e.intValue);
+                    m_AccessibilitySettings.touchMode = static_cast<Enjin::u32>(idx);
+                    ApplyWebAccessibilitySettings();
+                    m_AccessibilityDirty = true;
+                });
 
             // Audio & communication
             a11yBool("options_screen_reader",    &A11y::screenReaderEnabled);
@@ -3451,6 +3459,7 @@ private:
         m_UISystem.SetSwitchAccessEnabled(s.switchAccessEnabled, s.switchScanSpeed);
         m_UISystem.SetDwellClickEnabled(s.dwellClickEnabled, s.dwellClickTime);
         m_UISystem.SetStickyDragEnabled(s.stickyDragEnabled);
+        Enjin::Input::SetTouchMode(static_cast<Enjin::Input::TouchMode>(s.touchMode));
         if (m_RenderSystem) {
             m_RenderSystem->SetWebAccessibility(
                 static_cast<Enjin::u32>(s.colorblindMode), s.colorblindStrength,

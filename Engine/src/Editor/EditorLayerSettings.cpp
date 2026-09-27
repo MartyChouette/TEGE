@@ -2329,35 +2329,47 @@ namespace {
     // runtime compares against.
     struct KeyChoice { const char* name; Enjin::i32 code; };
 
+    // Named by the runtime's own table, so the editor calls a key what the
+    // controls hint and the controls menu call it (IN-2)
     const std::vector<KeyChoice>& KeyChoices() {
-        static const std::vector<KeyChoice> choices = {
-            {"(none)", -1},
-            {"A", 65}, {"B", 66}, {"C", 67}, {"D", 68}, {"E", 69}, {"F", 70},
-            {"G", 71}, {"H", 72}, {"I", 73}, {"J", 74}, {"K", 75}, {"L", 76},
-            {"M", 77}, {"N", 78}, {"O", 79}, {"P", 80}, {"Q", 81}, {"R", 82},
-            {"S", 83}, {"T", 84}, {"U", 85}, {"V", 86}, {"W", 87}, {"X", 88},
-            {"Y", 89}, {"Z", 90},
-            {"0", 48}, {"1", 49}, {"2", 50}, {"3", 51}, {"4", 52},
-            {"5", 53}, {"6", 54}, {"7", 55}, {"8", 56}, {"9", 57},
-            {"Space", 32}, {"Tab", 258}, {"Enter", 257}, {"Escape", 256},
-            {"Backspace", 259},
-            {"Left Shift", 340}, {"Left Ctrl", 341}, {"Left Alt", 342},
-            {"Up", 265}, {"Down", 264}, {"Left", 263}, {"Right", 262},
-            {"F1", 290}, {"F2", 291}, {"F3", 292}, {"F4", 293},
-            {"F5", 294}, {"F6", 295}, {"F7", 296}, {"F8", 297},
-            {"F9", 298}, {"F10", 299}, {"F11", 300}, {"F12", 301},
-        };
+        static std::vector<std::string> names;
+        static std::vector<KeyChoice> choices;
+        if (choices.empty()) {
+            std::vector<Enjin::i32> codes;
+            for (Enjin::i32 c = 65; c <= 90; ++c) codes.push_back(c);    // A-Z
+            for (Enjin::i32 c = 48; c <= 57; ++c) codes.push_back(c);    // 0-9
+            for (Enjin::i32 c : {32, 258, 257, 256, 259, 280,
+                                 340, 341, 342, 344, 345, 346,
+                                 265, 264, 263, 262, 260, 261, 268, 269, 266, 267,
+                                 39, 44, 45, 46, 47, 59, 61, 91, 92, 93, 96}) codes.push_back(c);
+            for (Enjin::i32 c = 290; c <= 301; ++c) codes.push_back(c);  // F1-F12
+            for (Enjin::i32 c = 320; c <= 336; ++c) codes.push_back(c);  // keypad
+            names.reserve(codes.size());
+            for (Enjin::i32 c : codes) names.emplace_back(Enjin::InputSystem::GetKeyDisplayName(c));
+            choices.push_back({"(none)", -1});
+            for (Enjin::usize i = 0; i < codes.size(); ++i) choices.push_back({names[i].c_str(), codes[i]});
+        }
         return choices;
     }
 
     const std::vector<KeyChoice>& PadChoices() {
-        static std::vector<KeyChoice> v = {
-            {"(none)", -1}, {"A", 0}, {"B", 1}, {"X", 2}, {"Y", 3},
-            {"Left Bumper", 4}, {"Right Bumper", 5}, {"Back", 6}, {"Start", 7},
-            {"Left Stick", 9}, {"Right Stick", 10},
-            {"D-Pad Up", 11}, {"D-Pad Right", 12}, {"D-Pad Down", 13}, {"D-Pad Left", 14},
-        };
-        return v;
+        static std::vector<std::string> names;
+        static std::vector<KeyChoice> choices;
+        if (choices.empty()) {
+            const Enjin::i32 codes[] = {0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12, 13, 14};
+            for (Enjin::i32 c : codes) {
+                // Xbox, PlayStation and Switch names together: the default is
+                // the same position whichever pad the player holds
+                std::string n = Enjin::InputSystem::GetGamepadButtonDisplayName(c, Enjin::Input::GamepadFamily::Xbox);
+                const std::string ps = Enjin::InputSystem::GetGamepadButtonDisplayName(c, Enjin::Input::GamepadFamily::PlayStation);
+                const std::string ns = Enjin::InputSystem::GetGamepadButtonDisplayName(c, Enjin::Input::GamepadFamily::Nintendo);
+                if (ps != n || ns != n) n += " / " + ps + " / " + ns;
+                names.push_back(n);
+            }
+            choices.push_back({"(none)", -1});
+            for (Enjin::usize i = 0; i < names.size(); ++i) choices.push_back({names[i].c_str(), codes[i]});
+        }
+        return choices;
     }
 
     // A combo over one of the pick-lists. Returns true when the value changed.

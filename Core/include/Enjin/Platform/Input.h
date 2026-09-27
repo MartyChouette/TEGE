@@ -189,6 +189,31 @@ public:
     // the console stops the player moving without each system checking a
     // different flag. UI actions (confirm/cancel/navigate) always pass.
     enum class InputFocus : u32 { Gameplay = 0, Menu, Dialogue, Console };
+
+    // The device the player last used. Prompts name that device's buttons and
+    // the touch overlay follows it: a tap shows the overlay, a key press or a
+    // pad button hides it again. A mouse moving within a second of a touch is
+    // the browser's emulated mouse, not a person, and does not count.
+    enum class InputDevice : u8 { KeyboardMouse = 0, Gamepad, Touch };
+    static InputDevice GetLastDevice();
+    static void SetLastDevice(InputDevice device);   // tests, and the page's touch switch
+
+    // Whether the touch overlay may show. Auto follows the last device; Always
+    // keeps it up on the web; Never keeps it off everywhere. Desktop has no
+    // real touch, so there Always behaves as Auto (the overlay is the editor's
+    // or --touch's simulation) and only Never changes anything.
+    enum class TouchMode : u8 { Auto = 0, Always, Never };
+    static void SetTouchMode(TouchMode mode);
+    static TouchMode GetTouchMode();
+
+    // Which button names a pad wants. Read from the pad's name (GLFW) or its
+    // Gamepad API id (web). Unknown pads are Xbox-style, which is also what
+    // the standard mapping's positions are named after.
+    enum class GamepadFamily : u8 { Xbox = 0, PlayStation, Nintendo };
+    static GamepadFamily ClassifyGamepadName(const char* name);
+    static GamepadFamily GetGamepadFamily(i32 gamepadIndex = 0);
+    // The pad that sent input most recently (0 when none has)
+    static i32 GetLastGamepadIndex();
     static void SetInputFocus(InputFocus focus);
     static InputFocus GetInputFocus();
     static bool IsGameplayFocused();

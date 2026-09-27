@@ -109,13 +109,16 @@ const char* TouchActionLabel(int action) {
     if (!s_TouchMap || !s_TouchMap->IsValidAction(action))
         return nullptr;
     // A custom action's NAME is the useful glyph ("SLO-MO"), not its key.
-    if (IsCustom(action) && s_TouchMap->IsActionListed(action))
-        return s_TouchMap->GetActionName(action);
-    // Keep the label honest: when the key resolver has nothing (gamepad-only
-    // action), the button presses its static fallback key, so don't show the
-    // gamepad glyph GetBindingDisplayName would fall through to.
-    if (TouchActionKey(action) == Input::kTouchNoBinding) return nullptr;
-    return s_TouchMap->GetBindingDisplayName(action);
+    // An unnamed one is nothing to show.
+    if (IsCustom(action))
+        return s_TouchMap->IsActionListed(action) ? s_TouchMap->GetActionName(action) : nullptr;
+    // An engine action shows its touch label (JMP, RUN, USE, FIRE). It used to
+    // show the key it emulated, so phones read "Space" and "L.Shift" (IN-28).
+    // Touch now drives the action directly, so the key says nothing about
+    // what the button does.
+    const ActionInfo& info = GetActionInfo(static_cast<GameAction>(action));
+    if (info.touchLabel && info.touchLabel[0]) return info.touchLabel;
+    return s_TouchMap->GetActionName(action);
 }
 
 void SetTouchActionMap(InputActionMap* map) {

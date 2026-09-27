@@ -150,6 +150,17 @@ ENJIN_API BindingPreset ParseBindingPreset(const std::string& name);  // None fo
 ENJIN_API bool IsLeftHandKey(i32 keyCode);
 ENJIN_API bool IsRightHandKey(i32 keyCode);
 
+// The one set of input names (IN-2). The controls hint, prompts, touch, the
+// controls menus and the editor's pickers all read these, so a key is called
+// the same thing everywhere. Pad names follow the pad's family: the south
+// button is A on Xbox, Cross on PlayStation and B on Switch.
+ENJIN_API const char* GetKeyDisplayName(i32 keyCode);
+ENJIN_API const char* GetMouseButtonDisplayName(i32 button);
+ENJIN_API const char* GetGamepadButtonDisplayName(i32 button, Input::GamepadFamily family);
+ENJIN_API const char* GetGamepadAxisDisplayName(i32 axis, bool positive, Input::GamepadFamily family);
+// The family of the pad the player used last
+ENJIN_API Input::GamepadFamily GetActiveGamepadFamily();
+
 struct ActionConfig {
     GameAction action = GameAction::MoveForward;
     ActionMode mode = ActionMode::Hold;
@@ -280,7 +291,10 @@ public:
     // Display helpers
     i32 GetActionCount() const;
     const char* GetActionName(i32 index) const;
+    // The binding a prompt should name: the pad's button when the player is on
+    // a pad (IN-5), the key or mouse button otherwise
     const char* GetBindingDisplayName(i32 index) const;
+    const char* GetKeyboardBindingDisplayName(i32 index) const;   // key or mouse, whatever the device
     const char* GetGamepadBindingDisplayName(i32 index) const;
     i32 GetActionCategory(i32 index) const;
 

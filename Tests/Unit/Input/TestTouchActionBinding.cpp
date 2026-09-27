@@ -70,22 +70,25 @@ ENJIN_TEST(TouchActionBinding, OutOfRangeAndNoMapAreSafe) {
     SetTouchActionMap(nullptr);
 }
 
-ENJIN_TEST(TouchActionBinding, GamepadOnlyActionHasNoKeyAndNoLabel) {
-    // CameraZoomIn defaults to a gamepad button only. The key resolver reports
-    // "no binding" (touch falls back to the button's static key), so the label
-    // resolver must ALSO decline rather than show the gamepad glyph, or the
-    // button lies about what it presses.
+ENJIN_TEST(TouchActionBinding, TouchLabelsNameTheActionNotTheKey) {
+    // IN-28: the label resolver returned the emulated key, so phones read
+    // "Space" and "L.Shift" and the JMP/RUN/USE/FIRE labels never showed.
+    // Touch drives the action directly now, so the label is the action's own.
     InputActionMap map;
     map.LoadDefaults();
     SetTouchActionMap(&map);
+    const int JUMP = static_cast<int>(GameAction::Jump);
+    ENJIN_ASSERT_TRUE(TouchActionLabel(JUMP) != nullptr);
+    ENJIN_EXPECT_TRUE(std::strcmp(TouchActionLabel(JUMP), "JMP") == 0);
+    map.RebindAction(JUMP, 75);   // 'K': the label does not follow the key
+    ENJIN_EXPECT_TRUE(std::strcmp(TouchActionLabel(JUMP), "JMP") == 0);
+
+    // CameraZoomIn is pad-only by default: no key to emulate, but the button
+    // still has a name (its action's) rather than nothing.
     const int ZOOM = static_cast<int>(GameAction::CameraZoomIn);
     ENJIN_EXPECT_EQ(TouchActionKey(ZOOM), Input::kTouchNoBinding);
-    ENJIN_EXPECT_TRUE(TouchActionLabel(ZOOM) == nullptr);
-
-    // Give it a key and both resolvers agree again.
-    map.RebindAction(ZOOM, 90);   // 'Z'
-    ENJIN_EXPECT_EQ(TouchActionKey(ZOOM), 90);
-    ENJIN_EXPECT_TRUE(TouchActionLabel(ZOOM) != nullptr);
+    ENJIN_ASSERT_TRUE(TouchActionLabel(ZOOM) != nullptr);
+    ENJIN_EXPECT_TRUE(TouchActionLabel(ZOOM)[0] != '\0');
     SetTouchActionMap(nullptr);
 }
 

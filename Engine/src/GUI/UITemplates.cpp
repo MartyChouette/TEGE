@@ -309,6 +309,7 @@ OptionsMenuSpec DefaultOptionsMenuSpec() {
         Options::Slider("Gaze Dead Zone",  "options_gaze_dead_zone",  5.0f, 0.0f, 40.0f),
         Options::Checkbox("Show Gaze Indicator", "options_gaze_indicator", true),
         Options::Checkbox("Sticky Slider Drag", "options_sticky_drag", false),
+        Options::Dropdown("Touch Controls", "options_touch_mode", { "Auto", "Always", "Never" }, 0),
         Options::Button("Left Hand Only",  "options_preset_left_hand"),
         Options::Button("Right Hand Only", "options_preset_right_hand"),
         Options::Button("Gamepad Only",    "options_preset_gamepad"),

@@ -748,6 +748,17 @@ void GameMenuSystem::RenderAccessibility(f32 w, f32 h) {
         ImGui::Unindent(16.0f);
     }
     changed |= ImGui::Checkbox("Sticky Slider Drag", &a.stickyDragEnabled);
+    {
+        // Auto follows the last device used: a touch shows the controls, a key
+        // or a pad hides them (IN-29)
+        static const char* const kTouchModes[] = { "Auto", "Always", "Never" };
+        int mode = static_cast<int>(a.touchMode <= 2 ? a.touchMode : 0);
+        if (ImGui::Combo("Touch Controls", &mode, kTouchModes, 3)) {
+            a.touchMode = static_cast<u32>(mode);
+            Input::SetTouchMode(static_cast<Input::TouchMode>(mode));
+            changed = true;
+        }
+    }
     if (m_InputMap) {
         ImGui::Dummy(ImVec2(0, 4));
         ImGui::TextUnformatted("Control Presets");

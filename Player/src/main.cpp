@@ -4056,6 +4056,7 @@ private:
         m_UISystem.SetDwellClickEnabled(m_AccessibilitySettings.dwellClickEnabled,
                                          m_AccessibilitySettings.dwellClickTime);
         m_UISystem.SetStickyDragEnabled(m_AccessibilitySettings.stickyDragEnabled);
+        Enjin::Input::SetTouchMode(static_cast<Enjin::Input::TouchMode>(m_AccessibilitySettings.touchMode));
 
         // Audio visual indicators (callback wired unconditionally — the overlay
         // render gates on config.enabled, so a disabled state just drops events)
@@ -4241,6 +4242,8 @@ private:
                 m_AccessibilitySettings.dwellClickTime = std::clamp(j["dwellClickTime"].get<Enjin::f32>(), 0.3f, 3.0f);
             if (j.contains("stickyDragEnabled"))
                 m_AccessibilitySettings.stickyDragEnabled = j["stickyDragEnabled"].get<bool>();
+            if (j.contains("touchMode") && j["touchMode"].is_number_unsigned())
+                m_AccessibilitySettings.touchMode = std::min(j["touchMode"].get<Enjin::u32>(), 2u);
             if (j.contains("switchAccessEnabled"))
                 m_AccessibilitySettings.switchAccessEnabled = j["switchAccessEnabled"].get<bool>();
             if (j.contains("switchScanSpeed"))
@@ -4333,6 +4336,7 @@ private:
             j["dwellClickEnabled"] = m_AccessibilitySettings.dwellClickEnabled;
             j["dwellClickTime"] = m_AccessibilitySettings.dwellClickTime;
             j["stickyDragEnabled"] = m_AccessibilitySettings.stickyDragEnabled;
+            j["touchMode"] = m_AccessibilitySettings.touchMode;
             j["switchAccessEnabled"] = m_AccessibilitySettings.switchAccessEnabled;
             j["switchScanSpeed"] = m_AccessibilitySettings.switchScanSpeed;
             j["audioIndicatorsEnabled"] = m_AccessibilitySettings.audioIndicatorsEnabled;

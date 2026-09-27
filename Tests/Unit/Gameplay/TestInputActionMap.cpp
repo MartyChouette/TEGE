@@ -412,4 +412,47 @@ ENJIN_TEST(InputActionMap, TheOldArrayFormatStillLoads) {
     ENJIN_EXPECT_TRUE(HasKey(v2, GameAction::Custom0, KeyCode::G));   // the empty slot did not win
 }
 
+// IN-2 / IN-5: one set of names, pad names by family, and prompts that name
+// the pad's button while the player is on a pad.
+ENJIN_TEST(InputLabels, PadFamilyComesFromTheName) {
+    ENJIN_EXPECT_TRUE(Input::ClassifyGamepadName("Xbox Controller") == Input::GamepadFamily::Xbox);
+    ENJIN_EXPECT_TRUE(Input::ClassifyGamepadName("PS5 Controller") == Input::GamepadFamily::PlayStation);
+    ENJIN_EXPECT_TRUE(Input::ClassifyGamepadName("Wireless Controller") == Input::GamepadFamily::PlayStation);
+    ENJIN_EXPECT_TRUE(Input::ClassifyGamepadName("054c-0ce6-DualSense Wireless Controller") == Input::GamepadFamily::PlayStation);
+    ENJIN_EXPECT_TRUE(Input::ClassifyGamepadName("Nintendo Switch Pro Controller") == Input::GamepadFamily::Nintendo);
+    ENJIN_EXPECT_TRUE(Input::ClassifyGamepadName("057e-2009-Pro Controller") == Input::GamepadFamily::Nintendo);
+    ENJIN_EXPECT_TRUE(Input::ClassifyGamepadName(nullptr) == Input::GamepadFamily::Xbox);
+}
+
+ENJIN_TEST(InputLabels, TheSouthButtonHasThreeNames) {
+    ENJIN_EXPECT_EQ(std::string(GetGamepadButtonDisplayName(0, Input::GamepadFamily::Xbox)), std::string("A"));
+    ENJIN_EXPECT_EQ(std::string(GetGamepadButtonDisplayName(0, Input::GamepadFamily::PlayStation)), std::string("Cross"));
+    ENJIN_EXPECT_EQ(std::string(GetGamepadButtonDisplayName(0, Input::GamepadFamily::Nintendo)), std::string("B"));
+    ENJIN_EXPECT_EQ(std::string(GetGamepadAxisDisplayName(5, true, Input::GamepadFamily::PlayStation)), std::string("R2"));
+    ENJIN_EXPECT_EQ(std::string(GetGamepadAxisDisplayName(4, true, Input::GamepadFamily::Nintendo)), std::string("ZL"));
+}
+
+ENJIN_TEST(InputLabels, KeysHaveNamesNotNumbers) {
+    for (i32 code : {340, 344, 345, 266, 260, 91, 334, 335}) {
+        ENJIN_EXPECT_TRUE(std::string(GetKeyDisplayName(code)).rfind("Key ", 0) != 0);
+    }
+}
+
+ENJIN_TEST(InputLabels, PromptsFollowTheLastDevice) {
+    InputActionMap map;
+    const i32 jump = static_cast<i32>(GameAction::Jump);
+    Input::SetLastDevice(Input::InputDevice::KeyboardMouse);
+    ENJIN_EXPECT_EQ(std::string(map.GetBindingDisplayName(jump)), std::string("Space"));
+    Input::SetLastDevice(Input::InputDevice::Gamepad);
+    ENJIN_EXPECT_EQ(std::string(map.GetBindingDisplayName(jump)), std::string("A"));   // no pad connected: Xbox names
+    // An action with no pad binding still names its key
+    const i32 wave = map.SetProjectAction(0, "Wave");
+    InputBinding key;
+    key.type = BindingType::Key;
+    key.code = static_cast<i32>(KeyCode::Q);
+    map.AddBinding(static_cast<GameAction>(wave), key);
+    ENJIN_EXPECT_EQ(std::string(map.GetBindingDisplayName(wave)), std::string("Q"));
+    Input::SetLastDevice(Input::InputDevice::KeyboardMouse);
+}
+
 ENJIN_TEST_MAIN()

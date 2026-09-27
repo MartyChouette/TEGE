@@ -843,35 +843,54 @@ const char* InputActionMap::GetActionName(i32 index) const {
     return kActionInfo[i].name;
 }
 
-static const char* KeyCodeToName(i32 code) {
-    // Common GLFW key codes
+const char* GetKeyDisplayName(i32 code) {
     if (code >= 65 && code <= 90) { static char buf[2]; buf[0] = (char)code; buf[1] = 0; return buf; }
     if (code >= 48 && code <= 57) { static char buf[2]; buf[0] = (char)code; buf[1] = 0; return buf; }
+    if (code >= 290 && code <= 301) { static char buf[4]; snprintf(buf, sizeof(buf), "F%d", code - 289); return buf; }
+    if (code >= 320 && code <= 329) { static char buf[4]; snprintf(buf, sizeof(buf), "KP%d", code - 320); return buf; }
     switch (code) {
         case 32:  return "Space";
+        case 39:  return "'";
+        case 44:  return ",";
+        case 45:  return "-";
+        case 46:  return ".";
+        case 47:  return "/";
+        case 59:  return ";";
+        case 61:  return "=";
+        case 91:  return "[";
+        case 92:  return "\\";
+        case 93:  return "]";
+        case 96:  return "`";
         case 256: return "Escape";
         case 257: return "Enter";
         case 258: return "Tab";
         case 259: return "Backspace";
+        case 260: return "Insert";
         case 261: return "Delete";
         case 262: return "Right";
         case 263: return "Left";
         case 264: return "Down";
         case 265: return "Up";
+        case 266: return "Page Up";
+        case 267: return "Page Down";
+        case 268: return "Home";
+        case 269: return "End";
+        case 280: return "Caps Lock";
+        case 330: return "KP.";
+        case 331: return "KP/";
+        case 332: return "KP*";
+        case 333: return "KP-";
+        case 334: return "KP+";
+        case 335: return "KP Enter";
+        case 336: return "KP=";
         case 340: return "L.Shift";
         case 341: return "L.Ctrl";
         case 342: return "L.Alt";
+        case 343: return "L.Super";
         case 344: return "R.Shift";
         case 345: return "R.Ctrl";
         case 346: return "R.Alt";
-        case 290: return "F1";  case 291: return "F2";  case 292: return "F3";
-        case 293: return "F4";  case 294: return "F5";  case 295: return "F6";
-        case 296: return "F7";  case 297: return "F8";  case 298: return "F9";
-        case 299: return "F10"; case 300: return "F11"; case 301: return "F12";
-        case 320: return "KP0"; case 321: return "KP1"; case 322: return "KP2";
-        case 323: return "KP3"; case 324: return "KP4"; case 325: return "KP5";
-        case 326: return "KP6"; case 327: return "KP7"; case 328: return "KP8";
-        case 329: return "KP9";
+        case 347: return "R.Super";
         default: break;
     }
     static char fallback[16];
@@ -879,7 +898,7 @@ static const char* KeyCodeToName(i32 code) {
     return fallback;
 }
 
-static const char* MouseButtonToName(i32 code) {
+const char* GetMouseButtonDisplayName(i32 code) {
     switch (code) {
         case 0: return "LMB";
         case 1: return "RMB";
@@ -891,28 +910,53 @@ static const char* MouseButtonToName(i32 code) {
     return buf;
 }
 
-static const char* GamepadButtonToName(i32 code) {
-    switch (code) {
-        case 0: return "A"; case 1: return "B"; case 2: return "X"; case 3: return "Y";
-        case 4: return "LB"; case 5: return "RB"; case 6: return "Back"; case 7: return "Start";
-        case 8: return "Guide"; case 9: return "LS"; case 10: return "RS";
-        case 11: return "D-Up"; case 12: return "D-Right"; case 13: return "D-Down"; case 14: return "D-Left";
-        default: break;
+const char* GetGamepadButtonDisplayName(i32 code, Input::GamepadFamily family) {
+    // Buttons are POSITIONS in the standard mapping (0 = south, 1 = east,
+    // 2 = west, 3 = north). Each family names the same position differently.
+    static const char* const kXbox[] = {
+        "A", "B", "X", "Y", "LB", "RB", "Back", "Start", "Guide", "LS", "RS",
+        "D-Up", "D-Right", "D-Down", "D-Left" };
+    static const char* const kPlayStation[] = {
+        "Cross", "Circle", "Square", "Triangle", "L1", "R1", "Share", "Options", "PS", "L3", "R3",
+        "D-Up", "D-Right", "D-Down", "D-Left" };
+    static const char* const kNintendo[] = {
+        "B", "A", "Y", "X", "L", "R", "Minus", "Plus", "Home", "LS", "RS",
+        "D-Up", "D-Right", "D-Down", "D-Left" };
+    if (code < 0 || code > 14) return "?";
+    switch (family) {
+        case Input::GamepadFamily::PlayStation: return kPlayStation[code];
+        case Input::GamepadFamily::Nintendo:    return kNintendo[code];
+        default:                                return kXbox[code];
     }
-    return "?";
 }
 
-static const char* GamepadAxisToName(i32 code, bool positive) {
+const char* GetGamepadAxisDisplayName(i32 code, bool positive, Input::GamepadFamily family) {
     switch (code) {
         case 0: return positive ? "LS Right" : "LS Left";
         case 1: return positive ? "LS Down" : "LS Up";
         case 2: return positive ? "RS Right" : "RS Left";
         case 3: return positive ? "RS Down" : "RS Up";
-        case 4: return "LT";
-        case 5: return "RT";
+        case 4: return family == Input::GamepadFamily::PlayStation ? "L2"
+                     : family == Input::GamepadFamily::Nintendo ? "ZL" : "LT";
+        case 5: return family == Input::GamepadFamily::PlayStation ? "R2"
+                     : family == Input::GamepadFamily::Nintendo ? "ZR" : "RT";
         default: break;
     }
     return "?";
+}
+
+Input::GamepadFamily GetActiveGamepadFamily() {
+    return Input::GetGamepadFamily(Input::GetLastGamepadIndex());
+}
+
+namespace {
+    const char* KeyCodeToName(i32 code) { return GetKeyDisplayName(code); }
+    const char* MouseButtonToName(i32 code) { return GetMouseButtonDisplayName(code); }
+    const char* PadBindingName(const InputBinding& b) {
+        const Input::GamepadFamily f = GetActiveGamepadFamily();
+        return b.type == BindingType::GamepadButton ? GetGamepadButtonDisplayName(b.code, f)
+                                                     : GetGamepadAxisDisplayName(b.code, b.axisPositive, f);
+    }
 }
 
 std::string InputActionMap::ResolvePromptText(const std::string& text) const {
@@ -955,27 +999,34 @@ std::string InputActionMap::ResolvePromptText(const std::string& text) const {
     return out;
 }
 
-const char* InputActionMap::GetBindingDisplayName(i32 index) const {
+const char* InputActionMap::GetKeyboardBindingDisplayName(i32 index) const {
     if (!IsValidAction(index)) return "";
-    const auto& cfg = m_Actions[index];
-    for (const auto& b : cfg.bindings) {
+    for (const auto& b : m_Actions[index].bindings) {
         if (b.type == BindingType::Key) return KeyCodeToName(b.code);
         if (b.type == BindingType::MouseButton) return MouseButtonToName(b.code);
     }
-    // Fallback to gamepad if no keyboard/mouse binding
-    for (const auto& b : cfg.bindings) {
-        if (b.type == BindingType::GamepadButton) return GamepadButtonToName(b.code);
-        if (b.type == BindingType::GamepadAxis) return GamepadAxisToName(b.code, b.axisPositive);
+    return "";
+}
+
+const char* InputActionMap::GetBindingDisplayName(i32 index) const {
+    if (!IsValidAction(index)) return "";
+    // On a pad, name the pad's button: a player holding a controller was told
+    // to press "E" (IN-5)
+    if (Input::GetLastDevice() == Input::InputDevice::Gamepad) {
+        const char* pad = GetGamepadBindingDisplayName(index);
+        if (pad && *pad) return pad;
     }
-    return "None";
+    const char* key = GetKeyboardBindingDisplayName(index);
+    if (key && *key) return key;
+    // Fallback to gamepad if no keyboard/mouse binding
+    const char* pad = GetGamepadBindingDisplayName(index);
+    return (pad && *pad) ? pad : "None";
 }
 
 const char* InputActionMap::GetGamepadBindingDisplayName(i32 index) const {
     if (!IsValidAction(index)) return "";
-    const auto& cfg = m_Actions[index];
-    for (const auto& b : cfg.bindings) {
-        if (b.type == BindingType::GamepadButton) return GamepadButtonToName(b.code);
-        if (b.type == BindingType::GamepadAxis) return GamepadAxisToName(b.code, b.axisPositive);
+    for (const auto& b : m_Actions[index].bindings) {
+        if (b.type == BindingType::GamepadButton || b.type == BindingType::GamepadAxis) return PadBindingName(b);
     }
     return "";
 }

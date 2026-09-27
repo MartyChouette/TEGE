@@ -1,3 +1,4 @@
+#include <cctype>
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Platform/Input.h"
 #include "Enjin/Platform/Window.h"
@@ -150,6 +151,27 @@ constexpr f32 kWrapMargin = 8.0f;
     constexpr int MAX_TOUCHES = 6;
     TouchPoint s_Touches[MAX_TOUCHES];
     bool s_TouchSeen = false;          // web: any touch ever -> show the overlay
+    Input::InputDevice s_LastDevice = Input::InputDevice::KeyboardMouse;
+    Input::TouchMode s_TouchMode = Input::TouchMode::Auto;
+    bool s_TouchStartedPending = false;   // a touch began since the last Update
+    double s_LastTouchMs = -1.0e9;
+    i32 s_LastGamepad = 0;
+#if ENJIN_PLATFORM_WEB
+    char s_WebGamepadId[4][64] = {};
+#endif
+    double InputNowMs() {
+#if ENJIN_PLATFORM_WEB
+        return emscripten_get_now();
+#else
+        return glfwGetTime() * 1000.0;
+#endif
+    }
+    // Every real touch start goes through here
+    void NoteTouch() {
+        s_TouchSeen = true;
+        s_TouchStartedPending = true;
+        s_LastTouchMs = InputNowMs();
+    }
     f32 s_PinchDelta = 0.0f;           // this frame's two-finger distance change
     f32 s_PinchPrevDist = -1.0f;       // <0 = no gesture in progress
     int s_ActiveTouchCount = 0;
@@ -246,8 +268,13 @@ constexpr f32 kWrapMargin = 8.0f;
     }
 
     bool TouchOverlayActive() {
+        if (s_TouchMode == Input::TouchMode::Never) return false;
 #if ENJIN_PLATFORM_WEB
-        return s_TouchSeen || s_CoarsePointer;
+        // Follows the last device: a touch shows it, a key or a pad hides it.
+        // s_TouchSeen stayed true forever, so one tap on a touchscreen laptop
+        // kept the overlay over the game for the rest of the session (IN-29).
+        if (s_TouchMode == Input::TouchMode::Always) return true;
+        return s_LastDevice == Input::InputDevice::Touch;
 #else
         return s_TouchSim && s_TouchSurfW > 0.0f && s_TouchSurfH > 0.0f;
 #endif
@@ -495,7 +522,7 @@ constexpr f32 kWrapMargin = 8.0f;
 // the game running windowed, not wedged.
 extern "C" EMSCRIPTEN_KEEPALIVE void enjin_enable_touch_controls() {
     s_CoarsePointer = true;
-    s_TouchSeen = true;
+    NoteTouch();
 }
 
 namespace {
@@ -512,7 +539,7 @@ namespace {
             f32 py = static_cast<f32>(tp.targetY) * sy;
 
             if (eventType == EMSCRIPTEN_EVENT_TOUCHSTART) {
-                s_TouchSeen = true;
+                NoteTouch();
                 TouchPoint* slot = FindTouch(tp.identifier);
                 if (!slot) slot = FindTouch(-1);
                 if (!slot) continue;
@@ -670,12 +697,17 @@ void Input::Initialize(Window* window) {
     s_CoarsePointer = EM_ASM_INT({
         return (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) ? 1 : 0;
     }) != 0;
+    // A phone starts on touch, so the controls show before the first tap
+    if (s_CoarsePointer) s_LastDevice = Input::InputDevice::Touch;
 
     // Manual "go mobile": touch-capable laptops, tablets with mice, and DevTools
     // emulation don't always report a coarse pointer — give every player a small
     // on-page toggle that forces the overlay on (and hides itself). Injected
     // from the engine so every export has it without touching the HTML shell.
-    EM_ASM({
+    // Not on a desktop browser (a fine pointer): there a tap on a touchscreen
+    // already switches to touch, and Options > Touch Controls turns it on for
+    // good, so the button was a stray control over every desktop game (IN-29).
+    if (s_CoarsePointer) EM_ASM({
         try {
             if (document.getElementById('enjin-touch-toggle')) return;
             var b = document.createElement('button');
@@ -841,6 +873,12 @@ void Input::Update() {
         t->id = -1; t->role = 0;
     }
 #endif
+
+    // The keyboard and mouse as the PLAYER pressed them, read before touch
+    // emulation writes keys and buttons of its own
+    bool keyEdge = false, mouseEdge = false;
+    for (i32 k = 0; k < MAX_KEYS && !keyEdge; ++k) keyEdge = s_KeysDown[k] && !s_KeysDownPrev[k];
+    for (i32 b = 0; b < MAX_MOUSE_BUTTONS && !mouseEdge; ++b) mouseEdge = s_MouseButtonsDown[b] && !s_MouseButtonsDownPrev[b];
 
     // Touch controls: the move stick maps onto the scheme's 4 direction keys
     // (8-way, with a dead zone); each held button maps onto its scheme key (or
@@ -1017,6 +1055,10 @@ void Input::Update() {
         EmscriptenGamepadEvent gpEvent;
         if (emscripten_get_gamepad_status(gp, &gpEvent) == EMSCRIPTEN_RESULT_SUCCESS && gpEvent.connected) {
             s_GamepadConnected[gp] = true;
+            if (gp < 4) {
+                std::strncpy(s_WebGamepadId[gp], gpEvent.id, sizeof(s_WebGamepadId[gp]) - 1);
+                s_WebGamepadId[gp][sizeof(s_WebGamepadId[gp]) - 1] = 0;
+            }
 
             // Map standard gamepad layout (Chrome/Firefox follow W3C standard mapping)
             // W3C buttons: 0=A 1=B 2=X 3=Y 4=LB 5=RB 6=LT 7=RT 8=Back 9=Start
@@ -1065,6 +1107,51 @@ void Input::Update() {
         }
 #endif
     }
+
+    // Which device the player is on now. A pad counts on a button edge or a
+    // stick pushed past half (a resting stick drifts, a trigger rests at -1).
+    bool padEdge = false;
+    for (i32 gp = 0; gp < MAX_GAMEPADS; ++gp) {
+        if (!s_GamepadConnected[gp]) continue;
+        bool edge = false;
+        for (i32 b = 0; b < MAX_GAMEPAD_BUTTONS && !edge; ++b) edge = s_GamepadButtons[gp][b] && !s_GamepadButtonsPrev[gp][b];
+        for (i32 a = 0; a < 4 && !edge; ++a) edge = std::abs(s_GamepadAxes[gp][a]) > 0.5f;
+        if (edge) { padEdge = true; s_LastGamepad = gp; }
+    }
+    // The browser follows a tap with an emulated mouse; within a second of a
+    // touch only a key counts as leaving touch
+    const bool afterTouch = InputNowMs() - s_LastTouchMs < 1000.0;
+    const bool mouseMoved = (std::abs(s_MouseDelta.x) + std::abs(s_MouseDelta.y)) > 4.0f;
+    if (s_TouchStartedPending)                              s_LastDevice = InputDevice::Touch;
+    else if (padEdge)                                       s_LastDevice = InputDevice::Gamepad;
+    else if (keyEdge)                                       s_LastDevice = InputDevice::KeyboardMouse;
+    else if ((mouseEdge || mouseMoved) && !afterTouch)      s_LastDevice = InputDevice::KeyboardMouse;
+    s_TouchStartedPending = false;
+}
+
+Input::InputDevice Input::GetLastDevice() { return s_LastDevice; }
+void Input::SetLastDevice(InputDevice device) { s_LastDevice = device; }
+void Input::SetTouchMode(TouchMode mode) { s_TouchMode = mode; }
+Input::TouchMode Input::GetTouchMode() { return s_TouchMode; }
+i32 Input::GetLastGamepadIndex() { return s_LastGamepad; }
+
+Input::GamepadFamily Input::ClassifyGamepadName(const char* name) {
+    if (!name) return GamepadFamily::Xbox;
+    std::string n(name);
+    for (auto& c : n) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    auto has = [&n](const char* s) { return n.find(s) != std::string::npos; };
+    // Vendor ids appear in Gamepad API ids ("054c-0ce6-..."): 054c Sony, 057e Nintendo
+    if (has("playstation") || has("dualsense") || has("dualshock") || has("ps3") || has("ps4") ||
+        has("ps5") || has("sony") || has("054c") || has("wireless controller"))
+        return GamepadFamily::PlayStation;
+    if (has("nintendo") || has("switch") || has("pro controller") || has("joy-con") || has("057e"))
+        return GamepadFamily::Nintendo;
+    return GamepadFamily::Xbox;
+}
+
+Input::GamepadFamily Input::GetGamepadFamily(i32 gamepadIndex) {
+    if (!IsGamepadConnected(gamepadIndex)) return GamepadFamily::Xbox;
+    return ClassifyGamepadName(GetGamepadName(gamepadIndex));
 }
 
 bool Input::IsKeyDown(KeyCode key) {
@@ -1364,6 +1451,9 @@ const char* Input::GetGamepadName(i32 gamepadIndex) {
         const char* name = glfwGetGamepadName(joyId);
         return name ? name : "Unknown Gamepad";
     }
+#else
+    if (gamepadIndex < 4 && s_GamepadConnected[gamepadIndex] && s_WebGamepadId[gamepadIndex][0])
+        return s_WebGamepadId[gamepadIndex];
 #endif
     return "None";
 }
