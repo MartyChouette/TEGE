@@ -55,6 +55,9 @@ std::string VSInputActionName(i32 index) {
     const char* name = s_BindingsInputActionMap->GetActionName(index);
     return name ? std::string(name) : std::string();
 }
+bool VSInputActionListed(i32 index) {
+    return s_BindingsInputActionMap && s_BindingsInputActionMap->IsActionListed(index);
+}
 std::string VSInputBindingName(i32 index) {
     if (!s_BindingsInputActionMap || index < 0 || index >= s_BindingsInputActionMap->GetActionCount()) return "";
     const char* name = s_BindingsInputActionMap->GetBindingDisplayName(index);

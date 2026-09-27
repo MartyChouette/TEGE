@@ -196,6 +196,8 @@ bool VSInputActionIsPressed(i32 action);
 f32  VSInputActionGetValue(i32 action);
 i32  VSInputActionCount();
 std::string VSInputActionName(i32 index);
+// Whether the action exists in this game (an unnamed project slot does not)
+bool VSInputActionListed(i32 index);
 std::string VSInputBindingName(i32 index);
 void VSInputRebind(i32 actionIndex, i32 keyCode);
 i32  VSInputPollKey();

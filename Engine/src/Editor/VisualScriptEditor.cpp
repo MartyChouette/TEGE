@@ -3,6 +3,9 @@
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/VisualScript/NodeDefinition.h"
+#include "Enjin/VisualScript/NodeRegistry.h"
+#include "Enjin/Scripting/ScriptBindings.h"
+#include "Enjin/Input/InputAction.h"
 #include "Enjin/Logging/Log.h"
 #include <imgui.h>
 #include <algorithm>
@@ -1516,6 +1519,55 @@ void VisualScriptEditor::DrawNodeProperties() {
                 }
             }
             ImGui::EndCombo();
+        }
+    }
+
+    // Input action nodes: pick the action by name (IN-1). The pin was a bare
+    // integer, so a node-built game had to know that Jump is 4. The choice is
+    // stored where the executor reads a typed-in literal: the lower-cased pin
+    // name ("action", or "index" on the name and binding readers).
+    {
+        namespace NT = VisualScript::NodeTypes;
+        const std::string& t = meta.nodeType;
+        const bool byIndex = t == NT::ActionGetName || t == NT::ActionGetBinding;
+        if (byIndex || t == NT::ActionIsDown || t == NT::ActionIsPressed ||
+            t == NT::ActionGetValue || t == NT::ActionRebind) {
+            const std::string key = byIndex ? "index" : "action";
+            const auto it = meta.properties.find(key);
+            const i32 current = it != meta.properties.end() ? std::atoi(it->second.c_str()) : 0;
+
+            // The live map when one is attached (it knows the project's own
+            // actions), the engine table otherwise
+            const i32 liveCount = Scripting::VSInputActionCount();
+            const i32 count = liveCount > 0 ? liveCount : static_cast<i32>(InputSystem::GameAction::Count);
+            auto nameOf = [liveCount](i32 i) -> std::string {
+                if (liveCount > 0) return Scripting::VSInputActionName(i);
+                return InputSystem::GetActionInfo(static_cast<InputSystem::GameAction>(i)).name;
+            };
+            auto listed = [liveCount](i32 i) {
+                if (liveCount > 0) return Scripting::VSInputActionListed(i);
+                return i < static_cast<i32>(InputSystem::kFirstProjectAction);
+            };
+
+            const std::string preview = (current >= 0 && current < count) ? nameOf(current) : std::to_string(current);
+            if (ImGui::BeginCombo("Action", preview.c_str())) {
+                for (i32 i = 0; i < count; ++i) {
+                    if (!listed(i)) continue;
+                    const bool selected = i == current;
+                    if (ImGui::Selectable(nameOf(i).c_str(), selected) && !selected) {
+                        const std::string oldValue = it != meta.properties.end() ? it->second : "0";
+                        const std::string newValue = std::to_string(i);
+                        if (m_UndoManager) {
+                            m_UndoManager->Execute(std::make_unique<EditNodePropertyCommand>(
+                                this, m_SelectedNode, key, oldValue, newValue));
+                        } else {
+                            meta.properties[key] = newValue;
+                        }
+                    }
+                }
+                ImGui::EndCombo();
+            }
+            ImGui::TextDisabled("Used when the %s pin is not connected", byIndex ? "Index" : "Action");
         }
     }
 
