@@ -507,6 +507,11 @@ public:
             // Fullscreen as it is, or Back after visiting Options dropped a
             // fullscreen game to windowed (IN-18)
             if (GetWindow()) gfx.fullscreen = GetWindow()->IsFullscreen();
+            // The FOV the game is showing, so Back does not replace the
+            // authored camera's with the menu's 60 (EP-15)
+            if (m_PendingFOV > 0.0f) gfx.fieldOfView = m_PendingFOV;
+            else if (m_Camera) gfx.fieldOfView = m_Camera->GetFOV();
+            m_FovShownInMenu = gfx.fieldOfView;
         });
 
         // Accessibility tab: the menu edits the live settings struct in place;
@@ -583,7 +588,14 @@ public:
             m_RenderSystem->ApplyRenderScale(gfx.renderScale);
 
             // --- FOV (applied to the active camera next frame) ---
-            m_PendingFOV = gfx.fieldOfView;
+            // Only one the player changed: it overrides every camera from then
+            // on, so a Back with the slider untouched must not start that
+            // (EP-15). m_FovShownInMenu < 0 is a boot-time apply of settings.json,
+            // which only holds a FOV the player set.
+            if (m_FovShownInMenu < 0.0f || std::fabs(gfx.fieldOfView - m_FovShownInMenu) > 0.01f) {
+                m_PendingFOV = gfx.fieldOfView;
+            }
+            m_FovShownInMenu = -1.0f;
 
             ENJIN_LOG_INFO(Player, "Settings applied: vsync=%d fullscreen=%d fov=%.0f shadows=%d bloom=%d fxaa=%d",
                 (int)gfx.vsync, (int)gfx.fullscreen, gfx.fieldOfView, (int)gfx.shadows, (int)gfx.bloom, (int)gfx.fxaa);
@@ -1783,7 +1795,11 @@ public:
                         break;
                     }
                 }
-                m_PostProcessing->SetLightDirection(lightDir);
+                // The shader wants the direction TOWARDS the light; the forward
+                // vector is the way the light travels. The editor negated it and
+                // this did not, so contact shadows and fog shafts in a build
+                // marched away from the sun (EP-15).
+                m_PostProcessing->SetLightDirection(lightDir * -1.0f);
 
                 // Project sun position to screen space for god rays
                 Enjin::Math::Vector3 sunFar = m_Camera->GetPosition() - lightDir * 500.0f;
@@ -4349,7 +4365,17 @@ private:
             ENJIN_LOG_WARN(Player, "Could not write %s", path.c_str());
             return;
         }
-        file << Enjin::GUI::GameSettingsToJson(gfx, audio);
+        std::string json = Enjin::GUI::GameSettingsToJson(gfx, audio);
+        if (m_PendingFOV <= 0.0f) {
+            // No FOV of the player's: save none, or the next launch would put
+            // the menu's value over every authored camera
+            try {
+                auto j = nlohmann::json::parse(json);
+                j.erase("fieldOfView");
+                json = j.dump(2);
+            } catch (...) {}
+        }
+        file << json;
     }
 
     void LoadGameSettings() {
@@ -4359,6 +4385,10 @@ private:
         const std::string json((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
         if (Enjin::GUI::GameSettingsFromJson(json, m_GameMenu.GetGraphicsSettings(), m_GameMenu.GetAudioSettings())) {
             m_ApplySavedSettingsPending = true;
+            // No saved FOV: the apply must not invent one from the default
+            if (json.find("\"fieldOfView\"") == std::string::npos) {
+                m_FovShownInMenu = m_GameMenu.GetGraphicsSettings().fieldOfView;
+            }
             ENJIN_LOG_INFO(Player, "Loaded graphics and audio settings from %s", path.c_str());
         }
     }
@@ -4406,6 +4436,7 @@ private:
     bool m_ApplySavedSettingsPending = false;
     std::function<void(const Enjin::GUI::GraphicsSettings&, const Enjin::GUI::AudioSettings&)> m_ApplyGameSettings;
     Enjin::f32 m_PendingFOV = 0.0f;  // 0 = use camera component's FOV
+    Enjin::f32 m_FovShownInMenu = -1.0f;   // what Options opened with; -1 = not from the menu
     std::vector<Enjin::ECS::Entity> m_DeferredDestroys;
 
     // Tilde console
