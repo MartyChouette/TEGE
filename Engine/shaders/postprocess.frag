@@ -33,8 +33,8 @@ layout(binding = 1) uniform PostProcessSettings {
     // Chromatic aberration
     uint chromaticAberrationEnabled;
     float chromaticAberrationIntensity;
-    float _pad1;
-    float _pad2;
+    float lensDistortion;   // camera LensComponent; 0 = none
+    float lensSqueeze;      // 1 = none
 
     // Color grading
     vec3 colorFilter;
@@ -2004,6 +2004,19 @@ void main() {
         uv = centered * 0.5 + 0.5;
     }
 
+    // Camera lens: barrel (<0) or pincushion (>0), then anamorphic squeeze.
+    // Corners a barrel pulls in from outside the frame go black, as they do
+    // through real glass, rather than smearing the edge pixels.
+    bool lensOutside = false;
+    if (settings.lensDistortion != 0.0 || settings.lensSqueeze != 1.0) {
+        vec2 c = uv - 0.5;
+        float r2 = dot(c * 2.0, c * 2.0);
+        c *= 1.0 - settings.lensDistortion * r2;
+        c.x /= max(settings.lensSqueeze, 0.01);
+        uv = c + 0.5;
+        lensOutside = any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)));
+    }
+
     // Film gate weave: UV jitter before any sampling (simulates physical gate movement)
     uv = applyFilmGateWeave(uv);
 
@@ -2138,6 +2151,8 @@ void main() {
             color = vec3(1.0);
         }
     }
+
+    if (lensOutside) color = vec3(0.0);
 
     // HDR / SDR output
     if (settings.hdrOutputMode == HDR_OUTPUT_SCRGB) {

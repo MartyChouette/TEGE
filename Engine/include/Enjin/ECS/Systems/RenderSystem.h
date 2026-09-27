@@ -1342,8 +1342,8 @@ public:
         f32 tiltShiftFocusY = 0.5f;
         f32 tiltShiftBandWidth = 0.3f;
         f32 tiltShiftBlurAmount = 0.0f; // 0 = off
-        f32 ppPadA = 0.0f;              // keeps the block a 16-byte multiple
-        f32 ppPadB = 0.0f;              // 44 f32 = 176 bytes (16-multiple)
+        f32 lensDistortion = 0.0f;      // camera LensComponent, 0 = none (was ppPadA)
+        f32 lensSqueeze = 1.0f;         // 1 = none (was ppPadB); 44 f32 = 176 bytes
     };
     // The size is ASSERTED rather than commented. This struct must match
     // PostProcessParams in POSTPROCESS_WGSL byte for byte, and the only thing
@@ -1423,6 +1423,13 @@ public:
     // Depth of field and tilt-shift on web. Separate from the call above for
     // the same reason sharpness is: a caller that does not know about them must
     // not silently zero them by omitting arguments.
+    // The active camera's LensComponent (Renderer::ApplyCameraLens decides the
+    // values; this only carries them).
+    void SetWebLens(f32 distortion, f32 squeeze) {
+        m_WebPPAccessibility.lensDistortion = distortion;
+        m_WebPPAccessibility.lensSqueeze = squeeze;
+    }
+
     void SetWebDepthOfField(f32 focalDistance, f32 focalRange, f32 blurStrength) {
         m_WebPPAccessibility.dofFocalDistance = focalDistance;
         m_WebPPAccessibility.dofFocalRange = focalRange;

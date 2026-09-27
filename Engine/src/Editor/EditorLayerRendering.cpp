@@ -1,4 +1,5 @@
 #include "Enjin/Editor/EditorLayer.h"
+#include "Enjin/Renderer/CameraLens.h"
 #include "Enjin/ECS/PostProcessVolumeBlend.h"
 #include "Enjin/Editor/EditorTheme.h"
 #include "Enjin/Editor/EditorWidgets.h"
@@ -165,6 +166,9 @@ void EditorLayer::EvaluatePostProcessVolumes(const Math::Vector3& cameraPosition
     // ECS::BlendPostProcessVolumes for what the old self-blend did.
     m_PostProcessVolumeActive =
         ECS::BlendPostProcessVolumes(m_World, cameraPosition, *m_PostProcessVolumeBase, live);
+    // The game camera's lens rides the same overlay and is restored with it,
+    // so the panels keep showing the scene's own values
+    if (Renderer::ApplyCameraLens(m_World, live)) m_PostProcessVolumeActive = true;
 }
 
 void EditorLayer::RestorePostProcessVolumeBase() {

@@ -19,7 +19,7 @@ extern const size_t TriangleVertexShaderDataSize;
 extern const unsigned char TriangleFragmentShaderData[];
 extern const size_t TriangleFragmentShaderDataSize;
 
-// postprocess.frag.spv (161020 bytes, 40255 words)
+// postprocess.frag.spv (162232 bytes, 40558 words)
 extern const unsigned char PostProcessFragmentShaderData[];
 extern const size_t PostProcessFragmentShaderDataSize;
 

@@ -82,8 +82,10 @@ struct alignas(16) PostProcessSettings {
     // Chromatic aberration
     alignas(4) u32 chromaticAberrationEnabled = 0;
     alignas(4) f32 chromaticAberrationIntensity = 0.005f;
-    alignas(4) f32 _pad1;
-    alignas(4) f32 _pad2;
+    // Camera lens (LensComponent, via Renderer::ApplyCameraLens). They took the
+    // two pad slots of this row so the struct did not grow. 0 and 1 are "no lens".
+    alignas(4) f32 lensDistortion = 0.0f;     // <0 barrel, >0 pincushion
+    alignas(4) f32 lensSqueeze = 1.0f;        // >1 stretches horizontally
 
     // Color grading
     alignas(16) Math::Vector3 colorFilter = Math::Vector3(1.0f, 1.0f, 1.0f);

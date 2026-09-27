@@ -1,5 +1,10 @@
 #include "EnjinTest.h"
 #include "Enjin/ECS/Components/Lens.h"
+#include "Enjin/ECS/Components/Camera.h"
+#include "Enjin/ECS/Components/Transform.h"
+#include "Enjin/ECS/World.h"
+#include "Enjin/Renderer/CameraLens.h"
+#include "Enjin/Renderer/PostProcessing.h"
 
 using namespace Enjin;
 using namespace Enjin::ECS;
@@ -65,6 +70,69 @@ ENJIN_TEST(LensPreset, EveryPresetIsApplicable) {
         ENJIN_EXPECT_TRUE(lens.anamorphicSqueeze > 0.0f);
         ENJIN_EXPECT_TRUE(lens.vignetteIntensity >= 0.0f);
     }
+}
+
+// ===========================================================================
+// Applied to post-processing: nothing read the component (SD-27)
+// ===========================================================================
+
+namespace {
+Entity AddCamera(World& w, i32 priority) {
+    Entity e = w.CreateEntity();
+    w.AddComponent<TransformComponent>(e);
+    CameraComponent c;
+    c.isActive = true;
+    c.priority = priority;
+    w.AddComponent<CameraComponent>(e, c);
+    return e;
+}
+}
+
+ENJIN_TEST(LensApply, AFisheyeBendsAndFringes) {
+    LensComponent lens;
+    lens.ApplyPreset(LensType::Fisheye);
+    Renderer::PostProcessSettings s;
+    Renderer::ApplyLensToSettings(lens, s);
+    ENJIN_EXPECT_FLOAT_EQ(s.lensDistortion, lens.distortion);
+    ENJIN_EXPECT_TRUE(s.lensDistortion < 0.0f);
+    ENJIN_EXPECT_EQ(s.chromaticAberrationEnabled, 1u);
+    ENJIN_EXPECT_FLOAT_EQ(s.chromaticAberrationIntensity, lens.chromaticAberration);
+}
+
+ENJIN_TEST(LensApply, AStandardLensKeepsTheScenesVignette) {
+    // Zero on the lens means "not the lens's business", not "switch it off"
+    LensComponent lens;
+    Renderer::PostProcessSettings s;
+    s.vignetteEnabled = 1;
+    s.vignetteIntensity = 0.4f;
+    Renderer::ApplyLensToSettings(lens, s);
+    ENJIN_EXPECT_EQ(s.vignetteEnabled, 1u);
+    ENJIN_EXPECT_FLOAT_EQ(s.vignetteIntensity, 0.4f);
+    ENJIN_EXPECT_FLOAT_EQ(s.lensDistortion, 0.0f);
+    ENJIN_EXPECT_FLOAT_EQ(s.lensSqueeze, 1.0f);
+}
+
+ENJIN_TEST(LensApply, ReadsTheCameraTheGameRendersThrough) {
+    World w;
+    Entity low = AddCamera(w, 0);
+    Entity high = AddCamera(w, 5);
+    LensComponent wide;
+    wide.anamorphicSqueeze = 1.33f;
+    w.AddComponent<LensComponent>(low, wide);
+
+    Renderer::PostProcessSettings s;
+    // The lens is on the camera nobody is looking through
+    ENJIN_EXPECT_FALSE(Renderer::ApplyCameraLens(&w, s));
+    ENJIN_EXPECT_FLOAT_EQ(s.lensSqueeze, 1.0f);
+
+    w.AddComponent<LensComponent>(high, wide);
+    ENJIN_EXPECT_TRUE(Renderer::ApplyCameraLens(&w, s));
+    ENJIN_EXPECT_FLOAT_EQ(s.lensSqueeze, 1.33f);
+
+    Renderer::PostProcessSettings off;
+    w.GetComponent<LensComponent>(high)->enabled = false;
+    ENJIN_EXPECT_FALSE(Renderer::ApplyCameraLens(&w, off));
+    ENJIN_EXPECT_FLOAT_EQ(off.lensSqueeze, 1.0f);
 }
 
 ENJIN_TEST_MAIN()

@@ -6,6 +6,7 @@
 #include "Enjin/ECS/EntityEventBridge.h"
 #include "Enjin/ECS/Timers.h"
 #include "Enjin/Animation/Timeline.h"
+#include "Enjin/Renderer/CameraLens.h"
 #include "Enjin/ECS/PostProcessVolumeBlend.h"
 #include <filesystem>
 #include <set>
@@ -1093,6 +1094,8 @@ public:
         m_RenderSystem->SetWebTiltShift(
             s.tiltShiftFocusY, s.tiltShiftBandWidth,
             s.tiltShiftEnabled ? s.tiltShiftBlurAmount : 0.0f);
+
+        m_RenderSystem->SetWebLens(s.lensDistortion, s.lensSqueeze);
     }
 
     // See the desktop player for the reasoning. SaveSystemComponent is the
@@ -1785,8 +1788,11 @@ public:
         // puts the scene's own grade back as the camera leaves.
         if (m_World && m_Camera) {
             Enjin::Renderer::PostProcessSettings blended = m_WebPostProcessBase;
-            const bool contributing = Enjin::ECS::BlendPostProcessVolumes(
+            bool contributing = Enjin::ECS::BlendPostProcessVolumes(
                 m_World.get(), m_Camera->GetPosition(), m_WebPostProcessBase, blended);
+            // The camera's lens rides the same push; its frame without a lens
+            // pushes the base back, as a volume's does
+            if (Enjin::Renderer::ApplyCameraLens(m_World.get(), blended)) contributing = true;
             if (contributing || m_WebPostProcessVolumeActive) {
                 PushWebPostProcessScalars(blended);
             }

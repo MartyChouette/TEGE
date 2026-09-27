@@ -1223,8 +1223,8 @@ struct PostProcessParams {
     tiltShiftFocusY: f32,
     tiltShiftBandWidth: f32,
     tiltShiftBlurAmount: f32, // 0 = off
-    ppPadA: f32,
-    ppPadB: f32,
+    lensDistortion: f32,  // camera LensComponent, 0 = none (was ppPadA)
+    lensSqueeze: f32,     // 1 = none (was ppPadB)
                           // 44 f32 = 176 bytes; must match WebPPAccessibilityParams
 };
 @group(0) @binding(2) var<uniform> params: PostProcessParams;
@@ -1500,20 +1500,30 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let texDim = vec2<f32>(textureDimensions(sceneTexture));
     let texelSize = vec2<f32>(1.0 / texDim.x, 1.0 / texDim.y);
 
+    // Camera lens: barrel (<0) or pincushion (>0), then anamorphic squeeze.
+    // Plain arithmetic, no branch, so every sample below stays in uniform
+    // control flow. Corners pulled in from outside the frame go black.
+    var lc = in.uv - vec2<f32>(0.5);
+    let lr2 = dot(lc * 2.0, lc * 2.0);
+    lc = lc * (1.0 - params.lensDistortion * lr2);
+    lc.x = lc.x / max(params.lensSqueeze, 0.01);
+    let uv = lc + vec2<f32>(0.5);
+    let lensOutside = any(uv < vec2<f32>(0.0)) || any(uv > vec2<f32>(1.0));
+
     // FXAA used to run unconditionally, so turning anti-aliasing off in the
     // options still paid for the pass and still blurred the image.
     var color: vec3<f32>;
     if (params.fxaaEnabled > 0.5) {
-        color = fxaa(in.uv, texelSize);
+        color = fxaa(uv, texelSize);
     } else {
-        color = textureSampleLevel(sceneTexture, sceneSampler, in.uv, 0.0).rgb;
+        color = textureSampleLevel(sceneTexture, sceneSampler, uv, 0.0).rgb;
     }
 
     // Applied on the SOURCE resolution texels, so when the scene target is
     // smaller than the swapchain this is what puts the edges back after the
     // upscale. Harmless at render scale 1.0, where it is a plain sharpen.
     if (params.sharpness > 0.0) {
-        color = sharpenCAS(in.uv, texelSize, params.sharpness, color);
+        color = sharpenCAS(uv, texelSize, params.sharpness, color);
     }
 
     // Chromatic aberration: split R/B radially from the screen centre.
@@ -1526,9 +1536,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // sampling resolves to anyway, not because the branch requires it. What is
     // genuinely illegal is branching on per-fragment data.
     if (params.chromaticAberration > 0.0) {
-        let dir = (in.uv - vec2<f32>(0.5)) * params.chromaticAberration * 4.0;
-        let r = textureSampleLevel(sceneTexture, sceneSampler, in.uv - dir, 0.0).r;
-        let b = textureSampleLevel(sceneTexture, sceneSampler, in.uv + dir, 0.0).b;
+        let dir = (uv - vec2<f32>(0.5)) * params.chromaticAberration * 4.0;
+        let r = textureSampleLevel(sceneTexture, sceneSampler, uv - dir, 0.0).r;
+        let b = textureSampleLevel(sceneTexture, sceneSampler, uv + dir, 0.0).b;
         color = vec3<f32>(r, color.g, b);
     }
 
@@ -1541,7 +1551,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // geometry: a neighbour NEARER than this pixel is something standing
     // between it and the light, and eight of them around a ring is an estimate.
     let dim = vec2<i32>(textureDimensions(depthTex));
-    let px = vec2<i32>(in.uv * vec2<f32>(dim));
+    let px = vec2<i32>(uv * vec2<f32>(dim));
     if (params.ssao > 0.0) {
         let centreD = depthAt(px, dim);
         let step = max(i32(params.ssaoRadius * 8.0), 1);
@@ -1577,7 +1587,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     // Options preview split: left of the divider shows the frame WITHOUT the
     // previewed effect (5 = colorblind, 6 = color grading).
-    let previewLeft = params.previewEffect != 0u && in.uv.x < params.previewDivider;
+    let previewLeft = params.previewEffect != 0u && uv.x < params.previewDivider;
     if (!(previewLeft && params.previewEffect == 6u)) {
         // Color grading: brightness/contrast, then saturation, then color filter.
         color = (color - 0.5) * params.contrast + 0.5 + params.brightness;
@@ -1632,18 +1642,18 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         // In focus: skip the sixteen taps entirely rather than blur by zero.
         if (cocMag >= 0.01) {
             let texelSize = vec2<f32>(1.0 / params.screenW, 1.0 / params.screenH);
-            color = mix(color, dofBlur(in.uv, texelSize, cocMag * 4.0), cocMag);
+            color = mix(color, dofBlur(uv, texelSize, cocMag * 4.0), cocMag);
         }
     }
 
     // Tilt-shift: blur by distance from a horizontal band, no depth involved.
     if (params.tiltShiftBlurAmount > 0.0) {
-        let dist = abs(in.uv.y - params.tiltShiftFocusY);
+        let dist = abs(uv.y - params.tiltShiftFocusY);
         let halfBand = params.tiltShiftBandWidth * 0.5;
         let blur = smoothstep(halfBand * 0.5, halfBand, dist);
         if (blur >= 0.01) {
             let texelSize = vec2<f32>(1.0 / params.screenW, 1.0 / params.screenH);
-            color = mix(color, boxBlur5(in.uv, texelSize, params.tiltShiftBlurAmount * blur), blur);
+            color = mix(color, boxBlur5(uv, texelSize, params.tiltShiftBlurAmount * blur), blur);
         }
     }
 
@@ -1656,34 +1666,34 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     // Vignette: darken toward the frame edges.
     if (params.vignetteIntensity > 0.0) {
-        let d = distance(in.uv, vec2<f32>(0.5));
+        let d = distance(uv, vec2<f32>(0.5));
         let vig = smoothstep(0.75, 0.75 - max(params.vignetteSmoothness, 0.05), d);
         color = color * mix(1.0, vig, clamp(params.vignetteIntensity, 0.0, 1.0));
     }
 
     // CRT scanlines: soft horizontal dark bands (uv-based so it's resolution-agnostic).
     if (params.crtScanline > 0.0) {
-        let line = 0.5 + 0.5 * sin(in.uv.y * 6.28318 * 240.0);
+        let line = 0.5 + 0.5 * sin(uv.y * 6.28318 * 240.0);
         color = color * (1.0 - params.crtScanline * (1.0 - line));
     }
 
     // Film grain: animated hash noise driven by timeSec so it shimmers frame to frame.
     if (params.filmGrain > 0.0) {
-        let seed = in.uv * vec2<f32>(1024.0, 768.0) + vec2<f32>(params.timeSec * 60.0, params.timeSec * 37.0);
+        let seed = uv * vec2<f32>(1024.0, 768.0) + vec2<f32>(params.timeSec * 60.0, params.timeSec * 37.0);
         let n = fract(sin(dot(seed, vec2<f32>(12.9898, 78.233))) * 43758.5453);
         color = color + (n - 0.5) * params.filmGrain;
     }
 
     // Ordered dithering: retro banding-reduction / 8-bit look.
     if (params.dither > 0.0) {
-        let pix = vec2<i32>(in.uv * vec2<f32>(640.0, 360.0));
+        let pix = vec2<i32>(uv * vec2<f32>(640.0, 360.0));
         color = color + (bayer4(pix) - 0.5) * params.dither * 0.08;
     }
 
     // Stipple / comic threshold: ink on/off vs the Bayer matrix by luminance.
     if (params.stipple > 0.5) {
         let sc = max(params.stippleScale, 0.1);
-        let pix = vec2<i32>(in.uv * vec2<f32>(640.0, 360.0) / sc);
+        let pix = vec2<i32>(uv * vec2<f32>(640.0, 360.0) / sc);
         let on = step(bayer4(pix), dot(color, vec3<f32>(0.299, 0.587, 0.114)));
         if (params.stipple < 1.5) {
             color = mix(vec3<f32>(0.05), vec3<f32>(0.95), on);                                   // mono
@@ -1694,9 +1704,10 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         }
     }
 
-    if (params.previewEffect != 0u && abs(in.uv.x - params.previewDivider) < texelSize.x) {
+    if (params.previewEffect != 0u && abs(uv.x - params.previewDivider) < texelSize.x) {
         color = vec3<f32>(1.0, 1.0, 1.0);
     }
+    if (lensOutside) { color = vec3<f32>(0.0); }
     return vec4<f32>(saturate(color), 1.0);
 }
 )";

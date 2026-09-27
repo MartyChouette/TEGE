@@ -2,6 +2,7 @@
 #include "Enjin/ECS/EntityEventBridge.h"
 #include "Enjin/ECS/Timers.h"
 #include "Enjin/Animation/Timeline.h"
+#include "Enjin/Renderer/CameraLens.h"
 #include "Enjin/ECS/PostProcessVolumeBlend.h"
 #include <cstdio>
 #include "Enjin/Scripting/ScriptChecker.h"
@@ -4778,6 +4779,9 @@ private:
 
         m_PostProcessVolumeActive = Enjin::ECS::BlendPostProcessVolumes(
             m_World.get(), cameraPosition, m_PostProcessVolumeBase, live);
+        // The camera's lens rides the same overlay, so it is undone next frame
+        // with the volumes rather than baked into the base
+        if (Enjin::Renderer::ApplyCameraLens(m_World.get(), live)) m_PostProcessVolumeActive = true;
     }
 
     // Gameplay processing methods (ProcessContactDamage, ProcessPickup,
