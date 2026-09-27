@@ -1288,9 +1288,10 @@ void PlayMode::Update(f32 deltaTime) {
         // it drives, it is the only writer of the camera transform.
         m_CameraDirector.Update(m_World, m_Camera, deltaTime);
 
-        // Parallax layers: offset ParallaxLayer sprites by a fraction of the
-        // camera's movement. After the Director so it reads the final camera pose.
-        ECS::ParallaxSystem::ApplyParallaxLayers(m_World, deltaTime);
+        // Parallax layers are applied by the editor's ParallaxSystem::Update,
+        // which runs after this. Applying them here as well added each frame's
+        // dt twice, so auto-scrolling layers moved at double speed in editor
+        // play (EP-10).
 
         // Sync the 3D audio listener to the game camera. Without this the
         // listener stays wherever it was initialized (world origin) and every
@@ -1434,9 +1435,10 @@ void PlayMode::Update(f32 deltaTime) {
         // (EditorLayer) every frame, play or not. Ticking it here too made it
         // scan at double speed during play, which is exactly the setting a
         // switch-access user needs to be correct.
-        if (m_AudioIndicators) m_AudioIndicators->Update(deltaTime);
-        if (m_Announcer) m_Announcer->Update(deltaTime);
-        if (m_SubtitleSystem) m_SubtitleSystem->Update(deltaTime);
+        // Sound indicators, the announcer and subtitles are ticked by their
+        // owner too (EditorLayer: the first two every frame, subtitles through
+        // UpdateDialogue in play). Ticking them here as well ran every
+        // subtitle and announcement timer at double speed in play (EP-10).
 
         // Networking
         {
