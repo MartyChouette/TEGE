@@ -81,6 +81,13 @@ ENJIN_API void ResetTouchPresetTracking();
 // scripts start or shut down, so they do not follow the player to the next
 // scene.
 ENJIN_API void AddScriptTouchButton(const Input::TouchButtonDef& button);
+
+// The player's own touch layout choices, over the project's (IN-26). hand:
+// 0 the game's default, 1 right-handed, 2 left-handed (mirrored). size: 0 the
+// game's default, then 1 small, 2 normal, 3 large, 4 huge. From Options, via
+// RuntimeAccessibilitySettings; every runtime's accessibility apply pushes them.
+ENJIN_API void SetTouchPlayerLayout(u32 hand, u32 size);
+ENJIN_API f32 TouchButtonScaleForSize(u32 size);   // 0 for "the game's default"
 ENJIN_API void ClearScriptTouchButtons();
 
 // ---- UI pointer routing ------------------------------------------------------

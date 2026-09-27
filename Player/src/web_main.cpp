@@ -1277,6 +1277,8 @@ public:
         T::SetOptionChecked(c, "options_gaze_indicator",  a.eyeShowGazeIndicator);
         T::SetOptionChecked(c, "options_sticky_drag",     a.stickyDragEnabled);
         T::SetOptionSelected(c, "options_touch_mode",     static_cast<Enjin::i32>(a.touchMode));
+        T::SetOptionSelected(c, "options_touch_hand",     static_cast<Enjin::i32>(a.touchHand));
+        T::SetOptionSelected(c, "options_touch_size",     static_cast<Enjin::i32>(a.touchButtonSize));
 
         T::SetOptionChecked(c, "options_screen_reader",    a.screenReaderEnabled);
         T::SetOptionChecked(c, "options_audio_indicators", a.audioIndicatorsEnabled);
@@ -2463,6 +2465,18 @@ public:
             a11yFloat("options_gaze_dead_zone",  &A11y::eyeDeadZone);
             a11yBool ("options_gaze_indicator",  &A11y::eyeShowGazeIndicator);
             a11yBool ("options_sticky_drag",     &A11y::stickyDragEnabled);
+            m_UISystem.GetEventBus().Listen("options_touch_hand",
+                [this](const Enjin::GUI::UIEventData& e) {
+                    m_AccessibilitySettings.touchHand = static_cast<Enjin::u32>(e.intValue < 0 ? 0 : (e.intValue > 2 ? 2 : e.intValue));
+                    ApplyWebAccessibilitySettings();
+                    m_AccessibilityDirty = true;
+                });
+            m_UISystem.GetEventBus().Listen("options_touch_size",
+                [this](const Enjin::GUI::UIEventData& e) {
+                    m_AccessibilitySettings.touchButtonSize = static_cast<Enjin::u32>(e.intValue < 0 ? 0 : (e.intValue > 4 ? 4 : e.intValue));
+                    ApplyWebAccessibilitySettings();
+                    m_AccessibilityDirty = true;
+                });
             m_UISystem.GetEventBus().Listen("options_touch_mode",
                 [this](const Enjin::GUI::UIEventData& e) {
                     const Enjin::i32 idx = e.intValue < 0 ? 0 : (e.intValue > 2 ? 2 : e.intValue);
@@ -3353,6 +3367,7 @@ private:
         m_UISystem.SetDwellClickEnabled(s.dwellClickEnabled, s.dwellClickTime);
         m_UISystem.SetStickyDragEnabled(s.stickyDragEnabled);
         Enjin::Input::SetTouchMode(static_cast<Enjin::Input::TouchMode>(s.touchMode));
+        Enjin::InputSystem::SetTouchPlayerLayout(s.touchHand, s.touchButtonSize);
         if (m_RenderSystem) {
             m_RenderSystem->SetWebAccessibility(
                 static_cast<Enjin::u32>(s.colorblindMode), s.colorblindStrength,

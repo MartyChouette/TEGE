@@ -24,6 +24,8 @@ namespace {
     GUI::UISystem* s_UISystem = nullptr;
     u64 s_LastFingerprint = 0;
     std::vector<Input::TouchButtonDef> s_ScriptButtons;
+    u32 s_PlayerHand = 0;   // 0 game default, 1 right, 2 left
+    u32 s_PlayerSize = 0;   // 0 game default, 1..4 small..huge
     bool s_HasFingerprint = false;
 
     // The actions each controller type consumes, in hint order. This ONE table
@@ -293,6 +295,9 @@ namespace {
             s.leftHanded = p.touchLeftHanded;
             s.buttonScale = p.touchButtonScale;
         }
+        // The player's choice last: a project sets the default, the player owns it
+        if (s_PlayerHand != 0) s.leftHanded = s_PlayerHand == 2;
+        if (s_PlayerSize != 0) s.buttonScale = TouchButtonScaleForSize(s_PlayerSize);
 
         Input::SetTouchScheme(s);
         s_ActivePreset = preset;
@@ -305,6 +310,7 @@ namespace {
         u64 h = 1469598103934665603ull;
         auto mix = [&h](u64 v) { h ^= v; h *= 1099511628211ull; };
         mix(static_cast<u64>(preset));
+        mix(static_cast<u64>(s_PlayerHand) * 11u + s_PlayerSize);
         // Which of the preset's actions the game reads: the buttons follow it
         if (FilterByUse()) {
             const PresetDef& d = Preset(preset);
@@ -400,6 +406,25 @@ void AddScriptTouchButton(const Input::TouchButtonDef& button) {
         if (same) { b = button; ResetTouchPresetTracking(); return; }
     }
     s_ScriptButtons.push_back(button);
+    ResetTouchPresetTracking();
+}
+
+f32 TouchButtonScaleForSize(u32 size) {
+    switch (size) {
+        case 1:  return 0.75f;
+        case 2:  return 1.0f;
+        case 3:  return 1.35f;
+        case 4:  return 1.75f;
+        default: return 0.0f;
+    }
+}
+
+void SetTouchPlayerLayout(u32 hand, u32 size) {
+    hand = hand <= 2 ? hand : 0;
+    size = size <= 4 ? size : 0;
+    if (hand == s_PlayerHand && size == s_PlayerSize) return;
+    s_PlayerHand = hand;
+    s_PlayerSize = size;
     ResetTouchPresetTracking();
 }
 

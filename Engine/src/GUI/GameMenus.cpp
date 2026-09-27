@@ -1,6 +1,7 @@
 #include "Enjin/GUI/GameMenus.h"
 #include "Enjin/GUI/Localization.h"
 #include "Enjin/Platform/Input.h"
+#include "Enjin/Input/TouchActionBridge.h"
 #include "Enjin/Renderer/PostProcessing.h"
 
 #include <algorithm>
@@ -765,6 +766,19 @@ void GameMenuSystem::RenderAccessibility(f32 w, f32 h) {
         if (ImGui::Combo("Touch Controls", &mode, kTouchModes, 3)) {
             a.touchMode = static_cast<u32>(mode);
             Input::SetTouchMode(static_cast<Input::TouchMode>(mode));
+            changed = true;
+        }
+        // The layout the game chose, or the player's own (IN-26)
+        static const char* const kHands[] = { "Game Default", "Right-Handed", "Left-Handed" };
+        static const char* const kSizes[] = { "Game Default", "Small", "Normal", "Large", "Huge" };
+        int hand = static_cast<int>(a.touchHand <= 2 ? a.touchHand : 0);
+        int size = static_cast<int>(a.touchButtonSize <= 4 ? a.touchButtonSize : 0);
+        bool layout = ImGui::Combo("Touch Layout", &hand, kHands, 3);
+        layout |= ImGui::Combo("Touch Button Size", &size, kSizes, 5);
+        if (layout) {
+            a.touchHand = static_cast<u32>(hand);
+            a.touchButtonSize = static_cast<u32>(size);
+            InputSystem::SetTouchPlayerLayout(a.touchHand, a.touchButtonSize);
             changed = true;
         }
     }

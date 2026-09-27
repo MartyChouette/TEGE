@@ -330,6 +330,8 @@ OptionsMenuSpec DefaultOptionsMenuSpec() {
         Options::Checkbox("Show Gaze Indicator", "options_gaze_indicator", true),
         Options::Checkbox("Sticky Slider Drag", "options_sticky_drag", false),
         Options::Dropdown("Touch Controls", "options_touch_mode", { "Auto", "Always", "Never" }, 0),
+        Options::Dropdown("Touch Layout", "options_touch_hand", { "Game Default", "Right-Handed", "Left-Handed" }, 0),
+        Options::Dropdown("Touch Button Size", "options_touch_size", { "Game Default", "Small", "Normal", "Large", "Huge" }, 0),
         Options::Button("Left Hand Only",  "options_preset_left_hand"),
         Options::Button("Right Hand Only", "options_preset_right_hand"),
         Options::Button("Gamepad Only",    "options_preset_gamepad"),

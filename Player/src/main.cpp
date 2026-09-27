@@ -4075,6 +4075,7 @@ private:
                                          m_AccessibilitySettings.dwellClickTime);
         m_UISystem.SetStickyDragEnabled(m_AccessibilitySettings.stickyDragEnabled);
         Enjin::Input::SetTouchMode(static_cast<Enjin::Input::TouchMode>(m_AccessibilitySettings.touchMode));
+        Enjin::InputSystem::SetTouchPlayerLayout(m_AccessibilitySettings.touchHand, m_AccessibilitySettings.touchButtonSize);
 
         // Audio visual indicators (callback wired unconditionally — the overlay
         // render gates on config.enabled, so a disabled state just drops events)
@@ -4262,6 +4263,10 @@ private:
                 m_AccessibilitySettings.stickyDragEnabled = j["stickyDragEnabled"].get<bool>();
             if (j.contains("touchMode") && j["touchMode"].is_number_unsigned())
                 m_AccessibilitySettings.touchMode = std::min(j["touchMode"].get<Enjin::u32>(), 2u);
+            if (j.contains("touchHand") && j["touchHand"].is_number_unsigned())
+                m_AccessibilitySettings.touchHand = std::min(j["touchHand"].get<Enjin::u32>(), 2u);
+            if (j.contains("touchButtonSize") && j["touchButtonSize"].is_number_unsigned())
+                m_AccessibilitySettings.touchButtonSize = std::min(j["touchButtonSize"].get<Enjin::u32>(), 4u);
             if (j.contains("switchAccessEnabled"))
                 m_AccessibilitySettings.switchAccessEnabled = j["switchAccessEnabled"].get<bool>();
             if (j.contains("switchScanSpeed"))
@@ -4355,6 +4360,8 @@ private:
             j["dwellClickTime"] = m_AccessibilitySettings.dwellClickTime;
             j["stickyDragEnabled"] = m_AccessibilitySettings.stickyDragEnabled;
             j["touchMode"] = m_AccessibilitySettings.touchMode;
+            j["touchHand"] = m_AccessibilitySettings.touchHand;
+            j["touchButtonSize"] = m_AccessibilitySettings.touchButtonSize;
             j["switchAccessEnabled"] = m_AccessibilitySettings.switchAccessEnabled;
             j["switchScanSpeed"] = m_AccessibilitySettings.switchScanSpeed;
             j["audioIndicatorsEnabled"] = m_AccessibilitySettings.audioIndicatorsEnabled;

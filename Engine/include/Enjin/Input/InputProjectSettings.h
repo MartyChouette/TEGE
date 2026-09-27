@@ -69,7 +69,8 @@ struct InputProjectSettings {
     bool touchStick = true;
     TouchLookMode touchLook = TouchLookMode::Auto;
 
-    // Touch accessibility defaults (a player can still override at runtime).
+    // Touch accessibility defaults. A player overrides both from Options >
+    // Touch Layout and Touch Button Size (SetTouchPlayerLayout).
     f32 touchButtonScale = 1.0f;   // 0.5 - 2.0
     bool touchLeftHanded = false;  // mirror: stick right, buttons bottom-left
 

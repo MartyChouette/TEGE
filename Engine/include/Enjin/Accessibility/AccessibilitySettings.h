@@ -77,6 +77,10 @@ struct RuntimeAccessibilitySettings {
     // Touch controls: 0 Auto (follow the last device), 1 Always, 2 Never.
     // Pushed to Input::SetTouchMode by every runtime's apply.
     u32 touchMode = 0;
+    // The player's touch layout over the game's (IN-26): hand 0 game default,
+    // 1 right-handed, 2 left-handed; size 0 game default, 1..4 small..huge.
+    u32 touchHand = 0;
+    u32 touchButtonSize = 0;
     bool switchAccessEnabled = false; // One-button scanning mode
     f32 switchScanSpeed = 1.5f;      // Seconds per element (0.5-5.0)
 

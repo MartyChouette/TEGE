@@ -38,6 +38,8 @@ std::string RuntimeAccessibilitySettings::ToJson() const {
     j["dwellClickTime"] = dwellClickTime;
     j["stickyDragEnabled"] = stickyDragEnabled;
     j["touchMode"] = touchMode;
+    j["touchHand"] = touchHand;
+    j["touchButtonSize"] = touchButtonSize;
     j["switchAccessEnabled"] = switchAccessEnabled;
     j["switchScanSpeed"] = switchScanSpeed;
     j["eyeTrackingEnabled"] = eyeTrackingEnabled;
@@ -83,6 +85,8 @@ bool RuntimeAccessibilitySettings::FromJson(const std::string& jsonStr) {
         dwellClickTime = j.value("dwellClickTime", 1.0f);
         stickyDragEnabled = j.value("stickyDragEnabled", false);
         touchMode = std::min(j.value("touchMode", 0u), 2u);
+        touchHand = std::min(j.value("touchHand", 0u), 2u);
+        touchButtonSize = std::min(j.value("touchButtonSize", 0u), 4u);
         switchAccessEnabled = j.value("switchAccessEnabled", false);
         switchScanSpeed = j.value("switchScanSpeed", 1.5f);
         eyeTrackingEnabled = j.value("eyeTrackingEnabled", false);

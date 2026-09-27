@@ -290,4 +290,21 @@ ENJIN_TEST(TouchActionBinding, TriggerButtonsSpreadOutAndScriptButtonsSurvive) {
     SetTouchActionMap(nullptr);
 }
 
+// IN-26: the player's layout choice wins over the project's
+ENJIN_TEST(TouchActionBinding, ThePlayersLayoutOverridesTheProject) {
+    InputProjectSettings project;
+    project.touchLeftHanded = false;
+    project.touchButtonScale = 1.0f;
+    SetTouchProjectSettings(&project);
+    SetTouchPlayerLayout(2, 4);   // left-handed, huge
+    ApplyTouchPreset(TouchPreset::ThirdPerson);
+    ENJIN_EXPECT_TRUE(Input::GetTouchScheme().leftHanded);
+    ENJIN_EXPECT_FLOAT_NEAR(Input::GetTouchScheme().buttonScale, 1.75f, 1e-5f);
+    SetTouchPlayerLayout(0, 0);   // back to the game's
+    ApplyTouchPreset(TouchPreset::ThirdPerson);
+    ENJIN_EXPECT_FALSE(Input::GetTouchScheme().leftHanded);
+    ENJIN_EXPECT_FLOAT_NEAR(Input::GetTouchScheme().buttonScale, 1.0f, 1e-5f);
+    SetTouchProjectSettings(nullptr);
+}
+
 ENJIN_TEST_MAIN()
