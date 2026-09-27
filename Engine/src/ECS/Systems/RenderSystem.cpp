@@ -1915,8 +1915,9 @@ void RenderSystem::RecreateWebSizedTargets(u32 sceneW, u32 sceneH) {
         // Threshold (scene -> bloom[0])
         {
             Renderer::GPUBindGroupDesc bg;
-            bg.layout = m_WebBloomSingleTexLayout;
-            bg.entries = {{0, {}, 0, 0, m_WebSceneColorTex, {}}, {1, {}, 0, 0, {}, m_WebSceneColorTex}};
+            bg.layout = m_WebBloomThresholdLayout;
+            bg.entries = {{0, {}, 0, 0, m_WebSceneColorTex, {}}, {1, {}, 0, 0, {}, m_WebSceneColorTex},
+                          {2, m_WebBloomParamsBuffer, 0, 16, {}, {}}};
             m_WebBloomThresholdBG = bindMgr->CreateBindGroup(bg);
         }
         // Downsample (bloom[i] -> bloom[i+1])
@@ -1941,6 +1942,7 @@ void RenderSystem::RecreateWebSizedTargets(u32 sceneW, u32 sceneH) {
         bg.entries = {
             {0, {}, 0, 0, m_WebSceneColorTex, {}}, {1, {}, 0, 0, {}, m_WebSceneColorTex},
             {2, {}, 0, 0, m_WebBloomTex[0], {}}, {3, {}, 0, 0, {}, m_WebBloomTex[0]},
+            {4, m_WebBloomParamsBuffer, 0, 16, {}, {}},
         };
         m_WebBloomCompositeBG = bindMgr->CreateBindGroup(bg);
     }
@@ -2883,15 +2885,32 @@ void RenderSystem::Initialize() {
         };
         m_WebBloomSingleTexLayout = bindMgr->CreateBindGroupLayout(bloomTexLD);
 
-        // Composite layout (scene + bloom, 2 textures + 2 samplers)
+        // Composite layout (scene + bloom, 2 textures + 2 samplers, the params)
         Renderer::GPUBindGroupLayoutDesc bloomCompLD;
         bloomCompLD.entries = {
             {0, BType::SampledTexture, SStage::Fragment, 0},
             {1, BType::Sampler, SStage::Fragment, 0},
             {2, BType::SampledTexture, SStage::Fragment, 0},
             {3, BType::Sampler, SStage::Fragment, 0},
+            {4, BType::UniformBuffer, SStage::Fragment, 16},
         };
         m_WebBloomCompositeLayout = bindMgr->CreateBindGroupLayout(bloomCompLD);
+        // The threshold pass reads the params too, so it has its own layout
+        Renderer::GPUBindGroupLayoutDesc bloomThrLD;
+        bloomThrLD.entries = {
+            {0, BType::SampledTexture, SStage::Fragment, 0},
+            {1, BType::Sampler, SStage::Fragment, 0},
+            {2, BType::UniformBuffer, SStage::Fragment, 16},
+        };
+        m_WebBloomThresholdLayout = bindMgr->CreateBindGroupLayout(bloomThrLD);
+        {
+            Renderer::GPUBufferDesc bpd;
+            bpd.size = 16;
+            bpd.usage = Renderer::GPUBufferUsage::Uniform | Renderer::GPUBufferUsage::CopyDst;
+            bpd.hostVisible = true;
+            bpd.label = "BloomParams";
+            m_WebBloomParamsBuffer = bufMgr->CreateBuffer(bpd);
+        }
 
         // Bloom pipelines (all fullscreen triangle, no depth, RGBA16Float)
         auto makeBloomPipe = [&](Renderer::GPUShaderHandle shader, Renderer::GPUBindGroupLayoutHandle layout, const char* label) {
@@ -2910,7 +2929,7 @@ void RenderSystem::Initialize() {
             pd.label = label;
             return pipeMgr->CreateRenderPipeline(pd);
         };
-        m_WebBloomThresholdPipeline = makeBloomPipe(m_WebBloomThresholdShader, m_WebBloomSingleTexLayout, "BloomThreshold");
+        m_WebBloomThresholdPipeline = makeBloomPipe(m_WebBloomThresholdShader, m_WebBloomThresholdLayout, "BloomThreshold");
         m_WebBloomDownPipeline = makeBloomPipe(m_WebBloomDownShader, m_WebBloomSingleTexLayout, "BloomDown");
         m_WebBloomCompositePipeline = makeBloomPipe(m_WebBloomCompositeShader, m_WebBloomCompositeLayout, "BloomComposite");
         // Upsample pipeline with additive blending (adds upsampled result to existing bloom level)
@@ -6870,22 +6889,33 @@ void RenderSystem::Update(f32 deltaTime) {
             };
 
             auto* webTexMgrR = static_cast<Renderer::WebGPUTextureManager*>(m_Renderer->GetTextureManager());
-            // Step 1: Threshold extract → bloom[0]
+            // The scene's bloom. The web chain sums WEB_BLOOM_LEVELS blurred
+            // copies where desktop blurs once, so the intensity is divided
+            // across them to put about the same energy back into the image.
+            // Off means intensity 0 and the chain skipped: the composite still
+            // runs, because the post pass reads its output.
             {
+                const f32 bp[4] = {m_WebBloomThreshold, 0.5f,
+                                   m_WebBloomEnabled ? m_WebBloomIntensity / static_cast<f32>(WEB_BLOOM_LEVELS) : 0.0f,
+                                   0.0f};
+                bufMgr->UploadData(m_WebBloomParamsBuffer, bp, sizeof(bp));
+            }
+            // Step 1: Threshold extract → bloom[0]
+            if (m_WebBloomEnabled) {
                 auto* bt = webTexMgrR->GetNativeTexture(m_WebBloomTex[0]);
                 bloomPass(static_cast<WGPUTextureView>(m_WebBloomView[0]), bt->width, bt->height,
                     webPipeMgr->GetNativePipeline(m_WebBloomThresholdPipeline),
                     webBindMgr->GetNativeGroup(m_WebBloomThresholdBG));
             }
             // Step 2: Downsample chain bloom[i] → bloom[i+1]
-            for (u32 i = 1; i < WEB_BLOOM_LEVELS; i++) {
+            for (u32 i = 1; m_WebBloomEnabled && i < WEB_BLOOM_LEVELS; i++) {
                 auto* bt = webTexMgrR->GetNativeTexture(m_WebBloomTex[i]);
                 bloomPass(static_cast<WGPUTextureView>(m_WebBloomView[i]), bt->width, bt->height,
                     webPipeMgr->GetNativePipeline(m_WebBloomDownPipeline),
                     webBindMgr->GetNativeGroup(m_WebBloomDownBG[i - 1]));
             }
             // Step 3: Upsample chain bloom[i+1] → bloom[i] (additive blend via shader)
-            for (i32 i = static_cast<i32>(WEB_BLOOM_LEVELS) - 2; i >= 0; i--) {
+            for (i32 i = static_cast<i32>(WEB_BLOOM_LEVELS) - 2; m_WebBloomEnabled && i >= 0; i--) {
                 auto* bt = webTexMgrR->GetNativeTexture(m_WebBloomTex[i]);
                 // Upsample from bloom[i+1], writing to bloom[i] (loadOp=Load to keep existing + add)
                 WGPURenderPassColorAttachment att = {};

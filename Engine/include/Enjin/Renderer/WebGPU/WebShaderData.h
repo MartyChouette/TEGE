@@ -1349,7 +1349,11 @@ struct PostProcessParams {
     tiltShiftBlurAmount: f32, // 0 = off
     lensDistortion: f32,  // camera LensComponent, 0 = none (was ppPadA)
     lensSqueeze: f32,     // 1 = none (was ppPadB)
-                          // 44 f32 = 176 bytes; must match WebPPAccessibilityParams
+    exposure: f32,        // applied with a tone map, as desktop
+    whitePoint: f32,      // Reinhard Extended
+    ppPadC: f32,
+    ppPadD: f32,
+                          // 48 f32 = 192 bytes; must match WebPPAccessibilityParams
 };
 @group(0) @binding(2) var<uniform> params: PostProcessParams;
 
@@ -1460,6 +1464,49 @@ fn aces_tonemap(color: vec3<f32>) -> vec3<f32> {
     let d = 0.59;
     let e = 0.14;
     return saturate((color * (a * color + b)) / (color * (c * color + d) + e));
+}
+
+// The rest of desktop's tone maps (postprocess.frag), so the mode a scene
+// picks is the one it gets. Web ran ACES for every mode above 0.
+fn tonemapReinhard(c: vec3<f32>) -> vec3<f32> { return c / (c + vec3<f32>(1.0)); }
+fn tonemapReinhardExtended(c: vec3<f32>, whitePoint: f32) -> vec3<f32> {
+    let lp = max(max(c.r, c.g), c.b);
+    if (lp <= 0.0) { return c; }
+    let l = (lp * (1.0 + lp / (whitePoint * whitePoint))) / (1.0 + lp);
+    return c * (l / lp);
+}
+fn uncharted2Helper(x: vec3<f32>) -> vec3<f32> {
+    let A = 0.15; let B = 0.50; let C = 0.10; let D = 0.20; let E = 0.02; let F = 0.30;
+    return ((x * (A * x + C * B) + D * E) / (x * (A * x + B) + D * F)) - E / F;
+}
+fn tonemapUncharted2(c: vec3<f32>) -> vec3<f32> {
+    return uncharted2Helper(c) / uncharted2Helper(vec3<f32>(11.2));
+}
+fn tonemapAgX(c0: vec3<f32>) -> vec3<f32> {
+    let agx = mat3x3<f32>(
+        vec3<f32>(0.842479062253094, 0.0423282422610123, 0.0423756549057051),
+        vec3<f32>(0.0784335999999992, 0.878468636469772, 0.0784336),
+        vec3<f32>(0.0792237451477643, 0.0791661274605434, 0.879142973793104));
+    let agxInv = mat3x3<f32>(
+        vec3<f32>(1.19687900512017, -0.0528968517574562, -0.0529716355144438),
+        vec3<f32>(-0.0980208811401368, 1.15190312990417, -0.0980434501171241),
+        vec3<f32>(-0.0990297440797205, -0.0989611768448433, 1.15107367264116));
+    var c = agx * c0;
+    c = clamp(log2(max(c, vec3<f32>(1e-10))), vec3<f32>(-10.0), vec3<f32>(6.5));
+    c = (c + 10.0) / 16.5;
+    let v = clamp(c, vec3<f32>(0.0), vec3<f32>(1.0));
+    return clamp(agxInv * (v * v * (3.0 - 2.0 * v)), vec3<f32>(0.0), vec3<f32>(1.0));
+}
+// ToneMappingMode: 1 Reinhard, 2 Reinhard Extended, 3 ACES, 4 Uncharted 2, 5 AgX
+fn applyToneMapping(c0: vec3<f32>) -> vec3<f32> {
+    let c = c0 * params.exposure;
+    let mode = i32(params.toneMapMode + 0.5);
+    if (mode == 1) { return tonemapReinhard(c); }
+    if (mode == 2) { return tonemapReinhardExtended(c, params.whitePoint); }
+    if (mode == 3) { return aces_tonemap(c); }
+    if (mode == 4) { return tonemapUncharted2(c); }
+    if (mode == 5) { return tonemapAgX(c); }
+    return clamp(c, vec3<f32>(0.0), vec3<f32>(1.0));
 }
 
 fn luminance(c: vec3<f32>) -> f32 {
@@ -1700,7 +1747,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // so a scene that asked for none still got it and the web picture never
     // matched the desktop one.
     if (params.toneMapMode > 0.5) {
-        color = aces_tonemap(color);
+        color = applyToneMapping(color);
     }
 
     // LUT grading runs before the brightness/contrast/saturation block, the
@@ -1890,14 +1937,19 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
     return out;
 }
 
+// x = threshold, y = knee, z = composite intensity (the scene's Bloom
+// Threshold and Intensity; both were fixed on web)
+struct BloomParams { v: vec4<f32>, };
+@group(0) @binding(2) var<uniform> bloomParams: BloomParams;
+
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let color = textureSample(srcTexture, srcSampler, in.uv);
     let brightness = dot(color.rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
     // Soft threshold with knee. Scene is linear HDR pre-ACES: only over-white
     // pixels should bloom, else bright albedo under 2 suns blooms everywhere.
-    let threshold = 1.0;
-    let knee = 0.5;
+    let threshold = bloomParams.v.x;
+    let knee = bloomParams.v.y;
     let soft = clamp(brightness - threshold + knee, 0.0, 2.0 * knee);
     let contrib = soft * soft / (4.0 * knee + 0.0001);
     let factor = max(brightness - threshold, contrib) / max(brightness, 0.0001);
@@ -1949,6 +2001,8 @@ static const char* BLOOM_COMPOSITE_WGSL = R"(
 @group(0) @binding(1) var sceneSampler: sampler;
 @group(0) @binding(2) var bloomTexture: texture_2d<f32>;
 @group(0) @binding(3) var bloomSampler: sampler;
+struct BloomParams { v: vec4<f32>, };
+@group(0) @binding(4) var<uniform> bloomParams: BloomParams;
 
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
@@ -1969,8 +2023,7 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let scene = textureSample(sceneTexture, sceneSampler, in.uv).rgb;
     let bloom = textureSample(bloomTexture, bloomSampler, in.uv).rgb;
-    let bloomIntensity = 0.15;
-    return vec4<f32>(scene + bloom * bloomIntensity, 1.0);
+    return vec4<f32>(scene + bloom * bloomParams.v.z, 1.0);
 }
 )";
 

@@ -1352,7 +1352,14 @@ public:
         f32 tiltShiftBandWidth = 0.3f;
         f32 tiltShiftBlurAmount = 0.0f; // 0 = off
         f32 lensDistortion = 0.0f;      // camera LensComponent, 0 = none (was ppPadA)
-        f32 lensSqueeze = 1.0f;         // 1 = none (was ppPadB); 44 f32 = 176 bytes
+        f32 lensSqueeze = 1.0f;         // 1 = none (was ppPadB)
+        // Exposure and the Reinhard Extended white point, as desktop's
+        // applyToneMapping reads them (WP-17). Exposure applies only when a
+        // tone map is chosen, as there.
+        f32 exposure = 1.0f;
+        f32 whitePoint = 4.0f;
+        f32 ppPadC = 0.0f;
+        f32 ppPadD = 0.0f;              // 48 f32 = 192 bytes
     };
     // The size is ASSERTED rather than commented. This struct must match
     // PostProcessParams in POSTPROCESS_WGSL byte for byte, and the only thing
@@ -1360,13 +1367,18 @@ public:
     // how the LightingUBO comment came to read 992 while its fields summed to
     // 1008. A mismatch here does not fail loudly: every effect after the
     // first wrong offset reads a neighbouring field's bytes.
-    static_assert(sizeof(WebPPAccessibilityParams) == 176,
-                  "WebPPAccessibilityParams must stay 176 bytes and in lockstep with "
-                  "PostProcessParams in POSTPROCESS_WGSL (44 f32). Update BOTH.");
+    static_assert(sizeof(WebPPAccessibilityParams) == 192,
+                  "WebPPAccessibilityParams must stay 192 bytes and in lockstep with "
+                  "PostProcessParams in POSTPROCESS_WGSL (48 f32). Update BOTH.");
     static_assert(sizeof(WebPPAccessibilityParams) % 16 == 0,
                   "Uniform block must be a 16-byte multiple.");
 
     WebPPAccessibilityParams m_WebPPAccessibility;
+    // The scene's bloom for the web chain (SetWebBloom). Off until a scene asks,
+    // as on desktop.
+    bool m_WebBloomEnabled = false;
+    f32 m_WebBloomThreshold = 1.0f;
+    f32 m_WebBloomIntensity = 0.5f;
     // Beside the params rather than in the WebGPU-only block below: the
     // SetWebLUT setter is not inside that guard, so a desktop build must still
     // see these.
@@ -1392,6 +1404,18 @@ public:
     }
     void SetWebToneMapMode(u32 mode) {
         m_WebPPAccessibility.toneMapMode = static_cast<f32>(mode);
+    }
+    // Exposure and white point go with the tone map mode; bloom's settings go
+    // to the bloom chain. Web tone-mapped every mode as ACES, ignored exposure,
+    // and bloomed every scene at a fixed threshold and strength (WP-17).
+    void SetWebExposure(f32 exposure, f32 whitePoint) {
+        m_WebPPAccessibility.exposure = exposure;
+        m_WebPPAccessibility.whitePoint = whitePoint > 0.01f ? whitePoint : 0.01f;
+    }
+    void SetWebBloom(bool enabled, f32 threshold, f32 intensity) {
+        m_WebBloomEnabled = enabled;
+        m_WebBloomThreshold = threshold;
+        m_WebBloomIntensity = intensity;
     }
     void SetWebAccessibilityPreview(u32 effect, f32 divider) {
         m_WebPPAccessibility.previewEffect = effect;
@@ -2200,7 +2224,9 @@ private:
     Renderer::GPUPipelineHandle m_WebBloomUpPipeline;
     Renderer::GPUPipelineHandle m_WebBloomCompositePipeline;
     Renderer::GPUBindGroupLayoutHandle m_WebBloomSingleTexLayout;  // 1 texture + 1 sampler
-    Renderer::GPUBindGroupLayoutHandle m_WebBloomCompositeLayout;  // 2 textures + 2 samplers
+    Renderer::GPUBindGroupLayoutHandle m_WebBloomCompositeLayout;  // 2 textures + 2 samplers + params
+    Renderer::GPUBindGroupLayoutHandle m_WebBloomThresholdLayout;  // 1 texture + 1 sampler + params
+    Renderer::GPUBufferHandle m_WebBloomParamsBuffer;              // threshold, knee, intensity
     // Per-level bloom textures (half-res chain)
     Renderer::GPUTextureHandle m_WebBloomTex[WEB_BLOOM_LEVELS];
     void* m_WebBloomView[WEB_BLOOM_LEVELS] = {};                   // WGPUTextureView

@@ -1087,6 +1087,11 @@ public:
     // two costs are what made per-frame re-pushing a bad idea.
     void PushWebPostProcessScalars(const Enjin::Renderer::PostProcessSettings& s) {
         if (!m_RenderSystem) return;
+        // Tone map, exposure and bloom from the blended settings, so a
+        // post-process volume can change them as the camera moves
+        m_RenderSystem->SetWebToneMapMode(s.toneMappingMode);
+        m_RenderSystem->SetWebExposure(s.exposure, s.whitePoint);
+        m_RenderSystem->SetWebBloom(s.bloomEnabled != 0, s.bloomThreshold, s.bloomIntensity);
 
         // A Rewind Ability's authored tint and vignette, folded in on top of the
         // scene's grade. Web has no PostProcessing OBJECT -- these go through as
