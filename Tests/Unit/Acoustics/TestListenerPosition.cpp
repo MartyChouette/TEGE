@@ -158,4 +158,82 @@ ENJIN_TEST(ListenerPosition, NoListenerMeansNoRoomMeasurementRatherThanTheOrigin
     ENJIN_EXPECT_TRUE(!h.system.Acoustics().HasMeasurement());
 }
 
+// ===========================================================================
+// Audio Snapshot Trigger: nothing read it, and nothing pushed a snapshot (SD-27)
+// ===========================================================================
+
+namespace {
+ECS::Entity AddSnapshotTrigger(ECS::World& w, const Vector3& at, const char* name) {
+    ECS::Entity e = w.CreateEntity();
+    ECS::TransformComponent t;
+    t.position = at;
+    w.AddComponent<ECS::TransformComponent>(e, t);
+    ECS::AudioSnapshotTriggerComponent st;
+    st.snapshotName = name;
+    st.halfExtents = Vector3(2.0f);
+    w.AddComponent<ECS::AudioSnapshotTriggerComponent>(e, st);
+    return e;
+}
+}
+
+ENJIN_TEST(SnapshotTrigger, ListenerInsidePushesAndLeavingPops) {
+    Harness h;
+    ECS::Entity cam = h.AddCamera(Vector3(20.0f, 0.0f, 0.0f));
+    ECS::Entity trig = AddSnapshotTrigger(h.world, Vector3(0.0f), "Dialogue");
+    auto& mixer = h.audio.GetMixer();
+
+    h.system.Update(0.016f);
+    ENJIN_EXPECT_FALSE(mixer.IsSnapshotActive("Dialogue"));
+
+    h.world.GetComponent<ECS::TransformComponent>(cam)->position = Vector3(1.0f, 0.5f, -1.0f);
+    h.system.Update(0.016f);
+    ENJIN_EXPECT_TRUE(mixer.IsSnapshotActive("Dialogue"));
+    ENJIN_EXPECT_TRUE(h.world.GetComponent<ECS::AudioSnapshotTriggerComponent>(trig)->listenerInside);
+    mixer.Update(0.016f);
+    ENJIN_EXPECT_FLOAT_NEAR(mixer.GetBus("Music")->targetVolume, 0.3f, 1e-4f);   // ducked
+
+    h.world.GetComponent<ECS::TransformComponent>(cam)->position = Vector3(20.0f, 0.0f, 0.0f);
+    h.system.Update(0.016f);
+    ENJIN_EXPECT_FALSE(mixer.IsSnapshotActive("Dialogue"));
+    ENJIN_EXPECT_FLOAT_NEAR(mixer.GetBus("Music")->targetVolume, 1.0f, 1e-4f);
+}
+
+ENJIN_TEST(SnapshotTrigger, SwitchingItOffOrDestroyingItPops) {
+    Harness h;
+    h.AddCamera(Vector3(0.0f));
+    ECS::Entity trig = AddSnapshotTrigger(h.world, Vector3(0.0f), "Combat");
+    h.system.Update(0.016f);
+    ENJIN_EXPECT_TRUE(h.audio.GetMixer().IsSnapshotActive("Combat"));
+
+    h.world.GetComponent<ECS::AudioSnapshotTriggerComponent>(trig)->isActive = false;
+    h.system.Update(0.016f);
+    ENJIN_EXPECT_FALSE(h.audio.GetMixer().IsSnapshotActive("Combat"));
+
+    h.world.GetComponent<ECS::AudioSnapshotTriggerComponent>(trig)->isActive = true;
+    h.system.Update(0.016f);
+    ENJIN_EXPECT_TRUE(h.audio.GetMixer().IsSnapshotActive("Combat"));
+    h.world.RemoveComponent<ECS::AudioSnapshotTriggerComponent>(trig);
+    h.system.Update(0.016f);
+    ENJIN_EXPECT_FALSE(h.audio.GetMixer().IsSnapshotActive("Combat"));
+}
+
+ENJIN_TEST(SnapshotTrigger, ReleaseOnStopPopsWhatTriggersPushed) {
+    // Editor Stop: the mixer outlives play
+    Harness h;
+    h.AddCamera(Vector3(0.0f));
+    AddSnapshotTrigger(h.world, Vector3(0.0f), "Cutscene");
+    h.system.Update(0.016f);
+    ENJIN_EXPECT_TRUE(h.audio.GetMixer().IsSnapshotActive("Cutscene"));
+    h.system.ReleaseSnapshotTriggers();
+    ENJIN_EXPECT_FALSE(h.audio.GetMixer().IsSnapshotActive("Cutscene"));
+}
+
+ENJIN_TEST(SnapshotTrigger, AnUnknownNamePushesNothing) {
+    Harness h;
+    h.AddCamera(Vector3(0.0f));
+    AddSnapshotTrigger(h.world, Vector3(0.0f), "Underwater");
+    h.system.Update(0.016f);
+    ENJIN_EXPECT_FALSE(h.audio.GetMixer().IsSnapshotActive("Underwater"));
+}
+
 ENJIN_TEST_MAIN()

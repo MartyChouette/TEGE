@@ -1,6 +1,7 @@
 // EditorLayerComponents_Audio.cpp — Audio component inspector draw functions
 // Split from EditorLayerComponents.cpp for faster incremental builds.
 #include "Enjin/Editor/EditorLayer.h"
+#include "Enjin/Audio/AudioReactiveSystem.h"
 #include "Enjin/Editor/EditorTheme.h"
 #include "Enjin/Editor/InspectorUndo.h"
 #include "Enjin/Logging/Log.h"
@@ -566,10 +567,26 @@ void EditorLayer::DrawAudioSnapshotTriggerComponent(ECS::Entity entity) {
 
         InspectorUndo::Checkbox(m_UndoRedo, "Active##ST", &st->isActive);
 
-        char snapBuf[128] = {};
-        strncpy(snapBuf, st->snapshotName.c_str(), sizeof(snapBuf) - 1);
-        if (ImGui::InputText("Snapshot##ST", snapBuf, sizeof(snapBuf))) st->snapshotName = snapBuf;
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Built-in: Dialogue, Pause, Combat, Cutscene\nOr use a custom name.");
+        // Only the built-in snapshots exist; a free-text name here pushed
+        // nothing, and there is nowhere to author a custom one yet.
+        static const char* kSnapshots[] = {"Dialogue", "Pause", "Combat", "Cutscene"};
+        const char* shown = st->snapshotName.empty() ? "(none)" : st->snapshotName.c_str();
+        if (ImGui::BeginCombo("Snapshot##ST", shown)) {
+            for (const char* name : kSnapshots) {
+                if (ImGui::Selectable(name, st->snapshotName == name)) st->snapshotName = name;
+            }
+            ImGui::EndCombo();
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Pushed while the listener is inside the box, popped when it leaves.\n"
+                              "Dialogue and Cutscene duck music and effects, Pause quiets the game,\n"
+                              "Combat keeps effects up.");
+        }
+        Audio::AudioSnapshot known;
+        if (!st->snapshotName.empty() && !Audio::AudioReactiveSystem::ResolveSnapshotPreset(st->snapshotName, known)) {
+            ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.3f, 1.0f), "'%s' is not a snapshot; nothing is pushed.",
+                               st->snapshotName.c_str());
+        }
 
         ImGui::DragFloat3("Half Extents##ST", &st->halfExtents.x, 0.5f, 0.1f, 100.0f);
 

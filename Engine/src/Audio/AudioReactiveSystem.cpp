@@ -92,6 +92,7 @@ void AudioReactiveSystem::Update(f32 deltaTime) {
     UpdateReverbZones(deltaTime);
     UpdateAmbientLayers(deltaTime);
     UpdateMusicZones(deltaTime);
+    UpdateSnapshotTriggers();
     UpdateLipSync(deltaTime);
     UpdateMIDIBindings(deltaTime);
 }
@@ -697,6 +698,80 @@ void AudioReactiveSystem::UpdateOcclusion(f32 deltaTime) {
             m_Audio->SetPitch(audioSrc->soundHandle, audioSrc->pitch);
         }
     }
+}
+
+// ============================================================================
+// Snapshot Triggers — listener inside the box pushes the named mixer snapshot
+// ============================================================================
+//
+// Nothing read AudioSnapshotTriggerComponent, and nothing in the engine pushed
+// a mixer snapshot at all, so the four presets in AudioBus.h were unreachable
+// (SD-27). A box, not a blend: a snapshot already fades by its own
+// transitionTime.
+
+bool AudioReactiveSystem::ResolveSnapshotPreset(const std::string& name, AudioSnapshot& out) {
+    if (name == "Dialogue") { out = SnapshotPresets::Dialogue(); return true; }
+    if (name == "Pause")    { out = SnapshotPresets::Pause();    return true; }
+    if (name == "Combat")   { out = SnapshotPresets::Combat();   return true; }
+    if (name == "Cutscene") { out = SnapshotPresets::Cutscene(); return true; }
+    return false;
+}
+
+void AudioReactiveSystem::UpdateSnapshotTriggers() {
+    if (!m_Audio) return;
+    AudioMixer& mixer = m_Audio->GetMixer();
+
+    std::vector<std::string> wanted;
+    for (auto entity : m_World->GetEntitiesWithComponent<ECS::AudioSnapshotTriggerComponent>()) {
+        if (!m_World->IsValid(entity)) continue;
+        auto* st = m_World->GetComponent<ECS::AudioSnapshotTriggerComponent>(entity);
+        auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
+        if (!st || !transform) continue;
+
+        bool inside = false;
+        if (st->isActive && m_HasListener) {
+            const Math::Vector3 local = m_ListenerPos - transform->position;
+            inside = std::fabs(local.x) <= st->halfExtents.x &&
+                     std::fabs(local.y) <= st->halfExtents.y &&
+                     std::fabs(local.z) <= st->halfExtents.z;
+        }
+        st->listenerInside = inside;
+        if (!inside || st->snapshotName.empty()) continue;
+
+        AudioSnapshot probe;
+        if (!ResolveSnapshotPreset(st->snapshotName, probe)) {
+            if (std::find(m_WarnedSnapshotNames.begin(), m_WarnedSnapshotNames.end(),
+                          st->snapshotName) == m_WarnedSnapshotNames.end()) {
+                m_WarnedSnapshotNames.push_back(st->snapshotName);
+                ENJIN_LOG_WARN(Audio,
+                    "Audio Snapshot Trigger names '%s', which is not a snapshot. The built-in "
+                    "ones are Dialogue, Pause, Combat and Cutscene.", st->snapshotName.c_str());
+            }
+            continue;
+        }
+        if (std::find(wanted.begin(), wanted.end(), st->snapshotName) == wanted.end()) {
+            wanted.push_back(st->snapshotName);
+        }
+    }
+
+    for (const auto& name : m_TriggerSnapshots) {
+        if (std::find(wanted.begin(), wanted.end(), name) == wanted.end()) mixer.PopSnapshot(name);
+    }
+    for (const auto& name : wanted) {
+        if (std::find(m_TriggerSnapshots.begin(), m_TriggerSnapshots.end(), name) == m_TriggerSnapshots.end()) {
+            AudioSnapshot snap;
+            ResolveSnapshotPreset(name, snap);
+            mixer.PushSnapshot(snap);
+        }
+    }
+    m_TriggerSnapshots = std::move(wanted);
+}
+
+void AudioReactiveSystem::ReleaseSnapshotTriggers() {
+    if (m_Audio) {
+        for (const auto& name : m_TriggerSnapshots) m_Audio->GetMixer().PopSnapshot(name);
+    }
+    m_TriggerSnapshots.clear();
 }
 
 // ============================================================================

@@ -38,6 +38,17 @@ public:
     const Math::Vector3& ListenerPosition() const { return m_ListenerPos; }
     bool HasListener() const { return m_HasListener; }
 
+    // Pops every mixer snapshot an AudioSnapshotTrigger pushed. Editor Stop
+    // calls it: the mixer belongs to the editor's audio engine and outlives
+    // play, so a trigger the listener was standing in would otherwise leave
+    // the editor ducked.
+    void ReleaseSnapshotTriggers();
+
+    // The built-in snapshot an AudioSnapshotTrigger names: Dialogue, Pause,
+    // Combat or Cutscene. False for anything else; there is nowhere to author
+    // a custom snapshot yet.
+    static bool ResolveSnapshotPreset(const std::string& name, AudioSnapshot& out);
+
 private:
     void UpdateBeatClock(f32 deltaTime);
     void UpdateBeatSync(f32 deltaTime);
@@ -62,6 +73,7 @@ private:
 
     void UpdateAmbientLayers(f32 deltaTime);
     void UpdateMusicZones(f32 deltaTime);
+    void UpdateSnapshotTriggers();
 
     void ApplyValueToTarget(ECS::Entity entity, ECS::AudioTargetProperty target, f32 value);
 
@@ -93,6 +105,11 @@ private:
     usize m_ReflectionCursor = 0;
     f32 m_SinceReflectionTrace = 0.0f;
     std::vector<SoundHandle> m_ReflectionOwners;
+
+    // Snapshots pushed by triggers, so the ones no trigger wants any more are
+    // popped (listener left, trigger switched off or destroyed, scene changed)
+    std::vector<std::string> m_TriggerSnapshots;
+    std::vector<std::string> m_WarnedSnapshotNames;
 };
 
 } // namespace Audio

@@ -328,6 +328,8 @@ private:
 
     // Listener (camera) state
     Math::Vector3 m_ListenerPosition;
+    // Each channel's bus volume as last applied to its playing sounds
+    f32 m_AppliedBusVolume[4] = {1.0f, 1.0f, 1.0f, 1.0f};
 
     // Web only: true from Initialize until a user gesture has let the browser
     // run the AudioContext. It exists because miniaudio cannot answer the

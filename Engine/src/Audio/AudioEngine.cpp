@@ -1463,6 +1463,31 @@ void AudioEngine::Update(f32 deltaTime) {
     m_Mixer.Update(deltaTime);
     m_Crossfader.Update(deltaTime);
 
+    // A bus volume reached a sound only when it started, so a snapshot ducking
+    // the music, or a mute in the mixer, changed nothing that was already
+    // playing. Re-apply a channel's volume to its playing sounds when its bus
+    // moved.
+    {
+        static const char* kBusNames[4] = {"SFX", "Music", "UI", "Voice"};
+        for (usize i = 0; i < 4; ++i) {
+            const Audio::AudioBus* bus = m_Mixer.GetBus(kBusNames[i]);
+            const f32 v = bus ? bus->GetEffectiveVolume() : 1.0f;
+            if (std::fabs(v - m_AppliedBusVolume[i]) < 1e-4f) continue;
+            m_AppliedBusVolume[i] = v;
+            const auto channel = static_cast<AudioChannel>(i);
+            for (auto& [handle, sound] : m_Sounds) {
+                if (sound.channel != channel || !sound.maSound) continue;
+                f32 vol = EffectiveVolume(sound.volume, channel);
+#ifdef ENJIN_AUDIO_STEAM_AUDIO
+                if (sound.binauralNode && sound.is3D) {
+                    vol *= Calculate3DVolume(sound.position, sound.minDistance, sound.maxDistance);
+                }
+#endif
+                ma_sound_set_volume(static_cast<ma_sound*>(sound.maSound), vol);
+            }
+        }
+    }
+
     // Compute per-bus VU levels from active sounds
     u32 busSoundCounts[4] = {0, 0, 0, 0};
     f32 busRmsLevels[4] = {0.0f, 0.0f, 0.0f, 0.0f};

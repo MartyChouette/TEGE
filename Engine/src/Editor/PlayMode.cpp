@@ -835,6 +835,9 @@ void PlayMode::Stop() {
     m_CoroutineScheduler.Clear();
     m_EventBus.Clear();
     m_EntityEventBus.Clear();
+    // The mixer is the editor's and outlives play; a snapshot a trigger pushed
+    // would keep the editor ducked
+    m_AudioReactiveSystem.ReleaseSnapshotTriggers();
 
     // Shutdown owned runtime systems
     m_AudioGraphRuntime.Shutdown();
