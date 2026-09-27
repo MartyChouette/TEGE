@@ -917,13 +917,7 @@ public:
         // World time is authored per scene. Seed the clock from it, and let the
         // scene decide whether it runs at all -- an editor checkbox was the only
         // source before, so a shipped game could never turn day and night on.
-        {
-            const auto& srs = m_SceneRenderSettings;
-            m_WorldTime.GetCalendarConfig().secondsPerGameHour = srs.secondsPerGameHour;
-            m_WorldTime.SetTime(srs.startTimeOfDay, 1, srs.startMonth, 1);
-            m_SeasonalWeather.GetConfig().enabled = srs.seasonalWeatherEnabled;
-            m_SeasonalWeather.GetConfig().weatherChangeInterval = srs.seasonalChangeInterval;
-        }
+        SeedWorldTimeFromScene();
 
         // GPU particles: the emitter config is owned by RenderSystem on desktop
         // and by this player on web, so ApplyToRuntime cannot reach it here.
@@ -1336,7 +1330,12 @@ public:
         // Who owns input this frame. One flag, read by InputActionMap, so
         // gameplay actions go quiet while a menu is up. Matches the desktop
         // player, and is what stops a pause-menu tap also firing in the world.
-        Enjin::Input::SetInputFocus((m_Paused || m_AtMainMenu)
+        // Held one frame past the dismissal too: the key or click that closed
+        // it is a pressed edge this frame, and it must not also pause or jump
+        const bool warningNow = WebContentWarningOpen();
+        const bool warningOpen = warningNow || m_WarningOpenLastFrame;
+        m_WarningOpenLastFrame = warningNow;
+        Enjin::Input::SetInputFocus((m_Paused || m_AtMainMenu || warningOpen)
             ? Enjin::Input::InputFocus::Menu
             : Enjin::Input::InputFocus::Gameplay);
 
@@ -1383,7 +1382,7 @@ public:
                 LogActionBindings("after rebind", Enjin::InputSystem::GameAction::Jump);
                 RebuildControlsMenu();
             }
-        } else if (!m_AtMainMenu && WebPauseOrBackPressed()) {
+        } else if (!m_AtMainMenu && !warningOpen && WebPauseOrBackPressed()) {
             // Unwind one screen at a time: controls -> options -> pause -> game.
             if (m_ControlsMenuEntity != Enjin::ECS::INVALID_ENTITY) CloseControlsMenu(true);
             else if (m_OptionsMenuEntity != Enjin::ECS::INVALID_ENTITY) CloseOptionsMenu(true);
@@ -1535,7 +1534,7 @@ public:
             }
         }
         m_SimFrame++;
-        if (m_Paused || m_AtMainMenu) {
+        if (m_Paused || m_AtMainMenu || warningOpen) {
             // World::Update still runs so deferred entity destroys flush (the
             // pause canvas removal on resume) -- gameplay systems stay skipped.
             m_World->Update(0.0f);
@@ -2761,6 +2760,10 @@ private:
         Enjin::ECS::WFCSystem::GenerateAll(m_World.get());
         // Random bags start a fresh shuffle per scene, same as the editor.
         Enjin::ECS::RandomBagSystem::ResetAll(m_World.get());
+        // Quest flows start from their first step, as on desktop (WP-6)
+        for (auto entity : m_World->GetEntitiesWithComponent<Enjin::ECS::QuestFlowComponent>()) {
+            if (auto* qf = m_World->GetComponent<Enjin::ECS::QuestFlowComponent>(entity)) qf->ResetRuntimeState();
+        }
 
         // VisualScript full init (desktop: main.cpp:1696-1704)
         m_VisualScriptSystem.SetPhysics(m_Physics.get());
@@ -2810,6 +2813,11 @@ private:
     // desktop player's DoFlowTransition.
     void DoWebSceneTransition(const std::string& scenePath) {
         ENJIN_LOG_INFO(Player, "Scene transition: '%s'", scenePath.c_str());
+        // Before anything is torn down: the save system caches the departing
+        // scene's SceneState entities and auto-saves if the project asks for a
+        // save on transition. Desktop has done this since 2026-09-16; web
+        // never did, so the SceneState tier stayed empty in a browser (WP-6).
+        m_TieredSaveSystem.OnSceneTransition(m_CurrentWebScenePath, scenePath, m_World.get());
         if (m_Renderer) m_Renderer->WaitForAllFrames();
         m_ScriptSystem.ShutdownAllScripts();
         m_StreamingManager.ClearChunks();   // drop streamed-in chunk entities with the old scene
@@ -2839,6 +2847,12 @@ private:
         m_SceneRenderSettings.ApplyToRuntime(m_RenderSystem, &m_WebPostProcessBase);
         ApplyWebPostProcess();
         m_CurrentWebScenePath = scenePath;
+        // Also skipped until WP-6: a slow-motion scene left the next one in slow
+        // motion, the clock kept the first scene's time of day, and the next
+        // scene's content warnings never showed
+        Enjin::Scripting::SetTimeScale(1.0f);
+        SeedWorldTimeFromScene();
+        ShowWebContentWarnings(sceneStr);
         m_SimClock.Reset();
         m_WeatherSystem.SetRainIntensity(0.0f);
         m_WeatherSystem.SetSnowIntensity(0.0f);
@@ -2968,6 +2982,22 @@ private:
         } catch (const std::exception& e) {
             ENJIN_LOG_WARN(Player, "Failed to save /saves/accessibility.json: %s", e.what());
         }
+    }
+
+    void SeedWorldTimeFromScene() {
+        const auto& srs = m_SceneRenderSettings;
+        m_WorldTime.GetCalendarConfig().secondsPerGameHour = srs.secondsPerGameHour;
+        m_WorldTime.SetTime(srs.startTimeOfDay, 1, srs.startMonth, 1);
+        m_SeasonalWeather.GetConfig().enabled = srs.seasonalWeatherEnabled;
+        m_SeasonalWeather.GetConfig().weatherChangeInterval = srs.seasonalChangeInterval;
+    }
+
+    // The content-warning overlay is a DOM element; the game holds while it is
+    // up, the way desktop's Update returns while its ImGui one is visible.
+    // Web kept simulating behind it, so a warned-about scene played its opening
+    // unseen (WP-7).
+    bool WebContentWarningOpen() const {
+        return EM_ASM_INT({ return document.getElementById('enjin-content-warning') ? 1 : 0; }) != 0;
     }
 
     // Web twin of the desktop content-warning overlay (ContentWarning.cpp is
@@ -3238,6 +3268,7 @@ private:
     Enjin::Gameplay::SavePointSystem m_SavePointSystem;
     Enjin::Gameplay::SaveIndicator m_SaveIndicator;
     Enjin::Gameplay::InteractionSystem m_InteractionSystem;
+    bool m_WarningOpenLastFrame = false;   // WebContentWarningOpen, previous frame
     Enjin::ECS::StateMachineSystem m_StateMachineSystem;
     Enjin::ECS::AISystem m_AISystem;
     Enjin::ECS::DialogueSystem m_DialogueSystem;
