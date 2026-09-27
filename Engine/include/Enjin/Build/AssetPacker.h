@@ -11,6 +11,13 @@ namespace Enjin::Build {
 // .enjpak file format constants
 constexpr const char ENJPAK_MAGIC[8] = {'E','N','J','P','A','K','1','0'};
 constexpr u32 ENJPAK_FLAG_OBFUSCATED = 1 << 0;
+// The pack's own key follows the fixed header (u16 length, then the bytes).
+// A build with a custom Pack Key produced a game neither player could open:
+// they only ever tried the default key (EP-17). The key travels with the pack
+// so the reader needs nothing else. This is obfuscation, not encryption; the
+// default key is in the source for anyone to read, and a custom key stored
+// beside the data protects no more than that.
+constexpr u32 ENJPAK_FLAG_KEY_EMBEDDED = 1 << 1;
 constexpr u16 ENJPAK_FORMAT_VERSION = 1;
 
 struct PakIndexEntry {

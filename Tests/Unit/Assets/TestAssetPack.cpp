@@ -153,7 +153,10 @@ ENJIN_TEST(AssetPack, IntegrityVerification) {
     std::filesystem::remove(pakPath);
 }
 
-ENJIN_TEST(AssetPack, WrongKeyFailsToRead) {
+// A custom key now travels in the pack header (EP-17), so the caller's key
+// no longer decides anything: the pack opens and reads intact whatever the
+// caller passes. The key is obfuscation, not a lock.
+ENJIN_TEST(AssetPack, TheCallersKeyDoesNotMatterForACustomKeyPack) {
     std::string pakPath = GetTempPakPath();
 
     {
@@ -164,16 +167,13 @@ ENJIN_TEST(AssetPack, WrongKeyFailsToRead) {
         ENJIN_ASSERT_TRUE(packer.Finalize());
     }
 
-    // Try reading with wrong key — should open (index might decode) but data will be garbled
     {
         AssetReader reader;
-        // The reader might or might not Open successfully with wrong key
-        // depending on how index parsing handles garbled data.
-        // At minimum, if it opens, integrity should fail
-        if (reader.Open(pakPath, "wrong_key")) {
-            ENJIN_EXPECT_FALSE(reader.VerifyIntegrity());
-            reader.Close();
-        }
+        ENJIN_ASSERT_TRUE(reader.Open(pakPath, "wrong_key"));
+        ENJIN_EXPECT_TRUE(reader.VerifyIntegrity());
+        const auto data = reader.ReadFile("secret.txt");
+        ENJIN_EXPECT_EQ(std::string(data.begin(), data.end()), std::string("Secret data"));
+        reader.Close();
     }
 
     std::filesystem::remove(pakPath);

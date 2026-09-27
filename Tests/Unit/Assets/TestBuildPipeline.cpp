@@ -477,7 +477,9 @@ ENJIN_TEST(AssetPackRoundTrip, MultipleAssetTypesRoundTrip) {
     std::filesystem::remove(pakPath);
 }
 
-ENJIN_TEST(AssetPackRoundTrip, WrongKeyCorruptsData) {
+// The pack carries its own custom key now (EP-17): a wrong caller key reads
+// intact data instead of garbage
+ENJIN_TEST(AssetPackRoundTrip, WrongKeyStillReadsTheEmbeddedKey) {
     std::string pakPath = GetTempPakPath("bp_wrong_key_test.enjpak");
 
     {
@@ -490,12 +492,9 @@ ENJIN_TEST(AssetPackRoundTrip, WrongKeyCorruptsData) {
 
     {
         AssetReader reader;
-        if (reader.Open(pakPath, "wrong_key")) {
-            // If the reader opened despite the wrong key, integrity must fail
-            ENJIN_EXPECT_FALSE(reader.VerifyIntegrity());
-            reader.Close();
-        }
-        // If Open returns false with a wrong key, that also satisfies the contract
+        ENJIN_ASSERT_TRUE(reader.Open(pakPath, "wrong_key"));
+        ENJIN_EXPECT_TRUE(reader.VerifyIntegrity());
+        reader.Close();
     }
 
     std::filesystem::remove(pakPath);
@@ -1150,6 +1149,26 @@ ENJIN_TEST(BuildPackContents, RuntimeFilesArePackedAndToolFoldersAreNot) {
     ENJIN_EXPECT_FALSE(tege);
     reader.Close();
     fs::remove_all(root, ec);
+}
+
+// EP-17: a pack built with a custom key could not be opened by either
+// player, which only try the default key. The key now travels in the header.
+ENJIN_TEST(AssetPackRoundTrip, ACustomKeyPackOpensWithoutTheKey) {
+    std::string pakPath = GetTempPakPath("bp_custom_key.enjpak");
+    {
+        AssetPacker packer;
+        ENJIN_ASSERT_TRUE(packer.Begin(pakPath, "my secret game key"));
+        ENJIN_ASSERT_TRUE(packer.AddData("scene.enjin", "hello", 5));
+        ENJIN_ASSERT_TRUE(packer.Finalize());
+    }
+    for (const char* tryKey : { "", "enjin_default_pack_key_2025", "wrong" }) {
+        AssetReader reader;
+        ENJIN_ASSERT_TRUE(reader.Open(pakPath, tryKey));
+        const auto data = reader.ReadFile("scene.enjin");
+        ENJIN_EXPECT_EQ(std::string(data.begin(), data.end()), std::string("hello"));
+        reader.Close();
+    }
+    std::filesystem::remove(pakPath);
 }
 
 ENJIN_TEST_MAIN()

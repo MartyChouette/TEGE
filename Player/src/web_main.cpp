@@ -159,7 +159,8 @@
 #include <sstream>
 #include <algorithm>
 
-static constexpr const char* PACK_KEY = "enjin_default_pack_key";
+// The reader's default when given "" (a custom key travels in the pack)
+static constexpr const char* PACK_KEY = "enjin_default_pack_key_2025";
 
 // Forward declare for extern "C" callbacks
 // Fetch a file the way a redeployed asset needs to be fetched.

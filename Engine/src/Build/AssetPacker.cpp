@@ -58,6 +58,10 @@ bool AssetPacker::Begin(const std::string& outputPath, const std::string& key, b
     m_File.write(ENJPAK_MAGIC, 8);
     // Flags (4 bytes): the reader undoes the XOR only when this bit is set
     u32 flags = obfuscate ? ENJPAK_FLAG_OBFUSCATED : 0u;
+    // A custom key rides in the header; the default one needs no help
+    const bool embedKey = obfuscate && m_Key != "enjin_default_pack_key_2025" &&
+                          m_Key.size() <= 0xFFFFu;
+    if (embedKey) flags |= ENJPAK_FLAG_KEY_EMBEDDED;
     m_File.write(reinterpret_cast<const char*>(&flags), sizeof(flags));
     // Format version (2 bytes)
     u16 version = ENJPAK_FORMAT_VERSION;
@@ -68,6 +72,11 @@ bool AssetPacker::Begin(const std::string& outputPath, const std::string& key, b
     // Index offset placeholder (8 bytes) - updated in Finalize
     u64 indexOffset = 0;
     m_File.write(reinterpret_cast<const char*>(&indexOffset), sizeof(indexOffset));
+    if (embedKey) {
+        const u16 keyLen = static_cast<u16>(m_Key.size());
+        m_File.write(reinterpret_cast<const char*>(&keyLen), sizeof(keyLen));
+        m_File.write(m_Key.data(), keyLen);
+    }
 
     m_DataStartOffset = static_cast<u64>(m_File.tellp());
     m_Active = true;

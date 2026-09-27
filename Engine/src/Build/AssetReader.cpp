@@ -61,6 +61,20 @@ bool AssetReader::Open(const std::string& pakPath, const std::string& key) {
     u64 indexOffset = 0;
     file.read(reinterpret_cast<char*>(&indexOffset), sizeof(indexOffset));
 
+    // The pack's own key, when the build embedded one: it wins over whatever
+    // the caller guessed (EP-17)
+    if ((flags & ENJPAK_FLAG_KEY_EMBEDDED) != 0 && (flags & ENJPAK_FLAG_OBFUSCATED) != 0) {
+        u16 keyLen = 0;
+        file.read(reinterpret_cast<char*>(&keyLen), sizeof(keyLen));
+        std::string embedded(keyLen, '\0');
+        if (keyLen > 0) file.read(embedded.data(), keyLen);
+        if (!file.good() || embedded.empty()) {
+            ENJIN_LOG_ERROR(Build, "Pack header key is unreadable: %s", pakPath.c_str());
+            return false;
+        }
+        m_Key = embedded;
+    }
+
     // Seek to end to get file size, then read footer
     file.seekg(0, std::ios::end);
     u64 fileSize = static_cast<u64>(file.tellg());
