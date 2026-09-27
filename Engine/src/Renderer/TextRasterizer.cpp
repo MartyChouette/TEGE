@@ -1,5 +1,6 @@
 #define STB_TRUETYPE_IMPLEMENTATION
 #include <stb_truetype.h>
+#include "Enjin/Platform/AssetFS.h"
 
 #include "Enjin/Renderer/TextRasterizer.h"
 #include "Enjin/Renderer/TextEncoding.h"
@@ -60,9 +61,9 @@ const TextRasterizer::FontData* TextRasterizer::GetOrLoadFont(const std::string&
             }
         }
     }
-    std::ifstream file(loadPath, std::ios::binary | std::ios::ate);
-    const auto fileSize = file.is_open() ? file.tellg() : std::streampos(0);
-    if (!file.is_open() || fileSize <= 0) {
+    // Through AssetFS, so a packed build reads the pak's copy (EP-18)
+    std::vector<u8> fontBytes;
+    if (!Platform::AssetFS::ReadBytes(loadPath, fontBytes) || fontBytes.empty()) {
         // Fall back to the embedded body face rather than returning nothing.
         // Returning nullptr here left the text unbaked, and the caller drew an
         // empty quad -- a blank grey box on screen with the reason only in the
@@ -82,10 +83,7 @@ const TextRasterizer::FontData* TextRasterizer::GetOrLoadFont(const std::string&
     }
 
     FontData fontData;
-    fontData.fileData.resize(static_cast<usize>(fileSize));
-    file.seekg(0);
-    file.read(reinterpret_cast<char*>(fontData.fileData.data()), fileSize);
-    file.close();
+    fontData.fileData = std::move(fontBytes);
 
     auto [inserted, success] = m_FontCache.emplace(cacheKey, std::move(fontData));
     if (!success) {

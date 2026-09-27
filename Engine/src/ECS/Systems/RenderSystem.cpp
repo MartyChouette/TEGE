@@ -1,4 +1,5 @@
 #include "Enjin/ECS/Systems/RenderSystem.h"
+#include "Enjin/Platform/AssetFS.h"
 #include "Enjin/ECS/Components/IKComponents.h"
 #include "Enjin/ECS/Components/HandIKComponent.h"
 #include "Enjin/Animation/IKSolver.h"
@@ -8505,16 +8506,10 @@ Renderer::FontAtlas* RenderSystem::GetOrBuildFontAtlas(const std::string& fontPa
                     }
                 }
             }
-            std::ifstream file(loadPath, std::ios::binary | std::ios::ate);
-            if (file.is_open()) {
-                auto sz = file.tellg();
-                if (sz > 0) {
-                    fileData.resize(static_cast<usize>(sz));
-                    file.seekg(0);
-                    file.read(reinterpret_cast<char*>(fileData.data()), sz);
-                    bytes = fileData.data();
-                    size = fileData.size();
-                }
+            // Through AssetFS, so a packed build reads the pak's copy (EP-18)
+            if (Platform::AssetFS::ReadBytes(loadPath, fileData) && !fileData.empty()) {
+                bytes = fileData.data();
+                size = fileData.size();
             }
             if (!bytes) {
                 // An authored font that will not load falls back to the

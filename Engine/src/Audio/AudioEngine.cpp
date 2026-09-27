@@ -7,6 +7,7 @@
 #include "Enjin/Logging/Log.h"
 #include <array>
 #include <atomic>
+#include <algorithm>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -15,6 +16,7 @@
 // miniaudio supports Emscripten/Web Audio out of the box (MA_ENABLE_WEBAUDIO).
 // No special handling needed — miniaudio auto-detects the platform.
 #include "miniaudio.h"
+#include "Enjin/Platform/AssetFS.h"
 #include "Enjin/Audio/LoFi.h"
 
 #if defined(__EMSCRIPTEN__)
@@ -429,6 +431,59 @@ AudioEngine::~AudioEngine() {
     Shutdown();
 }
 
+namespace {
+// miniaudio opens clips itself, at load and again at play. This VFS hands it
+// the bytes through AssetFS, so a packed build plays the pak's copy (EP-18).
+// Read-only: the audio engine never writes a clip.
+struct AssetFSAudioFile {
+    std::vector<Enjin::u8> bytes;
+    size_t pos = 0;
+};
+
+ma_result VfsOpen(ma_vfs*, const char* path, ma_uint32 openMode, ma_vfs_file* pFile) {
+    if (!path || !pFile) return MA_INVALID_ARGS;
+    if (openMode & MA_OPEN_MODE_WRITE) return MA_ACCESS_DENIED;
+    auto* f = new AssetFSAudioFile();
+    if (!Enjin::Platform::AssetFS::ReadBytes(path, f->bytes)) { delete f; return MA_DOES_NOT_EXIST; }
+    *pFile = f;
+    return MA_SUCCESS;
+}
+ma_result VfsOpenW(ma_vfs*, const wchar_t*, ma_uint32, ma_vfs_file*) { return MA_NOT_IMPLEMENTED; }
+ma_result VfsClose(ma_vfs*, ma_vfs_file file) { delete static_cast<AssetFSAudioFile*>(file); return MA_SUCCESS; }
+ma_result VfsRead(ma_vfs*, ma_vfs_file file, void* dst, size_t size, size_t* read) {
+    auto* f = static_cast<AssetFSAudioFile*>(file);
+    const size_t n = std::min(size, f->bytes.size() - f->pos);
+    if (n) std::memcpy(dst, f->bytes.data() + f->pos, n);
+    f->pos += n;
+    if (read) *read = n;
+    return (n == 0 && size > 0) ? MA_AT_END : MA_SUCCESS;
+}
+ma_result VfsWrite(ma_vfs*, ma_vfs_file, const void*, size_t, size_t*) { return MA_ACCESS_DENIED; }
+ma_result VfsSeek(ma_vfs*, ma_vfs_file file, ma_int64 offset, ma_seek_origin origin) {
+    auto* f = static_cast<AssetFSAudioFile*>(file);
+    const ma_int64 base = origin == ma_seek_origin_start ? 0
+                        : origin == ma_seek_origin_current ? static_cast<ma_int64>(f->pos)
+                        : static_cast<ma_int64>(f->bytes.size());
+    const ma_int64 to = base + offset;
+    if (to < 0 || to > static_cast<ma_int64>(f->bytes.size())) return MA_BAD_SEEK;
+    f->pos = static_cast<size_t>(to);
+    return MA_SUCCESS;
+}
+ma_result VfsTell(ma_vfs*, ma_vfs_file file, ma_int64* cursor) {
+    *cursor = static_cast<ma_int64>(static_cast<AssetFSAudioFile*>(file)->pos);
+    return MA_SUCCESS;
+}
+ma_result VfsInfo(ma_vfs*, ma_vfs_file file, ma_file_info* info) {
+    info->sizeInBytes = static_cast<ma_uint64>(static_cast<AssetFSAudioFile*>(file)->bytes.size());
+    return MA_SUCCESS;
+}
+
+ma_vfs_callbacks& AssetFSVfs() {
+    static ma_vfs_callbacks cb = { VfsOpen, VfsOpenW, VfsClose, VfsRead, VfsWrite, VfsSeek, VfsTell, VfsInfo };
+    return cb;
+}
+} // namespace
+
 bool AudioEngine::Initialize() {
     if (m_Initialized) return true;
 
@@ -442,6 +497,7 @@ bool AudioEngine::Initialize() {
         impl->lofi.Process(frames, static_cast<u64>(count), ma_engine_get_sample_rate(&impl->engine));
     };
     engineCfg.pProcessUserData = m_Impl.get();
+    engineCfg.pResourceManagerVFS = &AssetFSVfs();   // clips read through AssetFS (EP-18)
     ma_result result = ma_engine_init(&engineCfg, &m_Impl->engine);
     if (result != MA_SUCCESS) {
         ENJIN_LOG_ERROR(Audio, "Failed to initialize miniaudio engine (error %d)", result);
@@ -852,15 +908,12 @@ void AudioEngine::SetListenerPosition(const Math::Vector3& position, const Math:
 bool AudioEngine::LoadWAV(const std::string& filepath, AudioClipData& clip) {
     // With miniaudio, we don't need to manually parse WAV — ma_sound_init_from_file handles it.
     // Just verify the file exists and store the path.
-    std::ifstream file(filepath, std::ios::binary);
-    if (!file.is_open()) {
+    std::vector<u8> bytes;   // through AssetFS, as the clip itself will be (EP-18)
+    if (!Platform::AssetFS::ReadBytes(filepath, bytes)) {
         ENJIN_LOG_ERROR(Audio, "Audio file not found: %s", filepath.c_str());
         return false;
     }
-
-    // Get file size for duration estimate (miniaudio will decode it properly)
-    file.seekg(0, std::ios::end);
-    auto fileSize = file.tellg();
+    const auto fileSize = bytes.size();
     clip.loaded = true;
     clip.filepath = filepath;
     clip.duration = 0.0f; // Will be determined by miniaudio at play time
@@ -875,8 +928,7 @@ AudioClipHandle AudioEngine::LoadClip(const std::string& filepath) {
     std::string resolved = filepath;
     if (!m_AssetRoot.empty() && !std::filesystem::path(filepath).is_absolute()) {
         std::filesystem::path rooted = std::filesystem::path(m_AssetRoot) / filepath;
-        std::error_code ec;
-        if (std::filesystem::exists(rooted, ec)) {
+        if (Platform::AssetFS::Exists(rooted.string())) {
             resolved = rooted.string();
         }
     }
@@ -905,8 +957,15 @@ AudioClipHandle AudioEngine::LoadClip(const std::string& filepath) {
     // ma_decoder_init_file parses the header and picks a decoder, so an
     // unsupported or corrupt file fails HERE, by name, at import time. It also
     // gives the clip a real duration, which nothing could fill before.
+    //
+    // The bytes come through AssetFS so a packed build probes the pak's copy
+    // (EP-18), and the probe decodes from MEMORY: through a VFS stream the
+    // Vorbis decoder cannot report a length, and every .ogg read 0 seconds.
+    std::vector<u8> probeBytes;
     ma_decoder probe;
-    const ma_result probeResult = ma_decoder_init_file(resolved.c_str(), nullptr, &probe);
+    ma_result probeResult = MA_DOES_NOT_EXIST;
+    if (Platform::AssetFS::ReadBytes(resolved, probeBytes) && !probeBytes.empty())
+        probeResult = ma_decoder_init_memory(probeBytes.data(), probeBytes.size(), nullptr, &probe);
     if (probeResult == MA_SUCCESS) {
         clipData.loaded = true;
         clipData.sampleRate = probe.outputSampleRate;
@@ -920,8 +979,7 @@ AudioClipHandle AudioEngine::LoadClip(const std::string& filepath) {
         }
         ma_decoder_uninit(&probe);
     } else {
-        std::ifstream testFile(resolved, std::ios::binary);
-        if (!testFile.is_open()) {
+        if (!Platform::AssetFS::Exists(resolved)) {
             ENJIN_LOG_WARN(Audio, "Audio file not found: %s", resolved.c_str());
         } else {
             // Present but undecodable. Name the format, because the usual cause

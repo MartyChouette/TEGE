@@ -1,4 +1,5 @@
 #include "Enjin/Assets/Prefab.h"
+#include "Enjin/Platform/AssetFS.h"
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/Components/Mesh.h"
 #include "Enjin/ECS/Components/Material.h"
@@ -676,8 +677,9 @@ std::shared_ptr<Prefab> PrefabManager::LoadPrefab(const std::string& filepath) {
         }
     }
 
-    std::ifstream file(resolved);
-    if (!file.is_open()) {
+    // Through AssetFS, so a packed build reads the pak's copy (EP-18)
+    std::string prefabText;
+    if (!Platform::AssetFS::ReadText(resolved, prefabText)) {
         ENJIN_LOG_ERROR(Assets, "Failed to load prefab from '%s' (resolved '%s', root '%s')",
                         filepath.c_str(), resolved.c_str(),
                         m_AssetRoot.empty() ? "<unset>" : m_AssetRoot.c_str());
@@ -686,7 +688,7 @@ std::shared_ptr<Prefab> PrefabManager::LoadPrefab(const std::string& filepath) {
 
     json j;
     try {
-        file >> j;
+        j = json::parse(prefabText);
     } catch (const json::exception& e) {
         ENJIN_LOG_ERROR(Assets, "Failed to parse prefab JSON: %s", e.what());
         return nullptr;

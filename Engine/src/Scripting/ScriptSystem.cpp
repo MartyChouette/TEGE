@@ -1,4 +1,5 @@
 #include "Enjin/Scripting/ScriptSystem.h"
+#include "Enjin/Platform/AssetFS.h"
 #include "Enjin/Scripting/ScriptEngine.h"
 #include "Enjin/Scripting/ScriptBindings.h"   // ClearBindingsEventListeners on teardown + mouse pick
 #include "Enjin/Input/TouchActionBridge.h"   // script touch buttons belong to their scene
@@ -414,10 +415,8 @@ void ScriptSystem::InitScript(ECS::Entity entity, usize index) {
 
     // Parse [Property] annotations from source for editor metadata
     {
-        std::ifstream file(resolvedPath);
-        if (file.is_open()) {
-            std::string source((std::istreambuf_iterator<char>(file)),
-                                std::istreambuf_iterator<char>());
+        std::string source;   // through AssetFS, as the compile is (EP-18)
+        if (Platform::AssetFS::ReadText(resolvedPath, source)) {
             auto parsed = Scripting::ParseProperties(source);
             for (const auto& pp : parsed) {
                 auto sp = Scripting::ToScriptProperty(pp);

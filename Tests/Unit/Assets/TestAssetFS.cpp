@@ -7,6 +7,7 @@
 // wins over the disk, and that the disk is still there for what it lacks.
 #include "EnjinTest.h"
 #include "Enjin/Platform/AssetFS.h"
+#include "Enjin/Assets/Prefab.h"
 
 #include <filesystem>
 #include <fstream>
@@ -131,6 +132,30 @@ ENJIN_TEST(AssetFS, test_assetfs_unmounted_reads_disk_only) {
     ENJIN_ASSERT_TRUE(ok);
     ENJIN_EXPECT_EQ(s, std::string("disk"));
     ENJIN_EXPECT_FALSE(okMissing);
+}
+
+// The case that was broken in a shipped game: GeneratedGeometry keeps its
+// prefabs in prefabs/, outside assets/, so no loose copy carried them and a
+// scatter placed nothing. A prefab that exists only in the package must load.
+ENJIN_TEST(AssetFS, test_assetfs_prefab_only_in_package_loads) {
+    // Arrange
+    TempDir dir("prefab");
+    FakePackage pak;
+    pak.files["prefabs/Boulder.prefab"] = R"({"name":"Boulder","entities":[]})";
+    pak.MountAt(dir.root.string());
+    auto& prefabs = Enjin::Assets::PrefabManager::Get();
+    prefabs.ClearCache();
+    prefabs.SetAssetRoot(dir.root.string());
+
+    // Act
+    auto prefab = prefabs.LoadPrefab("prefabs/Boulder.prefab");
+
+    // Assert
+    ENJIN_ASSERT_TRUE(prefab != nullptr);
+    ENJIN_EXPECT_FALSE(std::filesystem::exists(dir.root / "prefabs" / "Boulder.prefab"));
+
+    prefabs.ClearCache();
+    prefabs.SetAssetRoot("");
 }
 
 ENJIN_TEST_MAIN()

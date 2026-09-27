@@ -1,4 +1,5 @@
 #include "Enjin/GUI/LocalizationBoot.h"
+#include "Enjin/Platform/AssetFS.h"
 #include "Enjin/GUI/Localization.h"
 #include "Enjin/Build/AssetReader.h"
 #include "Enjin/Logging/Log.h"
@@ -78,9 +79,11 @@ u32 ApplyLocalizationSettings(const std::string& localizationJson,
                 if (fs::path(path).is_relative() && !assetRoot.empty() && !fs::exists(path, ec)) {
                     full = (fs::path(assetRoot) / path).string();
                 }
-                ok = (FormatFor(path) == LocalizationManager::TableFormat::Csv)
-                         ? loc.LoadFromCSV(full)
-                         : loc.LoadFromJSON(full);
+                // Through AssetFS: the desktop player's pak is mounted there
+                // rather than passed in as a reader (EP-18)
+                std::vector<u8> bytes;
+                if (Platform::AssetFS::ReadBytes(full, bytes) && !bytes.empty())
+                    ok = loc.LoadFromMemory(bytes.data(), bytes.size(), FormatFor(path), path);
             }
             if (ok) ++loaded;
             else ENJIN_LOG_WARN(Asset, "Localization: could not load string table '%s'", path.c_str());

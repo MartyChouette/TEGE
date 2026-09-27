@@ -1,4 +1,6 @@
 #include "Enjin/Assets/MeshAssetCache.h"
+#include "Enjin/Platform/AssetFS.h"
+#include <sstream>
 #include "Enjin/Assets/SceneImporter.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/Logging/Log.h"
@@ -160,10 +162,12 @@ bool MeshAssetCache::LoadBaked(const std::string& resolvedSource, CachedFile& ou
     const std::string bakedPath = BakedPath(resolvedSource);
     if (bakedPath.empty()) return false;
     std::error_code ec;
-    if (!std::filesystem::exists(bakedPath, ec)) return false;
-
-    std::ifstream in(bakedPath, std::ios::binary);
-    if (!in) return false;
+    // Through AssetFS: a packed build carries the bakes in its pak (EP-18)
+    std::vector<u8> bakedBytes;
+    if (!Platform::AssetFS::ReadBytes(bakedPath, bakedBytes)) return false;
+    std::istringstream in(std::string(bakedBytes.begin(), bakedBytes.end()), std::ios::binary);
+    bakedBytes.clear();
+    bakedBytes.shrink_to_fit();
     auto rd = [&](void* p, usize n) { in.read(reinterpret_cast<char*>(p), static_cast<std::streamsize>(n)); };
 
     u32 magic = 0, version = 0;

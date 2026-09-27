@@ -1,4 +1,5 @@
 #include "Enjin/Platform/Platform.h"
+#include "Enjin/Platform/AssetFS.h"
 #include "Enjin/Platform/Paths.h"
 #include "Enjin/Scripting/ScriptEngine.h"
 #include "Enjin/Scripting/CoroutineScheduler.h"
@@ -203,15 +204,11 @@ bool ScriptEngine::ReadScriptSource(const std::string& path, std::string& outSou
         }
     }
 
-    // Strategy 2: Read from local disk file
-    std::ifstream file(path, std::ios::binary);
-    if (file.is_open()) {
-        outSource.assign((std::istreambuf_iterator<char>(file)),
-                          std::istreambuf_iterator<char>());
-        return true;
-    }
-
-    return false;
+    // Strategy 2: AssetFS, which maps the absolute path ScriptSystem hands
+    // over (<root>/scripts/Foo.as) to its pak entry, and reads the disk when
+    // there is no package. The candidates above never matched that absolute
+    // path, so a packed build compiled every script from the loose copy (EP-18).
+    return Platform::AssetFS::ReadText(path, outSource);
 }
 
 // ---------------------------------------------------------------------------
@@ -1515,6 +1512,13 @@ int ScriptEngine::IncludeCallback(const char* include,
         candPaths.push_back(include);
         candPaths.push_back(std::string("scripts/") + include);
         candPaths.push_back(std::string("scripts/enjin_api/") + include);
+        // The rooted candidates are absolute (the script directory is), and a
+        // pak key never is: add each one's pak path too, or a packed build
+        // missed every include it did not happen to spell relatively (EP-18)
+        for (size_t i = 0, n = candPaths.size(); i < n; ++i) {
+            const std::string v = Platform::AssetFS::ToVirtualPath(candPaths[i]);
+            if (!v.empty()) candPaths.push_back(v);
+        }
 
         for (const auto& cand : candPaths) {
             if (self->m_AssetReader->HasFile(cand)) {

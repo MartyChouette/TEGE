@@ -271,6 +271,9 @@ public:
                     return true;
                 },
                 [this](const std::string& v) { return m_AssetReader.HasFile(v); });
+            // File_ReadText prefers a loose file a player can edit, and the pak's
+            // copy answers when there is none, as on web (EP-18)
+            Enjin::Scripting::SetBindingsFileAssetReader(&m_AssetReader);
 
             // Read build manifest from pack
             auto manifestData = m_AssetReader.ReadFile("_build/manifest.json");
@@ -1239,6 +1242,7 @@ public:
         m_Camera.reset();
         m_Renderer.reset();
         Enjin::Platform::AssetFS::Unmount();   // its reader captures m_AssetReader
+        Enjin::Scripting::SetBindingsFileAssetReader(nullptr);
         m_AssetReader.Close();
     }
 

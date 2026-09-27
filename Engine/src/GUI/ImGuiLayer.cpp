@@ -1,4 +1,6 @@
 #include "Enjin/GUI/ImGuiLayer.h"
+#include "Enjin/Platform/AssetFS.h"
+#include <cstring>
 #include <cmath>
 #include "Enjin/GUI/UIFontRegistry.h"
 #include "Enjin/GUI/Localization.h"
@@ -322,7 +324,14 @@ static ImFont* AddEmbeddedFont(ImGuiIO& io, const unsigned char* data, unsigned 
 // because it needs glyphs the embedded ones lack; loading it on the default
 // range would clip it right back down.
 static ImFont* AddFileFont(ImGuiIO& io, const char* path, f32 sizePx) {
-    return io.Fonts->AddFontFromFileTTF(path, sizePx, nullptr, AtlasGlyphRanges(io.Fonts));
+    // Through AssetFS, so a packed build's UI fonts come from the pak (EP-18).
+    // The atlas owns and frees the copy, as AddFontFromFileTTF's would.
+    std::vector<u8> bytes;
+    if (!path || !Platform::AssetFS::ReadBytes(path, bytes) || bytes.empty()) return nullptr;
+    void* data = IM_ALLOC(bytes.size());
+    std::memcpy(data, bytes.data(), bytes.size());
+    return io.Fonts->AddFontFromMemoryTTF(data, static_cast<int>(bytes.size()), sizePx, nullptr,
+                                          AtlasGlyphRanges(io.Fonts));
 }
 
 void ImGuiLayer::LoadFonts(const EditorFontConfig& fontConfig) {

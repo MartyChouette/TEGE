@@ -130,14 +130,15 @@ BuildResult BuildPipeline::Execute(const BuildConfig& requested) {
             AddMessage(MessageSeverity::Info, "Web export: " + htmlResult.outputPath);
         }
     } else {
-        // Scripts, the enjin_api headers, and script-referenced assets (audio
-        // one-shots etc., invisible to scene scanning) always ship as loose
-        // files next to the executable. The script engine can now also read
-        // scripts from the .enjpak asset pack (ScriptEngine::SetAssetReader) as
-        // a fallback, but the loose copies are what the runtime loads today.
+        // Scripts, the enjin_api headers, assets/ and the mesh bakes ship loose
+        // only in a Loose Files build. A Packed build carries all of them in the
+        // pak and the desktop player reads every loader through it
+        // (Platform::AssetFS), so copying them loose as well shipped assets
+        // twice, the second time in the clear, and "Packed" was not true (EP-18).
         // Failure here is fatal to the build: a game whose scripts did not copy
         // launches and does nothing, and used to do so behind a success message.
-        if (!EmitLooseRuntimeFiles(config.outputDir)) {
+        if (config.packagingMode == PackagingMode::LooseFiles &&
+            !EmitLooseRuntimeFiles(config.outputDir)) {
             m_Result.success = false;
         }
         CopyPlayer(config.outputDir);  // reports its own failure; Phase 5 decides
@@ -1302,22 +1303,47 @@ void BuildPipeline::ScanProjectDirectory() {
                 // Hidden folders are tools' data, not the game's: .tege holds
                 // the editor's bindings and the script API stub, .vscode and
                 // .git their own. With .json now packed they would ship.
+                //
+                // Except .enjin/meshcache: baked LOD levels exist nowhere else
+                // (they are not in the source model), and with the desktop
+                // player reading the pak they have to be in it (EP-18). The
+                // rest of .enjin stays out.
                 const std::string dirName = entry.path().filename().string();
-                if (!dirName.empty() && dirName[0] == '.') it.disable_recursion_pending();
+                const std::string parentName = entry.path().parent_path().filename().string();
+                const bool isEnjinDir = dirName == ".enjin";
+                const bool isMeshCache = parentName == ".enjin" && dirName == "meshcache";
+                const bool insideEnjinDir = parentName == ".enjin";
+                if (isEnjinDir || isMeshCache) continue;
+                if (insideEnjinDir || (!dirName.empty() && dirName[0] == '.'))
+                    it.disable_recursion_pending();
                 continue;
             }
 
             if (!entry.is_regular_file()) continue;
+            // Files loose in .enjin itself are editor state
+            if (entry.path().parent_path().filename() == ".enjin") continue;
 
             std::string ext = entry.path().extension().string();
             // Lowercase the extension for comparison
             for (auto& c : ext) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
 
+            bool mapped = false;
             for (const auto& mapping : mappings) {
                 if (ext == mapping.ext) {
                     mapping.target->insert(entry.path().string());
+                    mapped = true;
                     break;
                 }
+            }
+            // Everything under assets/ ships, whatever its extension. The build
+            // used to copy that folder loose wholesale, which is how files a
+            // script loads by name reached the game; a Packed build no longer
+            // copies it, so the pak has to carry all of it (EP-18).
+            if (!mapped) {
+                std::error_code rec;
+                const auto rel = fs::relative(entry.path(), fs::path(m_ProjectDir), rec);
+                const std::string relStr = rec ? std::string() : rel.generic_string();
+                if (relStr.rfind("assets/", 0) == 0) m_DataAssetPaths.insert(entry.path().string());
             }
         }
     } catch (const std::exception& e) {

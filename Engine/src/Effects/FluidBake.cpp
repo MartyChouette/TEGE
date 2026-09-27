@@ -1,4 +1,6 @@
 #include "Enjin/Effects/FluidBake.h"
+#include "Enjin/Platform/AssetFS.h"
+#include <sstream>
 #include "Enjin/Effects/FluidObstacles.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Transform.h"
@@ -40,7 +42,7 @@ void Write(std::ofstream& f, const T& v) {
 }
 
 template <typename T>
-bool Read(std::ifstream& f, T& v) {
+bool Read(std::istream& f, T& v) {
     f.read(reinterpret_cast<char*>(&v), sizeof(T));
     return static_cast<bool>(f);
 }
@@ -51,7 +53,7 @@ bool Read(std::ifstream& f, T& v) {
 // a single function and `kHeaderBytes` below is derived from it rather than
 // counted by hand -- the seek past the header used to be a literal sum, which
 // is a number that goes wrong silently the first time a field is added.
-bool ReadHeader(std::ifstream& f, FluidBakeInfo& out, u32& outVersion) {
+bool ReadHeader(std::istream& f, FluidBakeInfo& out, u32& outVersion) {
     char magic[sizeof(kMagic)] = {};
     f.read(magic, sizeof(magic));
     if (!f || std::memcmp(magic, kMagic, sizeof(kMagic)) != 0) return false;
@@ -362,8 +364,12 @@ bool FluidBake::Save(const std::string& path) const {
 }
 
 bool FluidBake::Load(const std::string& path) {
-    std::ifstream f(path, std::ios::binary);
-    if (!f) return false;
+    // Through AssetFS, so a packed build plays the pak's take (EP-18)
+    std::vector<u8> bytes;
+    if (!Platform::AssetFS::ReadBytes(path, bytes)) return false;
+    std::istringstream f(std::string(bytes.begin(), bytes.end()), std::ios::binary);
+    bytes.clear();
+    bytes.shrink_to_fit();
 
     FluidBakeInfo info;
     u32 version = 0;
