@@ -59,6 +59,7 @@
 #include "Enjin/Effects/InteractiveWater.h"
 #include "Enjin/Input/InputAction.h"
 #include "Enjin/Input/MIDIInput.h"
+#include "Enjin/Animation/Timeline.h"
 #include <atomic>
 #include <string>
 #include <unordered_map>
@@ -272,6 +273,7 @@ private:
     // Tween system
     ECS::TweenSystem m_TweenSystem;
     ECS::ActionTriggerSystem m_ActionTriggerSystem;
+    Animation::TimelineSystem m_TimelineSystem;
     ECS::GameplaySystem m_GameplaySystem;
 
     // Swarm system (data-oriented crowd proxies)

@@ -5,6 +5,7 @@
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/ECS/EntityEventBridge.h"
 #include "Enjin/ECS/Timers.h"
+#include "Enjin/Animation/Timeline.h"
 #include "Enjin/ECS/PostProcessVolumeBlend.h"
 #include <filesystem>
 #include <set>
@@ -638,6 +639,7 @@ public:
         m_ActionTriggerSystem.SetEventBus(&m_EntityEventBus);
         // Engine events (ActionTrigger, dialogue, water, timers) reach scripts and visual scripts
         Enjin::ECS::ForwardEntityEventsToScripts(m_EntityEventBus, &m_ScriptEventBus, &m_VisualScriptSystem);
+        m_TimelineSystem.SetEventBus(&m_EntityEventBus);
 
         // Touches that land on interactive UI become real pointers (press,
         // drag, release). Without this the move stick owns the left half of the
@@ -1714,6 +1716,7 @@ public:
         // frame's (the web order was reversed until the 08-31 parity audit).
         m_ActionTriggerSystem.Update(m_World.get(), deltaTime);
         Enjin::ECS::UpdateTimers(m_World.get(), deltaTime, &m_EntityEventBus);
+        m_TimelineSystem.Update(m_World.get(), deltaTime);
         m_GameplaySystem.Update(m_World.get(), deltaTime);
         // The active camera's ArtStyleComponent drives the scene-wide half of its
         // style (grain, CRT, VHS, palettes, outlines, stipple). Around twenty-five
@@ -3193,6 +3196,7 @@ private:
     Enjin::Gameplay::CinematicSystem m_CinematicSystem;
     Enjin::ECS::EntityEventBus m_EntityEventBus;
     Enjin::ECS::ActionTriggerSystem m_ActionTriggerSystem;
+    Enjin::Animation::TimelineSystem m_TimelineSystem;
     Enjin::ECS::GameplaySystem m_GameplaySystem;
     Enjin::InputSystem::InputProjectSettings m_InputSettings;
     Enjin::Gameplay::FootstepSystem m_FootstepSystem;

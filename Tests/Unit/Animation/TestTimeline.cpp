@@ -2,6 +2,7 @@
 #include "Enjin/Animation/Timeline.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Transform.h"
+#include "Enjin/ECS/EntityEventBus.h"
 
 #include <cmath>
 #include <string>
@@ -365,6 +366,111 @@ ENJIN_TEST(Easing, EaseOutIsAheadOfLinear) {
 ENJIN_TEST(Easing, StepHoldsUntilEnd) {
     // Step easing holds the start value until the segment completes.
     ENJIN_EXPECT_TRUE(EvalEasedTrack(TimelineEasing::Step, 1.0f, 2.0f, 10.0f) < 1.0f);
+}
+
+// ===========================================================================
+// Wired into the runtimes (SD-27): the fixes that came with it
+// ===========================================================================
+
+ENJIN_TEST(Runtime, PlayOnAwakeStartsWithoutAScript) {
+    // isPlaying is not saved, so Play On Awake is the only way a saved timeline
+    // starts. The check sat behind the !isPlaying skip and never ran.
+    TimelineComponent tlc;
+    tlc.duration = 2.0f;
+    tlc.playOnAwake = true;
+    Rig r;
+    MakeRig(r, tlc);
+    r.sys.Update(&r.world, 0.5f);
+    ENJIN_EXPECT_TRUE(r.tl->isPlaying);
+    ENJIN_EXPECT_FLOAT_EQ(r.tl->currentTime, 0.5f);
+}
+
+ENJIN_TEST(Runtime, RotationKeysAreDegrees) {
+    TimelineComponent tlc;
+    tlc.duration = 1.0f;
+    PropertyTrack track;
+    track.targetProperty = "rotation.z";
+    PropertyKeyframe k0; k0.time = 0.0f; k0.value = 0.0f;
+    PropertyKeyframe k1; k1.time = 1.0f; k1.value = 90.0f;
+    track.keyframes = {k0, k1};
+    tlc.propertyTracks.push_back(track);
+    Rig r;
+    MakeRig(r, tlc, true);
+    r.tl->propertyTracks[0].targetEntity = r.entity;
+    r.sys.Play(*r.tl);
+    r.sys.Update(&r.world, 0.5f);
+    const auto* tf = r.world.GetComponent<ECS::TransformComponent>(r.entity);
+    // 45 degrees about Z: +X goes to (0.707, 0.707, 0), and the quaternion stays unit
+    Vector3 x = tf->rotation.Rotate(Vector3(1.0f, 0.0f, 0.0f));
+    ENJIN_EXPECT_TRUE(std::abs((x.x) - (0.7071f)) < 1e-3f);
+    ENJIN_EXPECT_TRUE(std::abs((x.y) - (0.7071f)) < 1e-3f);
+    const f32 len = tf->rotation.x * tf->rotation.x + tf->rotation.y * tf->rotation.y +
+                    tf->rotation.z * tf->rotation.z + tf->rotation.w * tf->rotation.w;
+    ENJIN_EXPECT_TRUE(std::abs((len) - (1.0f)) < 1e-4f);
+}
+
+ENJIN_TEST(Runtime, VisibleStepsAtItsKey) {
+    TimelineComponent tlc;
+    tlc.duration = 2.0f;
+    PropertyTrack track;
+    track.targetProperty = "visible";
+    PropertyKeyframe k0; k0.time = 0.0f; k0.value = true;
+    PropertyKeyframe k1; k1.time = 1.0f; k1.value = false;
+    track.keyframes = {k0, k1};
+    tlc.propertyTracks.push_back(track);
+    Rig r;
+    MakeRig(r, tlc, true);
+    r.tl->propertyTracks[0].targetEntity = r.entity;
+    r.sys.Play(*r.tl);
+    r.sys.Update(&r.world, 0.9f);
+    ENJIN_EXPECT_TRUE(r.world.GetComponent<ECS::TransformComponent>(r.entity)->visible);
+    r.sys.Update(&r.world, 0.2f);
+    ENJIN_EXPECT_FALSE(r.world.GetComponent<ECS::TransformComponent>(r.entity)->visible);
+}
+
+ENJIN_TEST(Runtime, MarkersAreSentOnTheBus) {
+    TimelineComponent tlc;
+    tlc.duration = 2.0f;
+    EventTrack et;
+    TimelineEvent m; m.time = 1.0f; m.eventName = "door_slam"; m.eventData = "loud";
+    et.events.push_back(m);
+    tlc.eventTracks.push_back(et);
+    Rig r;
+    MakeRig(r, tlc);
+    ECS::EntityEventBus bus;
+    std::vector<ECS::EntityEvent> heard;
+    bus.SetForwarder([&](const std::string&, const ECS::EntityEvent& ev) { heard.push_back(ev); });
+    r.sys.SetEventBus(&bus);
+    r.sys.Play(*r.tl);
+    r.sys.Update(&r.world, 0.5f);
+    ENJIN_EXPECT_TRUE(heard.empty());
+    r.sys.Update(&r.world, 0.6f);
+    ENJIN_ASSERT_EQ(heard.size(), (size_t)1);
+    ENJIN_EXPECT_EQ(heard[0].name, std::string("door_slam"));
+    ENJIN_EXPECT_EQ(heard[0].sender, r.entity);
+    ENJIN_EXPECT_EQ(heard[0].strings.at("data"), std::string("loud"));
+    r.sys.Update(&r.world, 0.6f);   // once per pass
+    ENJIN_EXPECT_EQ(heard.size(), (size_t)1);
+
+    // Playing a finished timeline again is a fresh pass: back to the top, marker re-armed
+    r.sys.Update(&r.world, 1.0f);
+    ENJIN_EXPECT_TRUE(r.tl->isComplete);
+    r.sys.Play(*r.tl);
+    ENJIN_EXPECT_FLOAT_EQ(r.tl->currentTime, 0.0f);
+    r.sys.Update(&r.world, 1.5f);
+    ENJIN_EXPECT_EQ(heard.size(), (size_t)2);
+}
+
+ENJIN_TEST(Runtime, ZeroDurationCompletesInsteadOfGoingNaN) {
+    TimelineComponent tlc;
+    tlc.duration = 0.0f;
+    tlc.loop = true;
+    Rig r;
+    MakeRig(r, tlc);
+    r.sys.Play(*r.tl);
+    r.sys.Update(&r.world, 0.016f);
+    ENJIN_EXPECT_FALSE(r.tl->isPlaying);
+    ENJIN_EXPECT_TRUE(r.tl->currentTime == r.tl->currentTime);   // not NaN
 }
 
 ENJIN_TEST_MAIN()

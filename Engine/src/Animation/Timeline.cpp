@@ -3,6 +3,7 @@
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Material.h"
 #include "Enjin/ECS/Components/Skeleton.h"
+#include "Enjin/ECS/EntityEventBus.h"
 #include "Enjin/Logging/Log.h"
 #include <algorithm>
 #include <cmath>
@@ -12,17 +13,27 @@ namespace Animation {
 
 // --- Manual control ---
 
+namespace {
+// Marker fired flags and animation-track starts are per pass through the
+// timeline. Stop, a loop and a fresh Play all clear both.
+void ResetLatches(TimelineComponent& tl) {
+    for (auto& track : tl.eventTracks) {
+        for (auto& event : track.events) event.fired = false;
+    }
+    for (auto& track : tl.animationTracks) track.started = false;
+}
+}
+
 void TimelineSystem::Play(TimelineComponent& timeline) {
+    // Starting from the top is a fresh pass. This used to reset only when Play
+    // On Awake was also set, so a script replaying a finished timeline skipped
+    // every marker it had already fired.
+    if (timeline.currentTime == 0.0f || timeline.isComplete) {
+        if (timeline.isComplete && timeline.direction > 0) timeline.currentTime = 0.0f;
+        ResetLatches(timeline);
+    }
     timeline.isPlaying = true;
     timeline.isComplete = false;
-    if (timeline.playOnAwake && timeline.currentTime == 0.0f) {
-        // Reset all event fired flags when starting fresh
-        for (auto& track : timeline.eventTracks) {
-            for (auto& event : track.events) {
-                event.fired = false;
-            }
-        }
-    }
 }
 
 void TimelineSystem::Pause(TimelineComponent& timeline) {
@@ -35,12 +46,7 @@ void TimelineSystem::Stop(TimelineComponent& timeline) {
     timeline.isComplete = false;
     timeline.direction = 1;
 
-    // Reset all event fired flags
-    for (auto& track : timeline.eventTracks) {
-        for (auto& event : track.events) {
-            event.fired = false;
-        }
-    }
+    ResetLatches(timeline);
 }
 
 void TimelineSystem::Seek(TimelineComponent& timeline, f32 time) {
@@ -59,14 +65,29 @@ void TimelineSystem::Seek(TimelineComponent& timeline, f32 time) {
 void TimelineSystem::Update(ECS::World* world, f32 deltaTime) {
     if (!world) return;
 
+    // A copy: a marker listener may add or remove timelines
     auto entities = world->GetEntitiesWithComponent<TimelineComponent>();
     for (auto entity : entities) {
         auto* tl = world->GetComponent<TimelineComponent>(entity);
-        if (!tl || !tl->isPlaying) continue;
+        if (!tl) continue;
 
-        // Handle play-on-awake first frame
-        if (tl->playOnAwake && !tl->isPlaying) {
-            tl->isPlaying = true;
+        // Play On Awake starts it on its first tick in play. This check sat
+        // after the !isPlaying skip, so it could never fire, and isPlaying is
+        // not saved: a saved timeline had no way to start without a script.
+        if (tl->playOnAwake && !tl->awakeStarted) {
+            tl->awakeStarted = true;
+            Play(*tl);
+        }
+        if (!tl->isPlaying) continue;
+
+        // Nothing to play through. fmod by zero below would make the time NaN.
+        if (tl->duration <= 0.0f) {
+            tl->currentTime = 0.0f;
+            tl->isPlaying = false;
+            tl->isComplete = true;
+            tl->onCompleteNotify = true;
+            EvaluatePropertyTracks(world, *tl);
+            continue;
         }
 
         f32 prevTime = tl->currentTime;
@@ -84,12 +105,7 @@ void TimelineSystem::Update(ECS::World* world, f32 deltaTime) {
                 tl->currentTime = std::fmod(tl->currentTime, tl->duration);
                 tl->onLoopNotify = true;
 
-                // Reset event fired flags on loop
-                for (auto& track : tl->eventTracks) {
-                    for (auto& event : track.events) {
-                        event.fired = false;
-                    }
-                }
+                ResetLatches(*tl);
             } else {
                 tl->currentTime = tl->duration;
                 tl->isPlaying = false;
@@ -103,12 +119,7 @@ void TimelineSystem::Update(ECS::World* world, f32 deltaTime) {
                 if (tl->loop) {
                     tl->onLoopNotify = true;
 
-                    // Reset event fired flags on loop
-                    for (auto& track : tl->eventTracks) {
-                        for (auto& event : track.events) {
-                            event.fired = false;
-                        }
-                    }
+                    ResetLatches(*tl);
                 } else {
                     tl->isPlaying = false;
                     tl->isComplete = true;
@@ -122,10 +133,11 @@ void TimelineSystem::Update(ECS::World* world, f32 deltaTime) {
             }
         }
 
-        // Evaluate all tracks
+        // Evaluate all tracks. Markers go last: sending one can run a script
+        // that adds a timeline and moves the storage tl points into.
         EvaluatePropertyTracks(world, *tl);
-        EvaluateEventTracks(*tl);
         EvaluateAnimationTracks(world, *tl);
+        EvaluateEventTracks(entity, *tl);
     }
 }
 
@@ -168,6 +180,12 @@ void TimelineSystem::EvaluatePropertyTracks(ECS::World* world, TimelineComponent
 
         // Apply interpolated value to target property
         const std::string& prop = track.targetProperty;
+        if (prop.rfind("position", 0) == 0 || prop.rfind("scale", 0) == 0 ||
+            prop.rfind("rotation", 0) == 0) {
+            if (auto* tf = world->GetComponent<ECS::TransformComponent>(track.targetEntity)) {
+                tf->worldMatrixDirty = true;
+            }
+        }
 
         // --- Position ---
         if (prop == "position") {
@@ -225,12 +243,16 @@ void TimelineSystem::EvaluatePropertyTracks(ECS::World* world, TimelineComponent
             if (transform) {
                 if (auto* a = std::get_if<f32>(&kfBefore->value)) {
                     if (auto* b = std::get_if<f32>(&kfAfter->value)) {
+                        // Degrees about one axis, the other two kept. This wrote
+                        // the number straight into the quaternion's x/y/z, so a
+                        // 45-degree key produced a denormalised quaternion and
+                        // a mangled mesh rather than a rotation.
                         f32 val = LerpValue(*a, *b, t);
-                        // Build rotation from Euler angles; apply to the relevant axis
-                        // For simplicity, modify the quaternion component directly
-                        if (prop == "rotation.x") transform->rotation.x = val;
-                        else if (prop == "rotation.y") transform->rotation.y = val;
-                        else if (prop == "rotation.z") transform->rotation.z = val;
+                        Math::Vector3 euler = transform->rotation.ToEulerDegrees();
+                        if (prop == "rotation.x") euler.x = val;
+                        else if (prop == "rotation.y") euler.y = val;
+                        else if (prop == "rotation.z") euler.z = val;
+                        transform->rotation = Math::Quaternion::FromEulerDegrees(euler);
                     }
                 }
             }
@@ -301,6 +323,14 @@ void TimelineSystem::EvaluatePropertyTracks(ECS::World* world, TimelineComponent
                 }
             }
         }
+        // --- Visibility (steps: holds the last key at or before now) ---
+        else if (prop == "visible") {
+            auto* transform = world->GetComponent<ECS::TransformComponent>(track.targetEntity);
+            const PropertyKeyframe* held = (kfBefore->time <= tl.currentTime) ? kfBefore : kfAfter;
+            if (transform) {
+                if (auto* v = std::get_if<bool>(&held->value)) transform->visible = *v;
+            }
+        }
         // Unknown property
         else {
             ENJIN_LOG_WARN(Animation, "Unknown timeline property: %s", prop.c_str());
@@ -310,7 +340,10 @@ void TimelineSystem::EvaluatePropertyTracks(ECS::World* world, TimelineComponent
 
 // --- Event track evaluation ---
 
-void TimelineSystem::EvaluateEventTracks(TimelineComponent& tl) {
+void TimelineSystem::EvaluateEventTracks(ECS::Entity entity, TimelineComponent& tl) {
+    // Collected first and sent after: a listener may touch this component.
+    // Markers used to be logged and nothing else.
+    std::vector<ECS::EntityEvent> due;
     for (auto& track : tl.eventTracks) {
         if (!track.enabled) continue;
 
@@ -321,11 +354,18 @@ void TimelineSystem::EvaluateEventTracks(TimelineComponent& tl) {
 
             if (!event.fired && event.time <= tl.currentTime) {
                 event.fired = true;
-                ENJIN_LOG_INFO(Animation, "Timeline event fired: %s (t=%.3f, data=%s)",
-                    event.eventName.c_str(), event.time, event.eventData.c_str());
+                if (event.eventName.empty()) continue;
+                ECS::EntityEvent ev;
+                ev.name = event.eventName;
+                ev.sender = entity;
+                ev.strings["data"] = event.eventData;
+                ev.floats["time"] = event.time;
+                due.push_back(std::move(ev));
             }
         }
     }
+    if (!m_EventBus) return;
+    for (const auto& ev : due) m_EventBus->Send(ev.name, ev);
 }
 
 // --- Animation track evaluation ---
@@ -335,13 +375,16 @@ void TimelineSystem::EvaluateAnimationTracks(ECS::World* world, TimelineComponen
         if (!track.enabled) continue;
         if (!world->IsValid(track.targetEntity)) continue;
 
-        // Check if current time has entered this animation's time range
+        // Start the clip once on entering its range. Play rewinds the clip to
+        // its first frame, and this called it every frame inside the range, so
+        // a timeline-driven animation stood frozen on frame one.
         f32 endTime = track.startTime + track.duration;
-        if (tl.currentTime >= track.startTime && tl.currentTime <= endTime) {
+        const bool inRange = tl.currentTime >= track.startTime && tl.currentTime <= endTime;
+        if (inRange && !track.started) {
             auto* animator = world->GetComponent<ECS::AnimatorComponent>(track.targetEntity);
             if (animator) {
-                // Play the animation directly via the skeletal animator
                 animator->animator.Play(track.animationName);
+                track.started = true;
             }
         }
     }
