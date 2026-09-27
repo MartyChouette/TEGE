@@ -355,6 +355,81 @@ fn foamHash(p: vec2<f32>) -> f32 {
     return fract(sin(dot(p, vec2<f32>(127.1, 311.7))) * 43758.5453);
 }
 
+// ── Art style shading (WP-17): triangle.frag's lightRamp, calcBlinnPhong and
+// calcBlinnPhongCel, for scenes that are not the default Realistic PBR. The
+// default (flags 15, no ramp, no cel, no half-Lambert) keeps web's own GGX.
+fn styledLightRamp(NdotL: f32) -> vec3<f32> {
+    let mode = lighting.shadingParams.w;
+    if (mode < 0.5) { return vec3<f32>(NdotL); }
+    if (mode < 1.5) {
+        return vec3<f32>(smoothstep(0.0, 0.4, NdotL) * 0.5 + smoothstep(0.4, 0.8, NdotL) * 0.5);
+    }
+    if (mode < 2.5) { return mix(vec3<f32>(0.35, 0.2, 0.1), vec3<f32>(1.0), smoothstep(0.0, 0.5, NdotL)); }
+    if (mode < 3.5) { return mix(vec3<f32>(0.15, 0.12, 0.3), vec3<f32>(1.0), smoothstep(0.0, 0.5, NdotL)); }
+    return mix(vec3<f32>(0.6, 0.45, 0.5), vec3<f32>(1.0), step(0.35, NdotL));
+}
+
+fn shadingStyled() -> bool {
+    let flags = u32(lighting.shadingParams.x + 0.5);
+    return flags != 15u || lighting.shadingParams.y >= 2.0 || lighting.shadingParams.w > 0.5;
+}
+
+// One light's contribution, before its shadow. radiance = colour * intensity
+// * attenuation.
+fn shadeLight(N: vec3<f32>, V: vec3<f32>, L: vec3<f32>, radiance: vec3<f32>,
+              albedo: vec3<f32>, metallic: f32, roughness: f32, F0: vec3<f32>) -> vec3<f32> {
+    let H = normalize(V + L);
+    if (!shadingStyled()) {
+        let NDF = distributionGGX(N, H, roughness);
+        let G = geometrySmith(N, V, L, roughness);
+        let F = fresnelSchlick(max(dot(H, V), 0.0), F0);
+        let specular = (NDF * G * F) / (4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 0.0001);
+        let kD = (vec3<f32>(1.0) - F) * (1.0 - metallic);
+        return (kD * albedo + specular) * radiance * max(dot(N, L), 0.0);
+    }
+    let flags = u32(lighting.shadingParams.x + 0.5);
+    let shininess = clamp(max(2.0, 2.0 / (roughness * roughness + 0.0001) - 2.0), 2.0, 256.0);
+    let NdotH = max(dot(N, H), 0.0);
+    let NdotV = max(dot(N, V), 0.01);
+    let bands = lighting.shadingParams.y;
+    let cel = bands >= 2.0;
+    var NdotL = max(dot(N, L), 0.0);
+    if (!cel && (flags & 32u) != 0u) {
+        NdotL = max(dot(N, L) * 0.5 + 0.5, 0.0);   // half-Lambert light wrap
+    }
+    var F = F0;
+    if ((flags & 2u) != 0u) { F = fresnelSchlick(max(dot(H, V), 0.0), F0); }
+    var spec = 0.0;
+    if ((flags & 1u) != 0u) {
+        let r = clamp(sqrt(2.0 / (shininess + 2.0)), 0.04, 1.0);
+        spec = distributionGGX(N, H, r);
+        if ((flags & 8u) != 0u) { spec = spec * geometrySmith(N, V, L, r); }
+        spec = spec / max(4.0 * NdotV * NdotL, 0.01);
+    } else {
+        spec = pow(NdotH, shininess);
+    }
+    var diffuse: vec3<f32>;
+    if (cel) {
+        let cutoff = lighting.shadingParams.z;
+        if (cutoff > 0.0) { spec = select(0.0, 1.0, spec > cutoff); }
+        let diff = floor(NdotL * bands + 0.5) / bands;
+        let tintMode = lighting.shadingParams2.x;
+        var tint = vec3<f32>(0.0);
+        if (tintMode > 0.5) {
+            if (tintMode < 1.5) { tint = vec3<f32>(0.25, 0.15, 0.35); }
+            else if (tintMode < 2.5) { tint = vec3<f32>(0.15, 0.2, 0.35); }
+            else if (tintMode < 3.5) { tint = vec3<f32>(0.35, 0.2, 0.15); }
+            else { tint = vec3<f32>(0.25, 0.25, 0.3); }
+        }
+        diffuse = mix(tint, vec3<f32>(1.0), diff) * radiance;
+    } else {
+        diffuse = styledLightRamp(NdotL) * radiance;
+    }
+    var kD = vec3<f32>(1.0 - metallic);
+    if ((flags & 4u) != 0u) { kD = kD * (vec3<f32>(1.0) - F); }
+    return diffuse * albedo * kD + spec * F * radiance;
+}
+
 // Cloud shadows: passing sky clouds shade the sun. triangle.frag's
 // csHash/csNoise/CloudShadowFactor, digit for digit, reading the web sky block
 // (skyClouds = coverage, scale, speed; skyMode.y = strength) where desktop has
@@ -441,6 +516,12 @@ fn sampleShadowCascade(cascade: i32, worldPos: vec3<f32>, fragXY: vec2<f32>) -> 
 // second half of each, and fade out toward the shadow distance. The strength
 // is applied by the caller, as before.
 fn sampleShadow(worldPos: vec3<f32>, N: vec3<f32>, L: vec3<f32>, viewDepth: f32, fragXY: vec2<f32>) -> f32 {
+    // A face turned away from the sun is in its own shadow: say so rather than
+    // sample it. Sampling there is self-comparison against the back faces the
+    // front-culled pass stored, which is acne; GGX hid it (NdotL = 0 there),
+    // but the art styles light those faces (cel tint, light ramp) and showed
+    // it as diagonal stripes
+    if (dot(N, L) <= 0.0) { return 0.0; }
     let count = i32(shadowCascades.params.z);
     var cascade = count - 1;
     for (var i = 0; i < 4; i = i + 1) {
@@ -772,20 +853,11 @@ fn shadeSurface(in: VertexOutput) -> vec4<f32> {
     let dirCount = i32(lighting.lightCount.x);
     for (var i = 0; i < dirCount; i = i + 1) {
         let L = normalize(-lighting.lightDir[i].xyz);
-        let H = normalize(V + L);
         let radiance = lighting.lightColor[i].rgb * lighting.lightColor[i].w;
-        let NDF = distributionGGX(N, H, roughness);
-        let G = geometrySmith(N, V, L, roughness);
-        let F = fresnelSchlick(max(dot(H, V), 0.0), F0);
-        let numerator = NDF * G * F;
-        let denominator = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 0.0001;
-        let specular = numerator / denominator;
-        let kD = (vec3<f32>(1.0) - F) * (1.0 - metallic);
-        let NdotL = max(dot(N, L), 0.0);
         // Sun shadow applies to ALL directional lights — they share one shadow map,
         // and any unshadowed directional re-lights shadowed areas (washes shadows out)
         let shadow = mix(1.0, shadowFactor, shadowStrength) * cloudShade;
-        Lo = Lo + (kD * albedo + specular) * radiance * NdotL * shadow;
+        Lo = Lo + shadeLight(N, V, L, radiance, albedo, metallic, roughness, F0) * shadow;
     }
 
     let pointCount = i32(lighting.lightCount.y);
@@ -798,7 +870,6 @@ fn shadeSurface(in: VertexOutput) -> vec4<f32> {
         if (dist > range) { continue; }
 
         let L = normalize(toLight);
-        let H = normalize(V + L);
 
         let linAtt = lighting.lightParams[idx].y;
         let quadAtt = lighting.lightParams[idx].z;
@@ -810,20 +881,11 @@ fn shadeSurface(in: VertexOutput) -> vec4<f32> {
 
         let radiance = lighting.lightColor[idx].rgb * lighting.lightColor[idx].w * attenuation;
 
-        let NDF = distributionGGX(N, H, roughness);
-        let G = geometrySmith(N, V, L, roughness);
-        let F = fresnelSchlick(max(dot(H, V), 0.0), F0);
-        let numerator = NDF * G * F;
-        let denominator = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 0.0001;
-        let specular = numerator / denominator;
-        let kD = (vec3<f32>(1.0) - F) * (1.0 - metallic);
-        let NdotL = max(dot(N, L), 0.0);
-
         var ptShadow = 1.0;
         // Strength scales the point and spot shadows too, as on desktop; on
         // web it reached only the sun (WP-16)
         if (i == 0) { ptShadow = mix(1.0, ptShadow0, shadowStrength); }
-        Lo = Lo + (kD * albedo + specular) * radiance * NdotL * ptShadow;
+        Lo = Lo + shadeLight(N, V, L, radiance, albedo, metallic, roughness, F0) * ptShadow;
     }
 
     let spotCount = i32(lighting.lightCount.z);
@@ -835,7 +897,6 @@ fn shadeSurface(in: VertexOutput) -> vec4<f32> {
         if (dist > range) { continue; }
 
         let L = normalize(toLight);
-        let H = normalize(V + L);
         let spotDirV = normalize(lighting.spotDir[i].xyz);
 
         let theta = dot(L, normalize(-spotDirV));
@@ -850,22 +911,13 @@ fn shadeSurface(in: VertexOutput) -> vec4<f32> {
 
         let radiance = lighting.spotColor[i].rgb * lighting.spotColor[i].w * attenuation;
 
-        let NDF = distributionGGX(N, H, roughness);
-        let G = geometrySmith(N, V, L, roughness);
-        let F = fresnelSchlick(max(dot(H, V), 0.0), F0);
-        let numerator = NDF * G * F;
-        let denominator = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 0.0001;
-        let specular = numerator / denominator;
-        let kD = (vec3<f32>(1.0) - F) * (1.0 - metallic);
-        let NdotL = max(dot(N, L), 0.0);
-
         var spotShadow = 1.0;
         if (i == 0) { spotShadow = mix(1.0, spotShadow0, shadowStrength); }
         else if (i == 1) { spotShadow = mix(1.0, spotShadow1, shadowStrength); }
         // The cookie multiplies the light the same way a shadow does: it is a
         // mask on what this lamp delivers, not a change to the surface.
         spotShadow = spotShadow * spotCookie(i, L, spotDirV, outerCos);
-        Lo = Lo + (kD * albedo + specular) * radiance * NdotL * spotShadow;
+        Lo = Lo + shadeLight(N, V, L, radiance, albedo, metallic, roughness, F0) * spotShadow;
     }
 
     // GI parity (web): hemispheric sky-dome ambient stands in for real GI/AO — there is
@@ -979,6 +1031,15 @@ fn shadeSurface(in: VertexOutput) -> vec4<f32> {
         let foamThreshold = smoothstep(shoreW, 0.0, edgeDist);
         let foam = smoothstep(0.35, 0.65, noise) * foamThreshold * object.foamIntensity;
         color = mix(color, vec3<f32>(0.9, 0.95, 1.0), foam);
+    }
+
+    // Posterize (the art style's colour banding), before fog as on desktop.
+    // Desktop bands the gamma-corrected colour; this pass outputs linear, so
+    // it bands in gamma space and goes back (WP-17).
+    if (lighting.shadingParams2.y > 1.5) {
+        let levels = lighting.shadingParams2.y;
+        let g = pow(max(color, vec3<f32>(0.0)), vec3<f32>(1.0 / 2.2));
+        color = pow(floor(g * levels + 0.5) / levels, vec3<f32>(2.2));
     }
 
     // Height-based distance fog (matches Vulkan)

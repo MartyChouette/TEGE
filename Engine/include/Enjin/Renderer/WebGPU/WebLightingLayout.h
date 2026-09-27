@@ -60,7 +60,14 @@
     /* x = 1 when the scene sky is a Cubemap and its six faces loaded; the */ \
     /* sky shader then samples the cube instead of the gradient. y = cloud */ \
     /* shadow strength (the sky's cloudShadowStrength). zw free. */ \
-    X1(skyMode)                   /* 16 */
+    X1(skyMode)                   /* 16 */ \
+    /* Art style shading, as desktop packs it into its LightingUBO (WP-17). */ \
+    /* x = shading flags (bit0 GGX, bit1 Fresnel, bit2 energy conservation, */ \
+    /* bit3 geometry term, bit5 half-Lambert), y = cel diffuse bands (0 = */ \
+    /* off), z = cel specular cutoff, w = light ramp mode. */ \
+    X1(shadingParams)             /* 16 */ \
+    /* x = cel shadow tint mode, y = posterize levels (0 = off). zw free. */ \
+    X1(shadingParams2)            /* 16 */
 
 // One member of the C++ struct.
 #define ENJIN_WEB_LIGHTING_MEMBER1(name)        WebLightVec4 name;

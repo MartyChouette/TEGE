@@ -1524,7 +1524,7 @@ struct alignas(16) WebLightVec4 { f32 x, y, z, w; };
 struct WebLightingUBO {
     ENJIN_WEB_LIGHTING_FIELDS(ENJIN_WEB_LIGHTING_MEMBER1, ENJIN_WEB_LIGHTING_MEMBERN)
 };
-static_assert(sizeof(WebLightingUBO) == 1984,
+static_assert(sizeof(WebLightingUBO) == 2016,
               "WebLightingUBO changed size. APPEND a row to the list in "
               "WebLightingLayout.h (inserting moves every offset after it), then "
               "move this number. The shaders follow automatically.");
@@ -4551,6 +4551,17 @@ void RenderSystem::Update(f32 deltaTime) {
                 lit.skyBottom = {dome.bottom.x, dome.bottom.y, dome.bottom.z, 0.0f};
             }
             lit.skySunDir = {sc.sunDirection.x, sc.sunDirection.y, sc.sunDirection.z, sc.sunIntensity};
+            // The scene's (or the camera art style's) shading model. Web lit
+            // every surface with GGX whatever the style asked for (WP-17);
+            // the flag word is desktop's, bit for bit.
+            const u32 shadingFlags = (m_ShadingModel & 1u) | (m_FresnelEnabled ? 2u : 0u) |
+                                     (m_EnergyConservation ? 4u : 0u) | (m_GeometryTerm ? 8u : 0u) |
+                                     (m_HalfLambert ? 32u : 0u);
+            lit.shadingParams = {static_cast<f32>(shadingFlags),
+                                 m_CelShadingEnabled ? m_CelDiffuseBands : 0.0f,
+                                 m_CelShadingEnabled ? m_CelSpecularCutoff : 0.0f,
+                                 m_LightRampMode};
+            lit.shadingParams2 = {m_CelShadowMode, m_PosterizeLevels, 0.0f, 0.0f};
             lit.skySunColor = {sc.sunColor.x, sc.sunColor.y, sc.sunColor.z, sc.sunSize};
             lit.skyClouds = {sc.cloudCoverage, sc.cloudScale, sc.cloudSpeed, sc.cloud2Coverage};
             lit.skyCloudColor = {sc.cloudColor.x, sc.cloudColor.y, sc.cloudColor.z, sc.cloud2Scale};
