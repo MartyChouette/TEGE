@@ -751,11 +751,19 @@ void GameMenuSystem::RenderAccessibility(f32 w, f32 h) {
     if (m_InputMap) {
         ImGui::Dummy(ImVec2(0, 4));
         ImGui::TextUnformatted("Control Presets");
-        if (ImGui::Button("Left Hand Only", ImVec2(130, 0))) { m_InputMap->ApplyLeftHandOnly(); changed = true; }
+        // A preset is a layer: the lit button is the one in use, and pressing
+        // it again takes it off
+        auto presetButton = [&](const char* label, InputSystem::BindingPreset p) {
+            const bool on = m_InputMap->GetPreset() == p;
+            if (on) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+            if (ImGui::Button(label, ImVec2(130, 0))) { m_InputMap->TogglePreset(p); changed = true; }
+            if (on) ImGui::PopStyleColor();
+        };
+        presetButton("Left Hand Only", InputSystem::BindingPreset::LeftHand);
         ImGui::SameLine();
-        if (ImGui::Button("Right Hand Only", ImVec2(130, 0))) { m_InputMap->ApplyRightHandOnly(); changed = true; }
+        presetButton("Right Hand Only", InputSystem::BindingPreset::RightHand);
         ImGui::SameLine();
-        if (ImGui::Button("Gamepad Only", ImVec2(130, 0))) { m_InputMap->ApplyGamepadOnly(); changed = true; }
+        presetButton("Gamepad Only", InputSystem::BindingPreset::GamepadOnly);
         if (ImGui::Button("Reset Controls to Default", ImVec2(200, 0))) { m_InputMap->ResetToDefaults(); changed = true; }
     }
 
@@ -955,17 +963,19 @@ void GameMenuSystem::RenderControls(f32 w, f32 h) {
         changed = true;
     }
     ImGui::SameLine();
-    if (ImGui::Button("Left Hand", ImVec2(100, 28))) {
-        m_InputMap->ApplyLeftHandOnly();
-        m_RebindingAction = -1;
-        changed = true;
-    }
+    auto presetButton = [&](const char* label, InputSystem::BindingPreset p) {
+        const bool on = m_InputMap->GetPreset() == p;
+        if (on) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+        if (ImGui::Button(label, ImVec2(100, 28))) {
+            m_InputMap->TogglePreset(p);   // pressing the lit one takes it off
+            m_RebindingAction = -1;
+            changed = true;
+        }
+        if (on) ImGui::PopStyleColor();
+    };
+    presetButton("Left Hand", InputSystem::BindingPreset::LeftHand);
     ImGui::SameLine();
-    if (ImGui::Button("Right Hand", ImVec2(100, 28))) {
-        m_InputMap->ApplyRightHandOnly();
-        m_RebindingAction = -1;
-        changed = true;
-    }
+    presetButton("Right Hand", InputSystem::BindingPreset::RightHand);
 
     if (changed && m_BindingsChanged) m_BindingsChanged();
 }

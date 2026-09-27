@@ -2577,11 +2577,11 @@ public:
             // Control presets. These rewrite bindings.json, not
             // accessibility.json, so they save through the input path.
             m_UISystem.GetEventBus().Listen("options_preset_left_hand",
-                [this](const Enjin::GUI::UIEventData&) { m_InputMap.ApplyLeftHandOnly(); SaveWebInputBindings(); });
+                [this](const Enjin::GUI::UIEventData&) { m_InputMap.TogglePreset(Enjin::InputSystem::BindingPreset::LeftHand); SaveWebInputBindings(); });
             m_UISystem.GetEventBus().Listen("options_preset_right_hand",
-                [this](const Enjin::GUI::UIEventData&) { m_InputMap.ApplyRightHandOnly(); SaveWebInputBindings(); });
+                [this](const Enjin::GUI::UIEventData&) { m_InputMap.TogglePreset(Enjin::InputSystem::BindingPreset::RightHand); SaveWebInputBindings(); });
             m_UISystem.GetEventBus().Listen("options_preset_gamepad",
-                [this](const Enjin::GUI::UIEventData&) { m_InputMap.ApplyGamepadOnly(); SaveWebInputBindings(); });
+                [this](const Enjin::GUI::UIEventData&) { m_InputMap.TogglePreset(Enjin::InputSystem::BindingPreset::GamepadOnly); SaveWebInputBindings(); });
             m_UISystem.GetEventBus().Listen("options_reset_controls",
                 [this](const Enjin::GUI::UIEventData&) { m_InputMap.ResetToDefaults(); SaveWebInputBindings(); });
             // Authored MainMenu canvas buttons, as the desktop player answers

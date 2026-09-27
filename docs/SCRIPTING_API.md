@@ -929,7 +929,7 @@ Per-entity (Braid-style) and scene-wide (Sands of Time-style) time rewind.
 
 ## Every registered binding
 
-1354 global functions, grouped by where they are registered. These lines are
+1356 global functions, grouped by where they are registered. These lines are
 GENERATED from the registration strings themselves, so a signature here is the
 one the engine accepts -- if it disagrees with the prose above, the prose is
 wrong. Regenerate with `python tools/gen_scripting_api.py` after adding a
@@ -1772,7 +1772,7 @@ merely absent.
 - `void Touch_SetStickActions(bool, int, int, int, int)`
 - `void Touch_UsePreset(int)`
 
-### Input actions and rebinding  (27)
+### Input actions and rebinding  (29)
 
 - `Vector2 InputAction_GetMovement()`
 - `bool InputAction_IsCrouchToggle()`
@@ -1785,6 +1785,7 @@ merely absent.
 - `int InputAction_Define(const string &in name)`
 - `int InputAction_Find(const string &in name)`
 - `int InputAction_GetCount()`
+- `int InputAction_GetPreset()`
 - `int InputAction_PollNextKey()`
 - `string InputAction_GetBindingName(int index)`
 - `string InputAction_GetName(int index)`
@@ -1799,6 +1800,7 @@ merely absent.
 - `void InputAction_SetCrouchToggle(bool toggle)`
 - `void InputAction_SetMouseSensitivity(float sens)`
 - `void InputAction_SetName(int action, const string &in name)`
+- `void InputAction_SetPreset(int preset)`
 - `void InputAction_SetSensitivity(int action, float sensitivity)`
 - `void InputAction_SetSprintToggle(bool toggle)`
 

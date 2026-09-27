@@ -1166,11 +1166,13 @@ void EditorLayer::DrawSettingsSection_Accessibility() {
             ImGui::TextDisabled("Input Presets");
             if (ImGui::Button("Default")) m_InputMap.ResetToDefaults();
             ImGui::SameLine();
-            if (ImGui::Button("Left Hand Only")) m_InputMap.ApplyLeftHandOnly();
+            if (ImGui::Button("Left Hand Only")) m_InputMap.TogglePreset(InputSystem::BindingPreset::LeftHand);
             ImGui::SameLine();
-            if (ImGui::Button("Right Hand Only")) m_InputMap.ApplyRightHandOnly();
+            if (ImGui::Button("Right Hand Only")) m_InputMap.TogglePreset(InputSystem::BindingPreset::RightHand);
             ImGui::SameLine();
-            if (ImGui::Button("Gamepad Only")) m_InputMap.ApplyGamepadOnly();
+            if (ImGui::Button("Gamepad Only")) m_InputMap.TogglePreset(InputSystem::BindingPreset::GamepadOnly);
+            ImGui::SameLine();
+            ImGui::TextDisabled("(%s)", InputSystem::GetBindingPresetName(m_InputMap.GetPreset()));
 
             ImGui::TreePop();
         }

@@ -46,6 +46,7 @@ namespace {
 
     // Current frame state
     bool s_KeysDown[MAX_KEYS] = {};
+    bool s_TouchActionDown[Input::kMaxTouchActions] = {};
     bool s_MouseButtonsDown[MAX_MOUSE_BUTTONS] = {};
 
 #if ENJIN_PLATFORM_WEB
@@ -847,6 +848,10 @@ void Input::Update() {
     // state so a physical keyboard keeps working alongside.
     {
         constexpr int kKeyCount = static_cast<int>(sizeof(s_KeysDown) / sizeof(s_KeysDown[0]));
+        std::memset(s_TouchActionDown, 0, sizeof(s_TouchActionDown));
+        auto holdAction = [](int action) {
+            if (action >= 0 && action < Input::kMaxTouchActions) s_TouchActionDown[action] = true;
+        };
         for (const auto& t : s_Touches) {
             if (t.id == -1) continue;
             // Resolve a slot's effective key code: prefer the action's CURRENT
@@ -864,6 +869,7 @@ void Input::Update() {
                 f32 dy = t.curY - t.startY;
                 constexpr f32 DEAD = 18.0f;
                 auto press = [&](int idx) {
+                    holdAction(s_TouchScheme.stickActions[idx]);
                     int k = effectiveKey(s_TouchScheme.stickKeys[idx], s_TouchScheme.stickActions[idx]);
                     if (k >= 0 && k < kKeyCount) s_KeysDown[k] = true;
                 };
@@ -874,6 +880,7 @@ void Input::Update() {
             } else if (t.role >= 100) {
                 int bi = t.role - 100;
                 if (bi < s_TouchScheme.buttonCount) {
+                    holdAction(s_TouchScheme.buttons[bi].action);
                     int k = effectiveKey(s_TouchScheme.buttons[bi].keyCode, s_TouchScheme.buttons[bi].action);
                     if (k < 0) {
                         int mb = -k - 1;                             // -1 => mouse button 0 (fire/click)
@@ -1227,6 +1234,10 @@ const Input::TouchScheme& Input::GetTouchScheme() {
 }
 
 void Input::SetActionKeyResolver(ActionKeyResolver resolver)   { s_ActionKeyResolver = resolver; }
+bool Input::IsTouchActionDown(int action) {
+    if (s_ReplayInjection || action < 0 || action >= kMaxTouchActions) return false;
+    return s_TouchActionDown[action];
+}
 void Input::SetActionLabelResolver(ActionLabelResolver resolver) { s_ActionLabelResolver = resolver; }
 
 void Input::SetInputFocus(InputFocus focus) { s_InputFocus = focus; }

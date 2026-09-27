@@ -1,4 +1,5 @@
 #include "EnjinTest.h"
+#include <cstdio>
 #include "Enjin/Input/InputAction.h"
 #include "Enjin/Input/InputProjectSettings.h"
 
@@ -297,6 +298,118 @@ ENJIN_TEST(InputActionMap, ActionIdentifiersMatchTheEnum) {
     ENJIN_EXPECT_EQ(std::string(GetActionIdentifier(GameAction::MoveForward)), std::string("MoveForward"));
     ENJIN_EXPECT_EQ(std::string(GetActionIdentifier(GameAction::DialogueAdvance)), std::string("DialogueAdvance"));
     ENJIN_EXPECT_EQ(std::string(GetActionIdentifier(GameAction::Custom7)), std::string("Custom7"));
+}
+
+// IN-23: the one-handed presets moved one or two actions and left the rest on
+// the other hand. Every listed action now has a key on the chosen side and
+// none on the other; Left Hand is also mouse-free.
+static void ExpectAllOnOneSide(const InputActionMap& map, bool left) {
+    for (i32 i = 0; i < map.GetActionCount(); ++i) {
+        if (!map.IsActionListed(i)) continue;
+        bool hasKey = false;
+        for (const auto& b : map.GetActionConfig(static_cast<GameAction>(i)).bindings) {
+            if (b.type == BindingType::Key) {
+                hasKey = true;
+                const bool ok = left ? IsLeftHandKey(b.code) : IsRightHandKey(b.code);
+                if (!ok) std::printf("  action %d (%s) has key %d on the wrong side\n", i, map.GetActionName(i), b.code);
+                ENJIN_EXPECT_TRUE(ok);
+            }
+            if (left) ENJIN_EXPECT_TRUE(b.type != BindingType::MouseButton);
+        }
+        if (!hasKey) std::printf("  action %d (%s) has no key\n", i, map.GetActionName(i));
+        ENJIN_EXPECT_TRUE(hasKey);
+    }
+}
+
+ENJIN_TEST(InputActionMap, OneHandedPresetsLeaveNothingOnTheOtherHand) {
+    InputActionMap map;
+    InputProjectSettings project;
+    project.customActions.push_back(MakeAction(0, "Grapple", KeyCode::L));   // right side
+    project.customActions.push_back(MakeAction(3, "Wave", KeyCode::Q));      // left side
+    project.ApplyTo(map);
+
+    map.ApplyLeftHandOnly();
+    ExpectAllOnOneSide(map, true);
+    map.ApplyRightHandOnly();
+    ExpectAllOnOneSide(map, false);
+}
+
+ENJIN_TEST(InputActionMap, PresetIsALayerThatComesOff) {
+    InputActionMap map;
+    map.ApplyLeftHandOnly();
+    ENJIN_EXPECT_TRUE(map.GetPreset() == BindingPreset::LeftHand);
+    // The preset is the new baseline: nothing counts as the player's change
+    for (i32 i = 0; i < map.GetActionCount(); ++i) ENJIN_EXPECT_FALSE(map.IsActionChanged(i));
+
+    // Saved by name, and loads back as the same layer
+    InputActionMap loaded;
+    ENJIN_ASSERT_TRUE(loaded.FromJson(map.ToJson()));
+    ENJIN_EXPECT_TRUE(loaded.GetPreset() == BindingPreset::LeftHand);
+    ENJIN_EXPECT_TRUE(HasKey(loaded, GameAction::Attack, KeyCode::Z));
+
+    // Removing it gives the game's defaults back
+    loaded.SetPreset(BindingPreset::None);
+    ENJIN_EXPECT_TRUE(HasKey(loaded, GameAction::Interact, KeyCode::E));
+    ENJIN_EXPECT_FALSE(HasKey(loaded, GameAction::Attack, KeyCode::Z));
+}
+
+ENJIN_TEST(InputActionMap, GamepadOnlyKeepsMenuKeys) {
+    InputActionMap map;
+    map.ApplyGamepadOnly();
+    ENJIN_EXPECT_TRUE(HasKey(map, GameAction::UIConfirm, KeyCode::Enter));
+    ENJIN_EXPECT_TRUE(HasKey(map, GameAction::UICancel, KeyCode::Escape));
+    ENJIN_EXPECT_FALSE(HasKey(map, GameAction::Jump, KeyCode::Space));
+}
+
+// IN-11: bindings.json saved every action, so it pinned every default the
+// game had on the day it was written, and a custom action added in an update
+// loaded as the empty slot the old file recorded.
+ENJIN_TEST(InputActionMap, SaveHoldsOnlyThePlayersChanges) {
+    InputActionMap map;
+    map.RebindAction(static_cast<i32>(GameAction::Jump), static_cast<i32>(KeyCode::J));
+    const std::string saved = map.ToJson();
+    ENJIN_EXPECT_TRUE(saved.find("\"version\"") != std::string::npos);
+    ENJIN_EXPECT_TRUE(map.IsActionChanged(static_cast<i32>(GameAction::Jump)));
+    ENJIN_EXPECT_FALSE(map.IsActionChanged(static_cast<i32>(GameAction::Interact)));
+    // One action in the file, not 33
+    usize entries = 0;
+    for (usize p = saved.find("\"action\""); p != std::string::npos; p = saved.find("\"action\"", p + 1)) ++entries;
+    ENJIN_EXPECT_EQ(entries, static_cast<usize>(1));
+}
+
+ENJIN_TEST(InputActionMap, AnUpdatesNewActionReachesAnOldSave) {
+    // Arrange: a save from version 1 of the game, which had no custom actions
+    InputActionMap v1;
+    v1.RebindAction(static_cast<i32>(GameAction::Jump), static_cast<i32>(KeyCode::J));
+    const std::string saved = v1.ToJson();
+
+    // Act: version 2 adds Grapple on G, and the old save loads
+    InputActionMap v2;
+    InputProjectSettings project;
+    project.customActions.push_back(MakeAction(0, "Grapple", KeyCode::G));
+    project.ApplyTo(v2);
+    ENJIN_ASSERT_TRUE(v2.FromJson(saved));
+
+    // Assert: the player's rebind and the game's new default both hold
+    ENJIN_EXPECT_TRUE(HasKey(v2, GameAction::Jump, KeyCode::J));
+    ENJIN_EXPECT_TRUE(HasKey(v2, GameAction::Custom0, KeyCode::G));
+}
+
+ENJIN_TEST(InputActionMap, TheOldArrayFormatStillLoads) {
+    // A version 1 file: a bare array, unnamed custom slots empty, and one
+    // malformed entry that used to abort the load halfway
+    InputActionMap v2;
+    InputProjectSettings project;
+    project.customActions.push_back(MakeAction(0, "Grapple", KeyCode::G));
+    project.ApplyTo(v2);
+    const std::string legacy =
+        "[{\"mode\":2},"
+        "{\"action\":4,\"mode\":2,\"sensitivity\":1.0,\"invertAxis\":false,"
+        "\"bindings\":[{\"type\":0,\"code\":74,\"axisThreshold\":0.5,\"axisPositive\":true}]},"
+        "{\"action\":25,\"mode\":2,\"sensitivity\":1.0,\"invertAxis\":false,\"bindings\":[]}]";
+    ENJIN_ASSERT_TRUE(v2.FromJson(legacy));
+    ENJIN_EXPECT_TRUE(HasKey(v2, GameAction::Jump, KeyCode::J));
+    ENJIN_EXPECT_TRUE(HasKey(v2, GameAction::Custom0, KeyCode::G));   // the empty slot did not win
 }
 
 ENJIN_TEST_MAIN()

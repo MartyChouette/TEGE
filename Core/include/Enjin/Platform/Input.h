@@ -311,6 +311,13 @@ public:
     using ActionKeyResolver = int (*)(int action);
     using ActionLabelResolver = const char* (*)(int action);
     static void SetActionKeyResolver(ActionKeyResolver resolver);
+    // Whether a touch button or the move stick is holding this action this
+    // frame. The action map reads it as a binding of its own, so a touch
+    // control works whatever the keyboard bindings are: Gamepad Only strips
+    // the keys a touch button used to emulate, and touch went dead with them.
+    // False while a replay is injected (the replay's keys are the input then).
+    static bool IsTouchActionDown(int action);
+    static constexpr int kMaxTouchActions = 512;
     static void SetActionLabelResolver(ActionLabelResolver resolver);
 
     // Resolved, per-frame overlay geometry for the host to draw (Engine's

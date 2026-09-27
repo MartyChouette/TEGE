@@ -1,5 +1,6 @@
 #include "Enjin/Input/InputAction.h"
 #include "Enjin/Logging/Log.h"
+#include "Enjin/Platform/Input.h"
 #include <imgui.h>
 #include <nlohmann/json.hpp>
 #include <cmath>
@@ -115,11 +116,41 @@ void InputActionMap::EnsureActionCount(u32 count) {
     m_ActionPressed.resize(count, 0);
     m_ActionReleased.resize(count, 0);
     m_ActionValue.resize(count, 0.0f);
+    m_TouchDownPrev.resize(count, 0);
     m_ProjectNames.resize(count - kFirstProjectAction);
 }
 
 void InputActionMap::SetProjectDefaults(std::function<void(InputActionMap&)> layer) {
     m_ProjectDefaults = std::move(layer);
+    RefreshDefaultConfigs();
+}
+
+void InputActionMap::RefreshDefaultConfigs() {
+    // Build into m_Actions (the layers write there) and swap the live
+    // bindings back. Toggle state is per-frame state, not a binding, so it is
+    // kept as it was.
+    std::vector<ActionConfig> live = m_Actions;
+    std::vector<u8> toggles = m_ToggleState;
+    LoadTableDefaults();
+    if (m_ProjectDefaults) m_ProjectDefaults(*this);
+    ApplyPresetLayer();
+    m_DefaultConfigs = m_Actions;
+    // A project layer can name new slots and grow the map; keep what grew
+    if (live.size() < m_Actions.size()) {
+        for (usize i = live.size(); i < m_Actions.size(); ++i) live.push_back(m_Actions[i]);
+    }
+    m_Actions = std::move(live);
+    m_ToggleState = std::move(toggles);
+    m_ToggleState.resize(m_Actions.size(), 0);
+}
+
+const ActionConfig* InputActionMap::GetDefaultConfig(u32 index) const {
+    return index < m_DefaultConfigs.size() ? &m_DefaultConfigs[index] : nullptr;
+}
+
+void InputActionMap::SetPreset(BindingPreset preset) {
+    m_Preset = preset;
+    LoadDefaults();
 }
 
 void InputActionMap::LoadDefaults() {
@@ -134,6 +165,8 @@ void InputActionMap::LoadDefaults() {
 
     LoadTableDefaults();
     if (m_ProjectDefaults) m_ProjectDefaults(*this);
+    ApplyPresetLayer();
+    m_DefaultConfigs = m_Actions;
 
     if (keep) {
         SetMouseSensitivity(sensitivity);
@@ -271,6 +304,12 @@ void InputActionMap::Update(f32 dt) {
             if (IsBindingPressed(binding)) anyPressed = true;
             if (IsBindingReleased(binding)) anyReleased = true;
         }
+        // A touch control holding this action, whatever its bindings are
+        const bool touchDown = Input::IsTouchActionDown(static_cast<int>(i));
+        if (touchDown) anyDown = true;
+        if (touchDown && !m_TouchDownPrev[i]) anyPressed = true;
+        if (!touchDown && m_TouchDownPrev[i]) anyReleased = true;
+        m_TouchDownPrev[i] = touchDown ? 1 : 0;
 
         switch (cfg.mode) {
             case ActionMode::Hold:
@@ -398,64 +437,168 @@ ActionConfig& InputActionMap::GetActionConfig(GameAction action) {
     return m_Actions[static_cast<u32>(action)];
 }
 
-void InputActionMap::ApplyLeftHandOnly() {
-    LoadDefaults();
-    // Remap movement to WASD (already there) + jump to Space (already there)
-    // Remap actions normally on right side to left-hand keys
-    auto& interact = m_Actions[static_cast<u32>(GameAction::Interact)];
-    interact.bindings.clear();
-    InputBinding b; b.type = BindingType::Key;
-    b.code = static_cast<i32>(KeyCode::F); interact.bindings.push_back(b);
-    b.code = static_cast<i32>(KeyCode::R); interact.bindings.push_back(b);
-}
+namespace {
+    bool IsKeyIn(i32 code, std::initializer_list<KeyCode> keys) {
+        for (KeyCode k : keys) if (static_cast<i32>(k) == code) return true;
+        return false;
+    }
 
-void InputActionMap::ApplyRightHandOnly() {
-    LoadDefaults();
-    // Remap movement to arrow keys and numpad
-    auto& fwd = m_Actions[static_cast<u32>(GameAction::MoveForward)];
-    fwd.bindings.clear();
-    InputBinding b; b.type = BindingType::Key;
-    b.code = static_cast<i32>(KeyCode::Up); fwd.bindings.push_back(b);
-    b.code = static_cast<i32>(KeyCode::KP8); fwd.bindings.push_back(b);
-
-    auto& back = m_Actions[static_cast<u32>(GameAction::MoveBack)];
-    back.bindings.clear();
-    b.code = static_cast<i32>(KeyCode::Down); back.bindings.push_back(b);
-    b.code = static_cast<i32>(KeyCode::KP2); back.bindings.push_back(b);
-
-    auto& left = m_Actions[static_cast<u32>(GameAction::MoveLeft)];
-    left.bindings.clear();
-    b.code = static_cast<i32>(KeyCode::Left); left.bindings.push_back(b);
-    b.code = static_cast<i32>(KeyCode::KP4); left.bindings.push_back(b);
-
-    auto& right = m_Actions[static_cast<u32>(GameAction::MoveRight)];
-    right.bindings.clear();
-    b.code = static_cast<i32>(KeyCode::Right); right.bindings.push_back(b);
-    b.code = static_cast<i32>(KeyCode::KP6); right.bindings.push_back(b);
-
-    auto& jump = m_Actions[static_cast<u32>(GameAction::Jump)];
-    jump.bindings.clear();
-    b.code = static_cast<i32>(KeyCode::KP0); jump.bindings.push_back(b);
-    b.code = static_cast<i32>(KeyCode::RightControl); jump.bindings.push_back(b);
-
-    auto& sprint = m_Actions[static_cast<u32>(GameAction::Sprint)];
-    sprint.bindings.clear();
-    b.code = static_cast<i32>(KeyCode::RightShift); sprint.bindings.push_back(b);
-}
-
-void InputActionMap::ApplyGamepadOnly() {
-    // Keep only gamepad bindings from defaults
-    LoadDefaults();
-    const u32 count = static_cast<u32>(m_Actions.size());
-    for (u32 i = 0; i < count; ++i) {
-        auto& cfg = m_Actions[i];
-        std::vector<InputBinding> gamepadOnly;
+    void SetKeys(ActionConfig& cfg, std::initializer_list<KeyCode> keys, bool keepMouse) {
+        std::vector<InputBinding> kept;
         for (const auto& b : cfg.bindings) {
-            if (b.type == BindingType::GamepadButton || b.type == BindingType::GamepadAxis) {
-                gamepadOnly.push_back(b);
-            }
+            if (b.type == BindingType::GamepadButton || b.type == BindingType::GamepadAxis) kept.push_back(b);
+            else if (keepMouse && b.type == BindingType::MouseButton) kept.push_back(b);
         }
-        cfg.bindings = gamepadOnly;
+        std::vector<InputBinding> out;
+        for (KeyCode k : keys) {
+            InputBinding b;
+            b.type = BindingType::Key;
+            b.code = static_cast<i32>(k);
+            out.push_back(b);
+        }
+        out.insert(out.end(), kept.begin(), kept.end());
+        cfg.bindings = std::move(out);
+    }
+
+    struct PresetRow { GameAction action; std::initializer_list<KeyCode> keys; };
+}
+
+const char* GetBindingPresetName(BindingPreset preset) {
+    switch (preset) {
+        case BindingPreset::LeftHand:    return "LeftHand";
+        case BindingPreset::RightHand:   return "RightHand";
+        case BindingPreset::GamepadOnly: return "GamepadOnly";
+        default:                         return "None";
+    }
+}
+
+BindingPreset ParseBindingPreset(const std::string& name) {
+    if (name == "LeftHand")    return BindingPreset::LeftHand;
+    if (name == "RightHand")   return BindingPreset::RightHand;
+    if (name == "GamepadOnly") return BindingPreset::GamepadOnly;
+    return BindingPreset::None;
+}
+
+bool IsLeftHandKey(i32 code) {
+    if (code == static_cast<i32>(KeyCode::Space)) return true;
+    return IsKeyIn(code, {
+        KeyCode::Escape, KeyCode::GraveAccent, KeyCode::Num1, KeyCode::Num2, KeyCode::Num3, KeyCode::Num4, KeyCode::Num5,
+        KeyCode::Tab, KeyCode::Q, KeyCode::W, KeyCode::E, KeyCode::R, KeyCode::T,
+        KeyCode::CapsLock, KeyCode::A, KeyCode::S, KeyCode::D, KeyCode::F, KeyCode::G,
+        KeyCode::LeftShift, KeyCode::Z, KeyCode::X, KeyCode::C, KeyCode::V, KeyCode::B,
+        KeyCode::LeftControl, KeyCode::LeftAlt, KeyCode::LeftSuper,
+        KeyCode::F1, KeyCode::F2, KeyCode::F3, KeyCode::F4, KeyCode::F5 });
+}
+
+bool IsRightHandKey(i32 code) {
+    if (code == static_cast<i32>(KeyCode::Space)) return true;
+    return IsKeyIn(code, {
+        KeyCode::Num6, KeyCode::Num7, KeyCode::Num8, KeyCode::Num9, KeyCode::Num0, KeyCode::Minus, KeyCode::Equal, KeyCode::Backspace,
+        KeyCode::Y, KeyCode::U, KeyCode::I, KeyCode::O, KeyCode::P, KeyCode::LeftBracket, KeyCode::RightBracket, KeyCode::Backslash,
+        KeyCode::H, KeyCode::J, KeyCode::K, KeyCode::L, KeyCode::Semicolon, KeyCode::Apostrophe, KeyCode::Enter,
+        KeyCode::N, KeyCode::M, KeyCode::Comma, KeyCode::Period, KeyCode::Slash, KeyCode::RightShift,
+        KeyCode::RightAlt, KeyCode::RightControl, KeyCode::RightSuper,
+        KeyCode::Up, KeyCode::Down, KeyCode::Left, KeyCode::Right,
+        KeyCode::Insert, KeyCode::Delete, KeyCode::Home, KeyCode::End, KeyCode::PageUp, KeyCode::PageDown,
+        KeyCode::KP0, KeyCode::KP1, KeyCode::KP2, KeyCode::KP3, KeyCode::KP4, KeyCode::KP5, KeyCode::KP6,
+        KeyCode::KP7, KeyCode::KP8, KeyCode::KP9, KeyCode::KPDecimal, KeyCode::KPDivide, KeyCode::KPMultiply,
+        KeyCode::KPSubtract, KeyCode::KPAdd, KeyCode::KPEnter, KeyCode::KPEqual,
+        KeyCode::F6, KeyCode::F7, KeyCode::F8, KeyCode::F9, KeyCode::F10, KeyCode::F11, KeyCode::F12 });
+}
+
+void InputActionMap::ApplyPresetLayer() {
+    using GA = GameAction;
+    using K = KeyCode;
+    const u32 count = static_cast<u32>(m_Actions.size());
+
+    if (m_Preset == BindingPreset::GamepadOnly) {
+        // Gameplay reads the pad alone. Menu and dialogue actions keep their
+        // keys: switch-access devices and key-emulating hardware send Enter
+        // and Space, and without Confirm nobody could leave the menu that
+        // turned this on. Touch no longer needs a key (Input::IsTouchActionDown).
+        for (u32 i = 0; i < count; ++i) {
+            if (GetActionCategory(static_cast<i32>(i)) == static_cast<i32>(ActionCategory::UI)) continue;
+            auto& cfg = m_Actions[i];
+            std::vector<InputBinding> pad;
+            for (const auto& b : cfg.bindings) {
+                if (b.type == BindingType::GamepadButton || b.type == BindingType::GamepadAxis) pad.push_back(b);
+            }
+            cfg.bindings = std::move(pad);
+        }
+        return;
+    }
+    if (m_Preset != BindingPreset::LeftHand && m_Preset != BindingPreset::RightHand) return;
+
+    // Every engine action gets a full row, so nothing is left on the other
+    // hand. Pad bindings stay: the preset is about which hand is on the keyboard.
+    const bool left = m_Preset == BindingPreset::LeftHand;
+    const PresetRow leftRows[] = {
+        { GA::MoveForward, {K::W} }, { GA::MoveBack, {K::S} }, { GA::MoveLeft, {K::A} }, { GA::MoveRight, {K::D} },
+        { GA::Jump, {K::Space} }, { GA::Sprint, {K::LeftShift} }, { GA::Crouch, {K::LeftControl, K::C} },
+        { GA::Dash, {K::LeftAlt} }, { GA::Interact, {K::G} }, { GA::Attack, {K::Z} }, { GA::Block, {K::X} },
+        { GA::Pause, {K::Escape} },
+        { GA::LookUp, {K::R} }, { GA::LookDown, {K::F} }, { GA::LookLeft, {K::Q} }, { GA::LookRight, {K::E} },
+        { GA::CameraZoomIn, {K::T} }, { GA::CameraZoomOut, {K::B} },
+        { GA::UIConfirm, {K::Space} }, { GA::UICancel, {K::Escape} },
+        { GA::UINavUp, {K::W} }, { GA::UINavDown, {K::S} }, { GA::UINavLeft, {K::A} }, { GA::UINavRight, {K::D} },
+        { GA::DialogueAdvance, {K::Space} },
+    };
+    const PresetRow rightRows[] = {
+        { GA::MoveForward, {K::Up, K::KP8} }, { GA::MoveBack, {K::Down, K::KP2} },
+        { GA::MoveLeft, {K::Left, K::KP4} }, { GA::MoveRight, {K::Right, K::KP6} },
+        { GA::Jump, {K::KP0, K::RightControl} }, { GA::Sprint, {K::RightShift} }, { GA::Crouch, {K::KP1} },
+        { GA::Dash, {K::KP3} }, { GA::Interact, {K::KP7} }, { GA::Attack, {K::KP9} }, { GA::Block, {K::KPAdd} },
+        { GA::Pause, {K::P} },
+        { GA::LookUp, {K::Home} }, { GA::LookDown, {K::End} }, { GA::LookLeft, {K::Delete} }, { GA::LookRight, {K::PageDown} },
+        { GA::CameraZoomIn, {K::PageUp} }, { GA::CameraZoomOut, {K::Insert} },
+        { GA::UIConfirm, {K::Enter, K::KPEnter} }, { GA::UICancel, {K::Backspace} },
+        { GA::UINavUp, {K::Up} }, { GA::UINavDown, {K::Down} }, { GA::UINavLeft, {K::Left} }, { GA::UINavRight, {K::Right} },
+        { GA::DialogueAdvance, {K::Enter, K::KPEnter} },
+    };
+    // Left Hand is mouse-free; Right Hand keeps the mouse, which is on that side
+    for (const PresetRow& row : left ? leftRows : rightRows) {
+        const u32 i = static_cast<u32>(row.action);
+        if (i < count) SetKeys(m_Actions[i], row.keys, !left);
+    }
+
+    // Project actions: drop keys from the other side, and give any action left
+    // with no key the next free key on this side
+    const std::initializer_list<K> leftPool  = { K::Num1, K::Num2, K::Num3, K::Num4, K::Num5, K::V, K::Tab,
+                                                 K::GraveAccent, K::CapsLock, K::F1, K::F2, K::F3, K::F4, K::F5 };
+    const std::initializer_list<K> rightPool = { K::KP5, K::KPDecimal, K::KPDivide, K::KPMultiply, K::KPSubtract,
+                                                 K::Num6, K::Num7, K::Num8, K::Num9, K::Num0, K::Y, K::U, K::I, K::O,
+                                                 K::H, K::J, K::K, K::L, K::N, K::M };
+    auto used = [&](i32 code) {
+        for (const auto& cfg : m_Actions) {
+            if (GetActionCategory(static_cast<i32>(cfg.action)) == static_cast<i32>(ActionCategory::UI)) continue;
+            for (const auto& b : cfg.bindings) if (b.type == BindingType::Key && b.code == code) return true;
+        }
+        return false;
+    };
+    for (u32 i = kFirstProjectAction; i < count; ++i) {
+        if (!IsActionListed(static_cast<i32>(i))) continue;
+        auto& cfg = m_Actions[i];
+        std::vector<InputBinding> kept;
+        bool hasKey = false;
+        for (const auto& b : cfg.bindings) {
+            if (b.type == BindingType::Key) {
+                if (!(left ? IsLeftHandKey(b.code) : IsRightHandKey(b.code))) continue;
+                hasKey = true;
+            } else if (b.type == BindingType::MouseButton && left) {
+                continue;
+            }
+            kept.push_back(b);
+        }
+        cfg.bindings = std::move(kept);
+        if (hasKey) continue;
+        for (K k : left ? leftPool : rightPool) {
+            if (used(static_cast<i32>(k))) continue;
+            InputBinding b;
+            b.type = BindingType::Key;
+            b.code = static_cast<i32>(k);
+            cfg.bindings.insert(cfg.bindings.begin(), b);
+            break;
+        }
     }
 }
 
@@ -605,17 +748,9 @@ u32 InputActionMap::DropInvalidBindings() {
         if (cfg.bindings.size() == before) continue;
         repaired += static_cast<u32>(before - cfg.bindings.size());
 
+        // Back to what the game, its project layer and the preset give it
         if (cfg.bindings.empty()) {
-            const ActionInfo& info = GetActionInfo(static_cast<GameAction>(i));
-            auto add = [&cfg](BindingType t, i32 c) {
-                if (c < 0) return;
-                InputBinding b; b.type = t; b.code = c; cfg.bindings.push_back(b);
-            };
-            add(BindingType::Key, info.key1);
-            add(BindingType::Key, info.key2);
-            add(BindingType::MouseButton, info.mouse);
-            add(BindingType::GamepadButton, info.pad);
-            add(BindingType::GamepadButton, info.pad2);
+            if (const ActionConfig* def = GetDefaultConfig(i)) cfg.bindings = def->bindings;
         }
     }
     if (repaired > 0) {
@@ -850,48 +985,100 @@ i32 InputActionMap::GetActionCategory(i32 index) const {
     return static_cast<i32>(GetActionInfo(static_cast<GameAction>(index)).category);
 }
 
+namespace {
+    bool SameBindings(const std::vector<InputBinding>& a, const std::vector<InputBinding>& b) {
+        if (a.size() != b.size()) return false;
+        for (usize i = 0; i < a.size(); ++i) {
+            if (a[i].type != b[i].type || a[i].code != b[i].code ||
+                a[i].axisPositive != b[i].axisPositive ||
+                std::fabs(a[i].axisThreshold - b[i].axisThreshold) > 1e-6f) return false;
+        }
+        return true;
+    }
+
+    json BindingToJson(const InputBinding& b) {
+        json bj;
+        bj["type"] = static_cast<u32>(b.type);
+        bj["code"] = b.code;
+        bj["axisThreshold"] = b.axisThreshold;
+        bj["axisPositive"] = b.axisPositive;
+        return bj;
+    }
+}
+
+bool InputActionMap::IsActionChanged(i32 index) const {
+    if (!IsValidAction(index)) return false;
+    const auto& cfg = m_Actions[static_cast<u32>(index)];
+    const ActionConfig* def = GetDefaultConfig(static_cast<u32>(index));
+    if (!def) return !cfg.bindings.empty();
+    return cfg.mode != def->mode || cfg.invertAxis != def->invertAxis ||
+           std::fabs(cfg.sensitivity - def->sensitivity) > 1e-6f ||
+           !SameBindings(cfg.bindings, def->bindings);
+}
+
 std::string InputActionMap::ToJson() const {
-    json j = json::array();
+    json j;
+    j["version"] = kBindingsVersion;
+    j["preset"] = GetBindingPresetName(m_Preset);
+    json actions = json::array();
     const u32 count = static_cast<u32>(m_Actions.size());
     for (u32 i = 0; i < count; ++i) {
+        if (!IsActionChanged(static_cast<i32>(i))) continue;
+        // An unnamed project slot is nothing the player could have changed
+        if (i >= kFirstProjectAction && m_ProjectNames[i - kFirstProjectAction].empty()) continue;
         const auto& cfg = m_Actions[i];
         json actionJson;
         actionJson["action"] = i;
         // Project actions carry their name, so a save still finds them if the
         // project reorders its slots
-        if (i >= kFirstProjectAction && !m_ProjectNames[i - kFirstProjectAction].empty()) {
-            actionJson["name"] = m_ProjectNames[i - kFirstProjectAction];
-        }
+        if (i >= kFirstProjectAction) actionJson["name"] = m_ProjectNames[i - kFirstProjectAction];
         actionJson["mode"] = static_cast<u32>(cfg.mode);
         actionJson["sensitivity"] = cfg.sensitivity;
         actionJson["invertAxis"] = cfg.invertAxis;
         json bindingsJson = json::array();
-        for (const auto& b : cfg.bindings) {
-            json bj;
-            bj["type"] = static_cast<u32>(b.type);
-            bj["code"] = b.code;
-            bj["axisThreshold"] = b.axisThreshold;
-            bj["axisPositive"] = b.axisPositive;
-            bindingsJson.push_back(bj);
-        }
+        for (const auto& b : cfg.bindings) bindingsJson.push_back(BindingToJson(b));
         actionJson["bindings"] = bindingsJson;
-        j.push_back(actionJson);
+        actions.push_back(actionJson);
     }
+    j["actions"] = actions;
     return j.dump(2);
 }
 
 bool InputActionMap::FromJson(const std::string& jsonStr) {
     try {
         json j = json::parse(jsonStr);
-        if (!j.is_array()) return false;
+        const json* actions = nullptr;
+        const bool legacy = j.is_array();
+        if (legacy) {
+            actions = &j;   // version 1: every action, no preset
+        } else if (j.is_object()) {
+            const u32 version = j.value("version", 0u);
+            if (version > kBindingsVersion) {
+                ENJIN_LOG_WARN(Core, "Input bindings were saved by a newer version (%u); reading what this one understands", version);
+            }
+            // The preset first: the player's changes are relative to it
+            m_Preset = (j.contains("preset") && j["preset"].is_string())
+                           ? ParseBindingPreset(j["preset"].get<std::string>()) : BindingPreset::None;
+            LoadDefaults();
+            if (j.contains("actions") && j["actions"].is_array()) actions = &j["actions"];
+        } else {
+            return false;
+        }
+        if (!actions) { DropInvalidBindings(); return true; }
 
-        for (const auto& actionJson : j) {
-            if (!actionJson.is_object() || !actionJson.contains("action")) continue;   // skip, do not abort
+        for (const auto& actionJson : *actions) {
+            if (!actionJson.is_object() || !actionJson.contains("action") ||
+                !actionJson["action"].is_number_unsigned()) continue;   // skip, do not abort
             u32 idx = actionJson["action"].get<u32>();
-            // A named project action goes to wherever that name lives now
-            if (actionJson.contains("name") && actionJson["name"].is_string()) {
+            if (idx >= kFirstProjectAction) {
+                // A project action goes to wherever its name lives now, and
+                // one with no name was never the player's: in an old file it is
+                // an unnamed slot, and loading it would overwrite whatever
+                // default the game has since given that slot (IN-11)
+                if (!actionJson.contains("name") || !actionJson["name"].is_string()) continue;
                 const i32 byName = FindAction(actionJson["name"].get<std::string>());
-                if (byName >= static_cast<i32>(kFirstProjectAction)) idx = static_cast<u32>(byName);
+                if (byName < static_cast<i32>(kFirstProjectAction)) continue;
+                idx = static_cast<u32>(byName);
             }
             if (idx >= static_cast<u32>(m_Actions.size())) continue;
 
@@ -901,8 +1088,9 @@ bool InputActionMap::FromJson(const std::string& jsonStr) {
             cfg.invertAxis = actionJson.value("invertAxis", false);
 
             cfg.bindings.clear();
-            if (actionJson.contains("bindings")) {
+            if (actionJson.contains("bindings") && actionJson["bindings"].is_array()) {
                 for (const auto& bj : actionJson["bindings"]) {
+                    if (!bj.is_object()) continue;
                     InputBinding b;
                     b.type = static_cast<BindingType>(bj.value("type", 0u));
                     b.code = bj.value("code", 0);

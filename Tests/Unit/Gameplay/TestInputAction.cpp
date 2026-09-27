@@ -150,8 +150,11 @@ ENJIN_TEST(Presets, GamepadOnly) {
     InputActionMap map;
     map.ApplyGamepadOnly();
     ENJIN_EXPECT_EQ(map.GetActionCount(), 33);
-    // All bindings should be gamepad types
+    // Every gameplay binding is a gamepad one. Menu actions keep their keys
+    // so Confirm still works for switches and key-emulating hardware (IN-23).
+    ENJIN_EXPECT_GT(map.GetActionConfig(GameAction::UIConfirm).bindings.size(), (size_t)1);
     for (i32 i = 0; i < map.GetActionCount(); ++i) {
+        if (map.GetActionCategory(i) == static_cast<i32>(ActionCategory::UI)) continue;
         auto& config = map.GetActionConfig((GameAction)i);
         for (auto& binding : config.bindings) {
             bool isGamepad = (binding.type == BindingType::GamepadButton ||
@@ -193,10 +196,10 @@ ENJIN_TEST(JSON, InvalidJsonReturnsFalse) {
 ENJIN_TEST(JSON, OutputIsValidJSON) {
     InputActionMap map;
     std::string json = map.ToJson();
-    // Should start with [ (array of actions)
+    // An object: version, preset, and the player's changes (IN-11)
     ENJIN_EXPECT_GT(json.size(), (size_t)2);
-    ENJIN_EXPECT_EQ(json[0], '[');
-    ENJIN_EXPECT_EQ(json[json.size() - 1], ']');
+    ENJIN_EXPECT_EQ(json[0], '{');
+    ENJIN_EXPECT_EQ(json[json.size() - 1], '}');
 }
 
 ENJIN_TEST(JSON, PresetSurvivesRoundTrip) {
@@ -208,7 +211,9 @@ ENJIN_TEST(JSON, PresetSurvivesRoundTrip) {
     ENJIN_EXPECT_TRUE(map2.FromJson(json));
 
     // Verify gamepad-only survived
+    ENJIN_EXPECT_TRUE(map2.GetPreset() == BindingPreset::GamepadOnly);
     for (i32 i = 0; i < map2.GetActionCount(); ++i) {
+        if (map2.GetActionCategory(i) == static_cast<i32>(ActionCategory::UI)) continue;
         auto& config = map2.GetActionConfig((GameAction)i);
         for (auto& binding : config.bindings) {
             bool isGamepad = (binding.type == BindingType::GamepadButton ||

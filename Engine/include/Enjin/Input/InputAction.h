@@ -133,6 +133,23 @@ struct InputBinding {
 };
 
 // Configuration for a single action
+// An accessibility preset: a layer between the game's defaults and the
+// player's own changes. It is stored by name rather than baked into the
+// bindings, so it can be removed, and a game update that changes a default
+// still reaches a player using one (IN-23).
+enum class BindingPreset : u8 {
+    None = 0,
+    LeftHand,      // every gameplay action on the left of the keyboard, no mouse
+    RightHand,     // every gameplay action on the right of the keyboard and the mouse
+    GamepadOnly,   // gameplay reads the pad only; menus, touch and switches still work
+};
+ENJIN_API const char* GetBindingPresetName(BindingPreset preset);   // "LeftHand", for the save file
+ENJIN_API BindingPreset ParseBindingPreset(const std::string& name);  // None for anything unknown
+// Which half of the keyboard a key sits on. Space is a thumb key and counts as
+// both. Modifiers go by their side. Used by the one-handed presets and their test.
+ENJIN_API bool IsLeftHandKey(i32 keyCode);
+ENJIN_API bool IsRightHandKey(i32 keyCode);
+
 struct ActionConfig {
     GameAction action = GameAction::MoveForward;
     ActionMode mode = ActionMode::Hold;
@@ -185,11 +202,21 @@ public:
     void SetActionMode(GameAction action, ActionMode mode);
     void SetSensitivity(GameAction action, f32 sensitivity);
 
-    // One-handed presets
-    void ApplyLeftHandOnly();
-    void ApplyRightHandOnly();
-    void ApplyGamepadOnly();
-    void ResetToDefaults() { LoadDefaults(); }
+    // Accessibility presets. Choosing one rebuilds the defaults with the preset
+    // on top and drops the player's own changes, as the buttons always did;
+    // choosing None removes it. The preset is saved by name in bindings.json.
+    void SetPreset(BindingPreset preset);
+    BindingPreset GetPreset() const { return m_Preset; }
+    // What a preset button does: on, or off again if it is already on
+    void TogglePreset(BindingPreset preset) { SetPreset(m_Preset == preset ? BindingPreset::None : preset); }
+    void ApplyLeftHandOnly()  { SetPreset(BindingPreset::LeftHand); }
+    void ApplyRightHandOnly() { SetPreset(BindingPreset::RightHand); }
+    void ApplyGamepadOnly()   { SetPreset(BindingPreset::GamepadOnly); }
+    // Everything back to the game's defaults: no preset, no player changes
+    void ResetToDefaults() { SetPreset(BindingPreset::None); }
+    // Whether an action differs from what the defaults and the preset give it:
+    // the player's layer. Only these are written to bindings.json.
+    bool IsActionChanged(i32 index) const;
 
     // Access config
     const ActionConfig& GetActionConfig(GameAction action) const;
@@ -271,12 +298,22 @@ public:
     // untouched, so old scenes keep working and simply stay stale.
     std::string ResolvePromptText(const std::string& text) const;
 
-    // Persistence
+    // Persistence. bindings.json holds a version, the preset, and ONLY the
+    // actions the player changed (IN-11). Anything the player never touched
+    // follows the game's defaults, so an action added or rebound by a game
+    // update reaches existing players. The old format -- a bare array with
+    // every action -- still loads.
+    static constexpr u32 kBindingsVersion = 2;
     std::string ToJson() const;
     bool FromJson(const std::string& jsonStr);
 
 private:
     void LoadTableDefaults();   // the ActionInfo table alone
+    void ApplyPresetLayer();    // m_Preset on top of whatever m_Actions holds
+    // Rebuild m_DefaultConfigs (table + project + preset) without touching the
+    // live bindings. Run when the project layer changes.
+    void RefreshDefaultConfigs();
+    const ActionConfig* GetDefaultConfig(u32 index) const;
     void EnsureActionCount(u32 count);   // grow every per-action array to count
     bool IsBindingActive(const InputBinding& binding) const;
     bool IsBindingPressed(const InputBinding& binding) const;
@@ -288,6 +325,11 @@ private:
     std::vector<std::string> m_ProjectNames;   // indexed by slot
     std::function<void(InputActionMap&)> m_ProjectDefaults;
     bool m_DefaultsLoaded = false;   // the first load has no preferences to keep
+    BindingPreset m_Preset = BindingPreset::None;
+    // What the defaults and the preset give each action; the player layer is
+    // whatever differs from this
+    std::vector<ActionConfig> m_DefaultConfigs;
+    std::vector<u8> m_TouchDownPrev;   // last frame's Input::IsTouchActionDown, for edges
 
     // Toggle state tracking
     std::vector<u8> m_ToggleState;

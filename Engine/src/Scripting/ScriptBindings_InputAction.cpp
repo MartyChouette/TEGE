@@ -170,6 +170,15 @@ static void Input_ApplyRightHandOnly() {
     s_BindingsInputActionMap->ApplyRightHandOnly();
 }
 
+// 0 none, 1 left hand, 2 right hand, 3 gamepad only
+static void Input_SetPreset(i32 preset) {
+    if (!s_BindingsInputActionMap || preset < 0 || preset > 3) return;
+    s_BindingsInputActionMap->SetPreset(static_cast<InputSystem::BindingPreset>(preset));
+}
+static i32 Input_GetPreset() {
+    return s_BindingsInputActionMap ? static_cast<i32>(s_BindingsInputActionMap->GetPreset()) : 0;
+}
+
 static void Input_ApplyGamepadOnly() {
     if (!s_BindingsInputActionMap) return;
     s_BindingsInputActionMap->ApplyGamepadOnly();
@@ -268,6 +277,8 @@ void RegisterInputActionBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction("void InputAction_ApplyLeftHandOnly()", ENJIN_AS_FN(Input_ApplyLeftHandOnly), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void InputAction_ApplyRightHandOnly()", ENJIN_AS_FN(Input_ApplyRightHandOnly), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void InputAction_ApplyGamepadOnly()", ENJIN_AS_FN(Input_ApplyGamepadOnly), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void InputAction_SetPreset(int preset)", ENJIN_AS_FN(Input_SetPreset), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("int InputAction_GetPreset()", ENJIN_AS_FN(Input_GetPreset), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void InputAction_ResetDefaults()", ENJIN_AS_FN(Input_ResetToDefaults), ENJIN_AS_CALL_CDECL));
 
     // Custom actions + extra binding types
