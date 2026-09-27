@@ -3,6 +3,8 @@
 #include "Enjin/ECS/Billboards.h"
 #include "Enjin/ECS/Timers.h"
 #include "Enjin/ECS/FollowTarget.h"
+#include "Enjin/ECS/CameraZones.h"
+#include "Enjin/ECS/Components/Camera.h"
 #include "Enjin/ECS/EntityEventBus.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Hierarchy.h"
@@ -628,6 +630,59 @@ ENJIN_TEST(FollowTarget, MoveSpeedCapsAndRotationFollows) {
     // Ninety degrees a second: halfway round the 180 turn
     Math::Vector3 fwd = r.w.GetComponent<TransformComponent>(r.follower)->rotation.Rotate(Math::Vector3(0, 0, 1));
     ENJIN_EXPECT_TRUE(std::abs(fwd.z) < 0.1f);
+}
+
+// ===========================================================================
+// Camera zone Blend Time: saved and never read, so a zone cut hard (SD-27)
+// ===========================================================================
+
+namespace {
+Entity AddCam(World& w, const Math::Vector3& at, f32 fov) {
+    Entity e = w.CreateEntity();
+    w.AddComponent<TransformComponent>(e).position = at;
+    CameraComponent c;
+    c.fieldOfView = fov;
+    w.AddComponent<CameraComponent>(e, c);
+    return e;
+}
+}
+
+ENJIN_TEST(CameraBlend, AChangeOfCameraEasesOverTheBlendTime) {
+    World w;
+    Entity a = AddCam(w, Math::Vector3(0.0f), 60.0f);
+    Entity b = AddCam(w, Math::Vector3(10.0f, 0.0f, 0.0f), 90.0f);
+    GameCameraBlend st;
+    GameCameraPose p;
+    ENJIN_ASSERT_TRUE(BlendGameCamera(&w, st, a, 1.0f, 0.016f, p));
+    ENJIN_EXPECT_TRUE(Near3(p.position, Math::Vector3(0.0f)));   // the first camera does not blend in
+    BlendGameCamera(&w, st, b, 1.0f, 0.5f, p);
+    ENJIN_EXPECT_TRUE(Near3(p.position, Math::Vector3(5.0f, 0.0f, 0.0f)));   // smoothstep at half = half
+    ENJIN_EXPECT_TRUE(std::abs(p.fieldOfView - 75.0f) < 0.01f);
+    BlendGameCamera(&w, st, b, 1.0f, 0.6f, p);
+    ENJIN_EXPECT_TRUE(Near3(p.position, Math::Vector3(10.0f, 0.0f, 0.0f)));
+}
+
+ENJIN_TEST(CameraBlend, SwitchingBackMidBlendStartsFromTheCurrentView) {
+    World w;
+    Entity a = AddCam(w, Math::Vector3(0.0f), 60.0f);
+    Entity b = AddCam(w, Math::Vector3(10.0f, 0.0f, 0.0f), 60.0f);
+    GameCameraBlend st;
+    GameCameraPose p;
+    BlendGameCamera(&w, st, a, 1.0f, 0.016f, p);
+    BlendGameCamera(&w, st, b, 1.0f, 0.5f, p);                // at x = 5
+    BlendGameCamera(&w, st, a, 1.0f, 0.0f, p);                // turn back: no jump
+    ENJIN_EXPECT_TRUE(Near3(p.position, Math::Vector3(5.0f, 0.0f, 0.0f)));
+}
+
+ENJIN_TEST(CameraBlend, ZeroBlendTimeCuts) {
+    World w;
+    Entity a = AddCam(w, Math::Vector3(0.0f), 60.0f);
+    Entity b = AddCam(w, Math::Vector3(10.0f, 0.0f, 0.0f), 60.0f);
+    GameCameraBlend st;
+    GameCameraPose p;
+    BlendGameCamera(&w, st, a, 0.0f, 0.016f, p);
+    BlendGameCamera(&w, st, b, 0.0f, 0.016f, p);
+    ENJIN_EXPECT_TRUE(Near3(p.position, Math::Vector3(10.0f, 0.0f, 0.0f)));
 }
 
 ENJIN_TEST_MAIN()

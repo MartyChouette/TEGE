@@ -3166,6 +3166,7 @@ void EditorLayer::UpdateGameViewSims(f32 simDt) {
 
     // Camera zone detection: find the player entity and check CameraTrigger zones
     m_CameraZoneOverride = ECS::INVALID_ENTITY;
+    ECS::Entity zoneTrigger = ECS::INVALID_ENTITY;
     {
         // Use cached player entity; re-scan only if invalid
         if (m_CachedPlayerEntity == ECS::INVALID_ENTITY || !m_World->IsValid(m_CachedPlayerEntity) ||
@@ -3194,7 +3195,7 @@ void EditorLayer::UpdateGameViewSims(f32 simDt) {
         ECS::Entity playerEntity = m_CachedPlayerEntity;
 
         // The same zone rule both players use (ECS::ResolveCameraZone).
-        m_CameraZoneOverride = ECS::ResolveCameraZone(m_World, playerEntity);
+        m_CameraZoneOverride = ECS::ResolveCameraZone(m_World, playerEntity, &zoneTrigger);
 
         // Override game camera if a zone-driven camera was found
         if (m_CameraZoneOverride != ECS::INVALID_ENTITY) {
@@ -3205,6 +3206,19 @@ void EditorLayer::UpdateGameViewSims(f32 simDt) {
     if (!m_World->IsValid(gameCameraEntity)) return;
     auto* cameraTransform = m_World->GetComponent<ECS::TransformComponent>(gameCameraEntity);
     if (!cameraTransform) return;
+
+    // Ease the game view over the zone's Blend Time, the same step the players
+    // take (ECS::BlendGameCamera); the render pass below uses the result.
+    {
+        f32 blendTime = m_GameCameraBlend.lastZoneBlend;
+        if (const auto* trig = m_World->GetComponent<ECS::CameraTriggerComponent>(zoneTrigger)) {
+            blendTime = trig->blendTime;
+            m_GameCameraBlend.lastZoneBlend = blendTime;
+        }
+        m_GameCameraPoseValid = ECS::BlendGameCamera(m_World, m_GameCameraBlend, gameCameraEntity,
+                                                     blendTime, simDt, m_GameCameraPose);
+        if (zoneTrigger == ECS::INVALID_ENTITY) m_GameCameraBlend.lastZoneBlend = 0.0f;
+    }
 
     // Find active weather zone containing the game camera
     ECS::WeatherZoneComponent* activeWeatherZone = nullptr;
@@ -3783,8 +3797,10 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
     Renderer::Camera gameCamera;
     f32 aspect = cameraComp->GetAspectRatio(m_GameViewWidth, m_GameViewHeight);
 
+    // The blended view from UpdateGameViewSims, while it is heading for this camera
+    const bool useBlend = m_GameCameraPoseValid && m_GameCameraPose.entity == gameCameraEntity;
     if (cameraComp->projectionType == ECS::ProjectionType::Perspective) {
-        gameCamera.SetPerspective(cameraComp->fieldOfView, aspect,
+        gameCamera.SetPerspective(useBlend ? m_GameCameraPose.fieldOfView : cameraComp->fieldOfView, aspect,
                                    cameraComp->nearPlane, cameraComp->farPlane);
     } else {
         f32 halfH = cameraComp->orthoSize;
@@ -3801,6 +3817,11 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
         Math::Vector3 fcFwd = m_Camera->GetForward();
         gameCamera.SetLookAt(m_Camera->GetPosition(), m_Camera->GetPosition() + fcFwd,
                              Math::Vector3(0.0f, 1.0f, 0.0f));
+    } else if (useBlend) {
+        const Math::Vector3 forward = m_GameCameraPose.rotation.Rotate(Math::Vector3(0.0f, 0.0f, -1.0f));
+        const Math::Vector3 up = m_GameCameraPose.rotation.Rotate(Math::Vector3(0.0f, 1.0f, 0.0f));
+        gameCamera.SetPosition(m_GameCameraPose.position);
+        gameCamera.SetLookAt(m_GameCameraPose.position, m_GameCameraPose.position + forward, up);
     } else {
         gameCamera.SetPosition(cameraTransform->position);
 

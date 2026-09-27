@@ -1,4 +1,5 @@
 #pragma once
+#include "Enjin/ECS/CameraZones.h"
 
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Platform/Window.h"
@@ -1483,6 +1484,9 @@ private:
 
     // Camera zone override (driven by CameraTriggerComponent)
     ECS::Entity m_CameraZoneOverride = ECS::INVALID_ENTITY;
+    ECS::GameCameraBlend m_GameCameraBlend;   // camera zone Blend Time (UpdateGameViewSims)
+    ECS::GameCameraPose m_GameCameraPose;
+    bool m_GameCameraPoseValid = false;
 
     // Cached player entity for per-frame zone detection (avoid GetAllEntities scan)
     ECS::Entity m_CachedPlayerEntity = ECS::INVALID_ENTITY;

@@ -1303,6 +1303,7 @@ public:
     }
 
     void Update(Enjin::f32 deltaTime) {
+        m_LastUpdateDt = deltaTime;   // SyncCameraToWorld's zone blend steps by it
         // Global time scale (Time_SetScale): scales gameplay dt only.
         deltaTime *= Enjin::Scripting::GetTimeScale();
 
@@ -1974,14 +1975,14 @@ public:
         // while the player stands in one, else the highest-priority active
         // camera. This took the FIRST camera in the scene, ignoring priority,
         // isActive and every camera zone (SD-17).
-        const Enjin::ECS::Entity camEntity = Enjin::ECS::ResolveGameCamera(m_World.get());
-        if (camEntity != Enjin::ECS::INVALID_ENTITY && m_Camera) {
-            auto* xf = m_World->GetComponent<Enjin::ECS::TransformComponent>(camEntity);
-            auto* cc = m_World->GetComponent<Enjin::ECS::CameraComponent>(camEntity);
-            if (xf && cc) {
-                Enjin::Math::Vector3 pos = xf->position;
-                Enjin::Math::Vector3 fwd = xf->rotation.GetForward();
-                Enjin::Math::Vector3 up = xf->rotation.GetUp();
+        // Eased over a camera zone's Blend Time, as on desktop.
+        Enjin::ECS::GameCameraPose pose;
+        if (Enjin::ECS::ResolveBlendedGameCamera(m_World.get(), m_CameraBlend, m_LastUpdateDt, pose) && m_Camera) {
+            auto* cc = m_World->GetComponent<Enjin::ECS::CameraComponent>(pose.entity);
+            if (cc) {
+                Enjin::Math::Vector3 pos = pose.position;
+                Enjin::Math::Vector3 fwd = pose.rotation.GetForward();
+                Enjin::Math::Vector3 up = pose.rotation.GetUp();
                 m_Camera->SetLookAt(pos, pos + fwd, up);
                 // The listener follows the camera, as on desktop. Web never
                 // called this, so every positional sound panned and faded from
@@ -2004,7 +2005,7 @@ public:
                 } else if (cc->fieldOfView > 0.0f) {
                     // Options FOV override (desktop-menu parity): the slider
                     // wins over the authored camera when the player set it.
-                    Enjin::f32 fov = (m_OptionsFov > 0.0f) ? m_OptionsFov : cc->fieldOfView;
+                    Enjin::f32 fov = (m_OptionsFov > 0.0f) ? m_OptionsFov : pose.fieldOfView;
                     m_Camera->SetPerspective(fov, aspect, cc->nearPlane, cc->farPlane);
                 }
             }
@@ -3214,6 +3215,8 @@ private:
     Enjin::ECS::DialogueSystem m_DialogueSystem;
     Enjin::Gameplay::CinematicSystem m_CinematicSystem;
     Enjin::ECS::EntityEventBus m_EntityEventBus;
+    Enjin::ECS::GameCameraBlend m_CameraBlend;   // camera zone Blend Time
+    Enjin::f32 m_LastUpdateDt = 0.0f;
     Enjin::ECS::ActionTriggerSystem m_ActionTriggerSystem;
     Enjin::Animation::TimelineSystem m_TimelineSystem;
     Enjin::ECS::GameplaySystem m_GameplaySystem;

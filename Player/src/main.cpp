@@ -1201,6 +1201,7 @@ public:
     }
 
     void Update(Enjin::f32 deltaTime) override {
+        m_LastUpdateDt = deltaTime;   // the render-camera blend in Render() steps by it
         // Replay playback (--replay), BEFORE the time scale is applied.
         //
         // A replay carries its own dt stream, recorded after the time scale was
@@ -2223,28 +2224,24 @@ public:
             Enjin::f32 nearP = 0.1f;
             Enjin::f32 farP = 1000.0f;
             if (m_World) {
-                auto activeCam = Enjin::ECS::ResolveGameCamera(m_World.get());   // camera zones apply (SD-17)
-                if (activeCam != Enjin::ECS::INVALID_ENTITY) {
-                    auto* cc = m_World->GetComponent<Enjin::ECS::CameraComponent>(activeCam);
+                // Camera zones apply (SD-17), eased over the zone's Blend Time
+                Enjin::ECS::GameCameraPose pose;
+                if (Enjin::ECS::ResolveBlendedGameCamera(m_World.get(), m_CameraBlend, m_LastUpdateDt, pose)) {
+                    auto* cc = m_World->GetComponent<Enjin::ECS::CameraComponent>(pose.entity);
                     if (cc) {
-                        fov = cc->fieldOfView;
                         nearP = cc->nearPlane;
                         farP = cc->farPlane;
                     }
+                    fov = pose.fieldOfView;
                     // Override FOV from settings if user changed it
                     if (m_PendingFOV > 0.0f) fov = m_PendingFOV;
-                    // Sync camera position/rotation from the entity's TransformComponent
-                    auto* camTransform = m_World->GetComponent<Enjin::ECS::TransformComponent>(activeCam);
-                    if (camTransform) {
-                        m_Camera->SetPosition(camTransform->position);
-                        Enjin::Math::Vector3 forward = camTransform->rotation.GetForward();
-                        Enjin::Math::Vector3 up = camTransform->rotation.GetUp();
-                        m_Camera->SetLookAt(camTransform->position,
-                                            camTransform->position + forward, up);
-                        // 3D audio listener follows the camera (without this,
-                        // all positional sound pans relative to world origin)
-                        m_AudioEngine.SetListenerPosition(camTransform->position, forward, up);
-                    }
+                    m_Camera->SetPosition(pose.position);
+                    Enjin::Math::Vector3 forward = pose.rotation.GetForward();
+                    Enjin::Math::Vector3 up = pose.rotation.GetUp();
+                    m_Camera->SetLookAt(pose.position, pose.position + forward, up);
+                    // 3D audio listener follows the camera (without this,
+                    // all positional sound pans relative to world origin)
+                    m_AudioEngine.SetListenerPosition(pose.position, forward, up);
                 }
             }
             m_Camera->SetPerspective(fov, aspect, nearP, farP);
@@ -4487,6 +4484,8 @@ private:
     bool m_Replaying = false;
     Enjin::usize m_ReplayCursor = 0;
     Enjin::ECS::EntityEventBus m_EntityEventBus;
+    Enjin::ECS::GameCameraBlend m_CameraBlend;   // camera zone Blend Time
+    Enjin::f32 m_LastUpdateDt = 0.0f;
     Enjin::ECS::ActionTriggerSystem m_ActionTriggerSystem;
     Enjin::Animation::TimelineSystem m_TimelineSystem;
     Enjin::ECS::GameplaySystem m_GameplaySystem;
