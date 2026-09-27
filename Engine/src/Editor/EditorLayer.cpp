@@ -760,6 +760,11 @@ void EditorLayer::StartPlayMode() {
     m_CachedPlayerEntity = ECS::INVALID_ENTITY;
     m_PlayMode.SetDebugRecording(m_EditorSettings.debugRecordPlay, m_EditorSettings.debugRecordSeconds);
     m_DebugScrubOffset = 0.0f;
+    // A fresh start begins the world clock at the scene's authored start. It
+    // runs while editing, as the live preview, so its time at Play was wherever
+    // it had drifted to (EP-11).
+    if (m_PlayMode.IsStopped())
+        m_WorldTime.SetTime(m_SceneStartTimeOfDay, 1, m_SceneStartMonth, 1);
     // A fresh start shows the scene's content warnings; a resume does not
     // (not in an unattended capture, which has nobody to dismiss it)
     if (m_PlayMode.IsStopped() && s_GoldenCapturePath.empty())
@@ -2203,7 +2208,19 @@ void EditorLayer::Update(f32 deltaTime) {
     // vegetation sway, cloud drift, water effects) via windData.w - scale it
     // during play so bullet time slows them too (player/web scale their whole
     // dt upstream; the editor's raw dt must scale here).
-    m_WindSystem.Update(deltaTime * (m_PlayMode.IsPlaying() ? Scripting::GetTimeScale() : 1.0f));
+    //
+    // One clock for everything the game's own time drives (EP-10, EP-11):
+    // scaled by bullet time in play, zero while paused, and the plain frame
+    // time while editing so the edit-mode preview keeps moving. Animation,
+    // sprites, palettes, post-process time and the GPU effect sims used the
+    // raw dt, so bullet time did not slow them, and pause stopped none of
+    // them nor the game-view sims (weather, particles, the world clock...).
+    const bool gamePaused = m_PlayMode.IsPaused();
+    const f32 gameDt = gamePaused ? 0.0f
+                     : deltaTime * (m_PlayMode.IsPlaying() ? Scripting::GetTimeScale() : 1.0f);
+    m_LastGameDt = gameDt;
+    if (m_RenderSystem) m_RenderSystem->SetEffectsFrozen(gamePaused);
+    m_WindSystem.Update(gameDt);
     if (m_RenderSystem && !m_RenderSystem->GetWindSystem()) {
         m_RenderSystem->SetWindSystem(&m_WindSystem);
     }
@@ -2214,7 +2231,7 @@ void EditorLayer::Update(f32 deltaTime) {
     // deposit-only and self-guards against a second deposit in the same frame,
     // so play mode ticking it as well does not double the speed.
     if (m_RenderSystem) {
-        m_RenderSystem->TickPaletteTime(deltaTime);
+        m_RenderSystem->TickPaletteTime(gameDt);
     }
 
     // Update skeletal animators (advance bone animation each frame).
@@ -2240,21 +2257,21 @@ void EditorLayer::Update(f32 deltaTime) {
             // editor never ran it, so a character played in the editor slid
             // around in its idle (EP-8). Play only: it reads motion.
             if (m_RenderSystem && m_PlayMode.IsPlaying())
-                m_RenderSystem->UpdateMovementDrivenAnimation(*animComp, entity, deltaTime);
+                m_RenderSystem->UpdateMovementDrivenAnimation(*animComp, entity, gameDt);
             if (applyAnimLOD) {
-                f32 stepDt = deltaTime;
+                f32 stepDt = gameDt;
                 ECS::AnimationQuality quality{};
-                if (!m_RenderSystem->ShouldRefreshAnimator(*animComp, entity, deltaTime,
+                if (!m_RenderSystem->ShouldRefreshAnimator(*animComp, entity, gameDt,
                                                            stepDt, quality)) {
                     continue;   // skipped this frame; the dt stays banked
                 }
                 animComp->Update(stepDt, quality);
                 if (m_RenderSystem->AllowIKFor(entity)) m_RenderSystem->ApplyPoseEdits(entity, animComp, stepDt);
             } else {
-                animComp->Update(deltaTime);
+                animComp->Update(gameDt);
                 // Poses and IK preview while editing too; they only ever ran
                 // in the desktop player (see RenderSystem::ApplyPoseEdits)
-                if (m_RenderSystem) m_RenderSystem->ApplyPoseEdits(entity, animComp, deltaTime);
+                if (m_RenderSystem) m_RenderSystem->ApplyPoseEdits(entity, animComp, gameDt);
             }
         }
 
@@ -2262,7 +2279,7 @@ void EditorLayer::Update(f32 deltaTime) {
         // run. The editor had its own bone-attachment copy that ignored the
         // bone's rotation, and ticked no sprite animation at all.
         if (m_RenderSystem) {
-            m_RenderSystem->TickAnimatedSprites(deltaTime);
+            m_RenderSystem->TickAnimatedSprites(gameDt);
             m_RenderSystem->UpdateBoneAttachments();
         }
     }
@@ -2860,7 +2877,7 @@ void EditorLayer::Update(f32 deltaTime) {
     // player positions). Time-scaled so bullet time slows them (the player
     // runtime scales its whole dt upstream; the editor scales per-clock).
     FlushCreativeWaterEdits();
-    UpdateGameViewSims(deltaTime * (m_PlayMode.IsPlaying() ? Scripting::GetTimeScale() : 1.0f));
+    UpdateGameViewSims(m_LastGameDt);   // zero while paused (EP-11)
 
     // Game over draws ONE screen, the same one a shipped game draws.
     //
@@ -2911,7 +2928,7 @@ void EditorLayer::Update(f32 deltaTime) {
 
     // Update post-processing time for animated effects (film grain, etc.)
     if (m_PostProcessing) {
-        m_PostProcessing->Update(deltaTime);
+        m_PostProcessing->Update(m_LastGameDt);
     }
 
     // Weather is now updated per-camera in Game View panel (see DrawGameViewPanel)
@@ -3205,7 +3222,9 @@ void EditorLayer::UpdateGameViewSims(f32 simDt) {
     }
     if (gameCameraEntity == ECS::INVALID_ENTITY)
         gameCameraEntity = ECS::CameraManager::GetActiveCamera(m_World);
-    if (gameCameraEntity == ECS::INVALID_ENTITY) return;
+    // No return without a camera: the players run weather, particles, the
+    // world clock and the rest with or without one, and returning here froze
+    // them all in editor play for a scene with no camera entity (EP-11)
 
     // Camera zone detection: find the player entity and check CameraTrigger zones
     m_CameraZoneOverride = ECS::INVALID_ENTITY;
@@ -3246,14 +3265,20 @@ void EditorLayer::UpdateGameViewSims(f32 simDt) {
         }
     }
 
-    if (!m_World->IsValid(gameCameraEntity)) return;
-    auto* cameraTransform = m_World->GetComponent<ECS::TransformComponent>(gameCameraEntity);
-    if (!cameraTransform) return;
+    ECS::TransformComponent* cameraTransform =
+        (gameCameraEntity != ECS::INVALID_ENTITY && m_World->IsValid(gameCameraEntity))
+            ? m_World->GetComponent<ECS::TransformComponent>(gameCameraEntity) : nullptr;
+    if (!cameraTransform) gameCameraEntity = ECS::INVALID_ENTITY;
     m_GameViewCameraEntity = gameCameraEntity;
+    // Where the sims are centred: the game camera, or with none the editor's
+    // view, the nearest thing to a default camera a player would have
+    const Math::Vector3 simViewPos = cameraTransform ? cameraTransform->position
+                                   : (m_Camera ? m_Camera->GetPosition() : Math::Vector3());
 
     // Ease the game view over the zone's Blend Time, the same step the players
     // take (ECS::BlendGameCamera); the render pass below uses the result.
-    {
+    m_GameCameraPoseValid = false;
+    if (cameraTransform) {
         f32 blendTime = m_GameCameraBlend.lastZoneBlend;
         if (const auto* trig = m_World->GetComponent<ECS::CameraTriggerComponent>(zoneTrigger)) {
             blendTime = trig->blendTime;
@@ -3283,7 +3308,7 @@ void EditorLayer::UpdateGameViewSims(f32 simDt) {
         auto* zone = m_World->GetComponent<ECS::WeatherZoneComponent>(entity);
         auto* zoneTransform = m_World->GetComponent<ECS::TransformComponent>(entity);
         if (zone && zoneTransform && zone->priority > bestWeatherPriority) {
-            if (zone->ContainsPoint(zoneTransform->position, cameraTransform->position)) {
+            if (zone->ContainsPoint(zoneTransform->position, simViewPos)) {
                 activeWeatherZone = zone;
                 bestWeatherPriority = zone->priority;
             }
@@ -3298,7 +3323,7 @@ void EditorLayer::UpdateGameViewSims(f32 simDt) {
         auto* zone = m_World->GetComponent<ECS::TemperatureZoneComponent>(entity);
         auto* zoneTransform = m_World->GetComponent<ECS::TransformComponent>(entity);
         if (zone && zoneTransform && zone->priority > bestTempPriority) {
-            if (zone->ContainsPoint(zoneTransform->position, cameraTransform->position)) {
+            if (zone->ContainsPoint(zoneTransform->position, simViewPos)) {
                 activeTempZone = zone;
                 bestTempPriority = zone->priority;
             }
@@ -3461,7 +3486,7 @@ void EditorLayer::UpdateGameViewSims(f32 simDt) {
     // 2. Runs for the NO-ZONE case too - scripted weather
     //    (Weather_SetRainIntensity with no WeatherZone entity) previously
     //    never advanced the particle sim in the editor.
-    m_WeatherSystem.Update(simDt, cameraTransform->position);
+    m_WeatherSystem.Update(simDt, simViewPos);
     // Weather-driven sky: rain greys the gradient, snow pales it (live).
     m_RenderSystem->SetWeatherSkyBlend(m_WeatherSystem.GetRainIntensity(),
                                        m_WeatherSystem.GetSnowIntensity());
@@ -3551,7 +3576,7 @@ void EditorLayer::UpdateGameViewSims(f32 simDt) {
     m_ParallaxSystem.Update(simDt);
 
     // Update elemental system (fire/water/earth/air particle simulation)
-    if (cameraTransform) {
+    {
         // Register fire thermal feedback to wind system
         m_WindSystem.ClearHeatSources();
         const auto& elemPool = m_ElementalSystem.GetPool();
@@ -3560,7 +3585,7 @@ void EditorLayer::UpdateGameViewSims(f32 simDt) {
                 m_WindSystem.RegisterHeatSource(elemPool.positions[i], elemPool.intensities[i]);
             }
         }
-        m_ElementalSystem.Update(m_World, simDt, cameraTransform->position);
+        m_ElementalSystem.Update(m_World, simDt, simViewPos);
 
         // Feed fire emitters into the renderer as transient point lights. One
         // source lights both surfaces (PBR point lights) and participating media
@@ -3650,8 +3675,11 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
     // cycle happened to run Update without the skip flag. Idempotent per
     // frame; its internal skinning call no-ops after the line above.
     if (m_RenderSystem) {
-        m_RenderSystem->BeginFrame(m_LastDeltaTime);
-        m_RenderSystem->RecordComputePrePass(m_LastDeltaTime);
+        // The game clock, so bullet time slows GPU particles and fog (EP-10);
+        // pause freezes them through SetEffectsFrozen, since a zero here is
+        // read as "measure it"
+        m_RenderSystem->BeginFrame(m_LastGameDt);
+        m_RenderSystem->RecordComputePrePass(m_LastGameDt);
     }
 
     // --- Editor viewport: render scene from editor camera to offscreen RT ---

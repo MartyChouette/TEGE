@@ -1232,10 +1232,6 @@ public:
 
     void Update(Enjin::f32 deltaTime) override {
         m_LastUpdateDt = deltaTime;   // the render-camera blend in Render() steps by it
-        // Render() draws through World::Update(0); RenderSystem's clocks (sprite
-        // frames, pose blending, the hover pulse, movement-driven animation)
-        // take this frame's dt from here instead (EP-7)
-        if (m_RenderSystem) m_RenderSystem->SetFrameDeltaTime(deltaTime);
         // Replay playback (--replay), BEFORE the time scale is applied.
         //
         // A replay carries its own dt stream, recorded after the time scale was
@@ -1262,6 +1258,11 @@ public:
 
         if (!m_Initialized) return;
         m_FrameDeltaTime = deltaTime;  // Render() needs it for the compute pre-pass
+        // Render() draws through World::Update(0); RenderSystem's clocks (sprite
+        // frames, pose blending, the hover pulse, movement-driven animation)
+        // take this frame's dt from here instead (EP-7). After the time scale,
+        // so bullet time slows them as it slows everything else (EP-10).
+        if (m_RenderSystem) m_RenderSystem->SetFrameDeltaTime(deltaTime);
 
         // Palette cycling clock. The player drives the frame delta itself and
         // calls World::Update(0.0f), so RenderSystem::Update sees a zero dt --

@@ -10620,6 +10620,7 @@ void RenderSystem::BeginFrame(f32 deltaTime) {
         s_LastTick = now;
         deltaTime = std::clamp(measured, 0.0f, 0.1f);
     }
+    if (m_EffectsFrozen) deltaTime = 0.0f;   // editor pause (EP-11)
     m_FrameEffectDt = deltaTime;
 
     if (!m_World) return;

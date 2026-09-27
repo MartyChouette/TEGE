@@ -330,6 +330,7 @@ public:
     // pose blending, the hover pulse, movement-driven animation (EP-7, EP-8,
     // EP-9). Those read this when Update's own dt is 0. Skeletal animators do
     // not: the runtimes advance those themselves.
+    void SetEffectsFrozen(bool frozen) { m_EffectsFrozen = frozen; }
     void SetFrameDeltaTime(f32 dt) { m_FrameDt = dt; }
 private:
     // One generated cookie texture per light entity, keyed by entity. The params
@@ -1626,6 +1627,11 @@ public:
     Renderer::SkyboxConfig WeatherSky(const Renderer::SkyboxConfig& cfg) const;
     Math::Vector3 m_SkySunDir = Math::Vector3(0.0f, 1.0f, 0.0f);
     f32 m_FrameDt = 0.0f;
+    // GPU particles, fog time and the other per-frame effect sims stand still.
+    // BeginFrame reads a zero dt as "measure the wall clock" (the players pass
+    // 0), so a paused caller cannot freeze them with 0; the editor's pause sets
+    // this instead (EP-11).
+    bool m_EffectsFrozen = false;
     // Whether this frame's main pass built m_SortedRenderList. When it did not
     // (the editor never runs it; the desktop player skips it and draws through
     // RenderToTarget), RenderToTarget builds its own. The player used to fall

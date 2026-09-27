@@ -1851,6 +1851,8 @@ private:
     // The scene's authored start, not the running clock: what a save writes and
     // what a build starts from (EP-1, GR-11). The Time of Day and Month
     // controls set these as well as the clock.
+    // This frame's game clock: scaled in play, zero while paused (EP-10, EP-11)
+    f32 m_LastGameDt = 0.0f;
     f32 m_SceneStartTimeOfDay = 8.0f;
     u32 m_SceneStartMonth = 6;
     // The world-time and art-style fields a scene carries that
