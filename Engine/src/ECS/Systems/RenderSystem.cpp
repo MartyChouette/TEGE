@@ -24498,6 +24498,27 @@ void RenderSystem::EnsureTilemapMeshes() {
         auto* tilemap = m_World->GetComponent<TilemapComponent>(entity);
         if (!tilemap || !tilemap->meshDirty) continue;
 
+        // The tileset's real size, so the UVs cut Tile Width x Tile Height
+        // pixel cells instead of guessing the sheet's shape from the tiles used
+        tilemap->tilesetPixelWidth = 0;
+        tilemap->tilesetPixelHeight = 0;
+        if (!tilemap->tilesetPath.empty()) {
+#if !ENJIN_RENDERER_WEBGPU
+            auto tex = GetOrLoadTexture(tilemap->tilesetPath);
+            if (tex && tex->IsValid()) {
+                tilemap->tilesetPixelWidth = tex->GetWidth();
+                tilemap->tilesetPixelHeight = tex->GetHeight();
+            }
+#else
+            const auto tex = WebGetOrLoadTexture(tilemap->tilesetPath);
+            auto* texMgr = m_Renderer ? m_Renderer->GetTextureManager() : nullptr;
+            if (tex.IsValid() && texMgr) {
+                tilemap->tilesetPixelWidth = texMgr->GetWidth(tex);
+                tilemap->tilesetPixelHeight = texMgr->GetHeight(tex);
+            }
+#endif
+        }
+
         auto mesh = Renderer::MeshFactory::CreateTilemapMesh(*tilemap);
         if (m_World->HasComponent<MeshComponent>(entity)) {
             *m_World->GetComponent<MeshComponent>(entity) = std::move(mesh);

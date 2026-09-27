@@ -1717,6 +1717,12 @@ struct TilemapComponent {
     f32 tileHeight = 16.0f;  // Pixels
     u32 tilesetColumns = 16; // Tiles per row in tileset
 
+    // The tileset image's size in pixels, filled by the renderer when it loads
+    // the texture (runtime, not saved). 0 = not known yet, and the UVs fall
+    // back to a guess from the columns and the highest tile index.
+    u32 tilesetPixelWidth = 0;
+    u32 tilesetPixelHeight = 0;
+
     // World scale
     f32 worldTileWidth = 1.0f;
     f32 worldTileHeight = 1.0f;

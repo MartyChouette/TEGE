@@ -111,6 +111,24 @@ ENJIN_TEST(Tilemap, ADegenerateTilemapProducesNothingRatherThanGarbage) {
     ENJIN_EXPECT_TRUE(R::CreateTilemapMesh(tm).vertices.empty());
 }
 
+ENJIN_TEST(Tilemap, KnownTilesetSizeCutsTileWidthByTileHeightCells) {
+    // Tile Width / Height were in the inspector and the UVs never read them;
+    // the sheet was stretched to as many rows as the highest index used (SD-27).
+    // A 64x32 sheet of 16x16 tiles is 4 columns by 2 rows whatever is painted.
+    auto tm = MakeTilemap(1, 1, 16, 5);   // Tileset Columns deliberately wrong
+    tm.tileWidth = 16.0f;
+    tm.tileHeight = 16.0f;
+    tm.tilesetPixelWidth = 64;
+    tm.tilesetPixelHeight = 32;
+    const auto mesh = R::CreateTilemapMesh(tm);
+    ENJIN_ASSERT_EQ(mesh.vertices.size(), static_cast<Enjin::usize>(4));
+    // Tile 5 = column 1, row 1
+    ENJIN_EXPECT_FLOAT_EQ(mesh.vertices[0].uv.x, 0.25f);
+    ENJIN_EXPECT_FLOAT_EQ(mesh.vertices[0].uv.y, 0.5f);
+    ENJIN_EXPECT_FLOAT_EQ(mesh.vertices[2].uv.x, 0.5f);
+    ENJIN_EXPECT_FLOAT_EQ(mesh.vertices[2].uv.y, 1.0f);
+}
+
 ENJIN_TEST(Tilemap, DifferentTileIndicesAddressDifferentPartsOfTheTileset) {
     // The whole point of a tileset: tile 0 and tile 5 must sample different
     // regions. UVs that came out identical would render one tile everywhere and

@@ -953,18 +953,30 @@ ECS::MeshComponent MeshFactory::CreateTilemapMesh(const ECS::TilemapComponent& t
     mesh.vertices.reserve(tileCount * 4);
     mesh.indices.reserve(tileCount * 6);
 
-    // Compute tileset texture dimensions in tiles
-    // We don't know the exact texture pixel size, so UVs are computed as
-    // tile-index-based fractions: u = col_in_tileset / tilesetColumns
-    // For rows, we estimate max rows from the tile data
-    u32 maxTileIndex = 0;
-    for (i32 t : tilemap.tiles) {
-        if (t > static_cast<i32>(maxTileIndex)) maxTileIndex = static_cast<u32>(t);
+    // One tile's size in UV. With the tileset's pixel size known this is Tile
+    // Width / Height over it, which is what those two fields were for; they
+    // were in the inspector and the mesh never read them (SD-27). The guess
+    // below stretched the sheet to exactly as many rows as the highest tile
+    // index used, so painting one tile from a lower row re-cut every tile.
+    // The columns follow the image too, the same count the editor's tile
+    // palette cuts it into, so the tile painted is the tile drawn.
+    f32 uTileSize, vTileSize;
+    u32 columns = tilemap.tilesetColumns;
+    if (tilemap.tilesetPixelWidth > 0 && tilemap.tilesetPixelHeight > 0 &&
+        tilemap.tileWidth > 0.0f && tilemap.tileHeight > 0.0f &&
+        tilemap.tileWidth <= static_cast<f32>(tilemap.tilesetPixelWidth)) {
+        uTileSize = tilemap.tileWidth / static_cast<f32>(tilemap.tilesetPixelWidth);
+        vTileSize = tilemap.tileHeight / static_cast<f32>(tilemap.tilesetPixelHeight);
+        columns = static_cast<u32>(static_cast<f32>(tilemap.tilesetPixelWidth) / tilemap.tileWidth);
+    } else {
+        u32 maxTileIndex = 0;
+        for (i32 t : tilemap.tiles) {
+            if (t > static_cast<i32>(maxTileIndex)) maxTileIndex = static_cast<u32>(t);
+        }
+        const u32 tilesetRows = (maxTileIndex / tilemap.tilesetColumns) + 1;
+        uTileSize = 1.0f / static_cast<f32>(tilemap.tilesetColumns);
+        vTileSize = 1.0f / static_cast<f32>(tilesetRows);
     }
-    u32 tilesetRows = (maxTileIndex / tilemap.tilesetColumns) + 1;
-
-    f32 uTileSize = 1.0f / static_cast<f32>(tilemap.tilesetColumns);
-    f32 vTileSize = 1.0f / static_cast<f32>(tilesetRows);
 
     Math::Vector3 normal(0.0f, 0.0f, 1.0f);
 
@@ -978,8 +990,8 @@ ECS::MeshComponent MeshFactory::CreateTilemapMesh(const ECS::TilemapComponent& t
             f32 y = static_cast<f32>(row) * tilemap.worldTileHeight;
 
             // UV coordinates from tile index
-            u32 tileCol = static_cast<u32>(tileIndex) % tilemap.tilesetColumns;
-            u32 tileRow = static_cast<u32>(tileIndex) / tilemap.tilesetColumns;
+            u32 tileCol = static_cast<u32>(tileIndex) % columns;
+            u32 tileRow = static_cast<u32>(tileIndex) / columns;
             f32 u0 = static_cast<f32>(tileCol) * uTileSize;
             f32 v0 = static_cast<f32>(tileRow) * vTileSize;
             f32 u1 = u0 + uTileSize;

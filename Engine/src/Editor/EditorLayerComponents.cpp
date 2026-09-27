@@ -5788,6 +5788,14 @@ void EditorLayer::DrawTilemapComponent(ECS::Entity entity) {
         if (!tilemap) return;
         DrawComponentHelp("tilemap", m_World, entity);
 
+        // Every field in this block shapes the mesh or its UVs, and none of
+        // them used to rebuild it: a new tile size or tileset showed only once
+        // a tile was painted.
+        const std::string pathBefore = tilemap->tilesetPath;
+        const f32 sizeBefore[4] = {tilemap->tileWidth, tilemap->tileHeight,
+                                   tilemap->worldTileWidth, tilemap->worldTileHeight};
+        const u32 colsBefore = tilemap->tilesetColumns;
+
         // Tileset path
         char pathBuffer[256];
         strncpy(pathBuffer, tilemap->tilesetPath.c_str(), sizeof(pathBuffer) - 1);
@@ -5808,6 +5816,11 @@ void EditorLayer::DrawTilemapComponent(ECS::Entity entity) {
         // World scale
         InspectorUndo::DragFloat(m_UndoRedo, "World Tile Width", &tilemap->worldTileWidth, 0.1f, 0.1f, 10.0f);
         InspectorUndo::DragFloat(m_UndoRedo, "World Tile Height", &tilemap->worldTileHeight, 0.1f, 0.1f, 10.0f);
+        if (tilemap->tilesetPath != pathBefore || tilemap->tilesetColumns != colsBefore ||
+            tilemap->tileWidth != sizeBefore[0] || tilemap->tileHeight != sizeBefore[1] ||
+            tilemap->worldTileWidth != sizeBefore[2] || tilemap->worldTileHeight != sizeBefore[3]) {
+            tilemap->meshDirty = true;
+        }
 
         // Map size
         int w = static_cast<int>(tilemap->width);
