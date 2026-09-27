@@ -820,7 +820,9 @@ fn shadeSurface(in: VertexOutput) -> vec4<f32> {
         let NdotL = max(dot(N, L), 0.0);
 
         var ptShadow = 1.0;
-        if (i == 0) { ptShadow = ptShadow0; }
+        // Strength scales the point and spot shadows too, as on desktop; on
+        // web it reached only the sun (WP-16)
+        if (i == 0) { ptShadow = mix(1.0, ptShadow0, shadowStrength); }
         Lo = Lo + (kD * albedo + specular) * radiance * NdotL * ptShadow;
     }
 
@@ -858,8 +860,8 @@ fn shadeSurface(in: VertexOutput) -> vec4<f32> {
         let NdotL = max(dot(N, L), 0.0);
 
         var spotShadow = 1.0;
-        if (i == 0) { spotShadow = spotShadow0; }
-        else if (i == 1) { spotShadow = spotShadow1; }
+        if (i == 0) { spotShadow = mix(1.0, spotShadow0, shadowStrength); }
+        else if (i == 1) { spotShadow = mix(1.0, spotShadow1, shadowStrength); }
         // The cookie multiplies the light the same way a shadow does: it is a
         // mask on what this lamp delivers, not a change to the surface.
         spotShadow = spotShadow * spotCookie(i, L, spotDirV, outerCos);
