@@ -673,7 +673,7 @@ UICanvasComponent CreateControlsMenu(const InputSystem::InputActionMap& map, i32
     spec.rows.push_back(Options::Heading("Look"));
     // Sensitivity is authored in 0.05..5.0 on the map; the row carries the real
     // range so the slider reads in the same units the rest of the engine uses.
-    spec.rows.push_back(Options::Slider("Mouse Sensitivity", "controls_sensitivity",
+    spec.rows.push_back(Options::Slider("Look Sensitivity", "controls_sensitivity",
                                         map.GetMouseSensitivity(), 0.05f, 5.0f));
     spec.rows.push_back(Options::Checkbox("Invert Look Y", "controls_invert_y", map.GetInvertY()));
 

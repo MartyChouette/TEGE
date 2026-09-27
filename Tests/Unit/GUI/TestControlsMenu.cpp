@@ -90,11 +90,17 @@ ENJIN_TEST(ControlsMenu, OffersThePresetsAndMarksTheOneInUse) {
     ENJIN_EXPECT_TRUE(AnyTextContains(canvas, "Gamepad Only  (on)"));
 }
 
-// IN-9: Left Shift is Sprint AND Dash by default, and nothing said so
+// IN-9: a key on two gameplay actions is named under the row. Left Shift
+// was Sprint AND Dash by default; Dash now defaults to Left Alt, so the test
+// makes the clash itself.
 ENJIN_TEST(ControlsMenu, AClashIsNamedUnderTheRow) {
     InputSystem::InputActionMap map;
     const i32 sprint = static_cast<i32>(InputSystem::GameAction::Sprint);
     const i32 dash = static_cast<i32>(InputSystem::GameAction::Dash);
+    // The default no longer clashes (IN-9: Dash is Left Alt)
+    const auto dashDefault = map.FindConflicts(dash);
+    ENJIN_EXPECT_TRUE(std::find(dashDefault.begin(), dashDefault.end(), sprint) == dashDefault.end());
+    map.RebindAction(dash, static_cast<i32>(KeyCode::LeftShift));
     const auto clashes = map.FindConflicts(sprint);
     ENJIN_EXPECT_TRUE(std::find(clashes.begin(), clashes.end(), dash) != clashes.end());
     // Jump and Confirm share Space, but one is gameplay and one is a menu

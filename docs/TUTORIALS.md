@@ -649,7 +649,7 @@ The ControllerSystem uses raycasting to detect ground. With Jolt Physics enabled
 | Mouse Sensitivity | Look sensitivity |
 | Head Bob | Enable/disable head bobbing |
 | Weapon Sway | Camera-relative weapon movement |
-| Dash | Optional dash (Shift/E or gamepad Right Bumper) with speed, duration, and cooldown fields |
+| Dash | Optional dash (Left Alt, or B on a gamepad, by default) with speed, duration, and cooldown fields |
 
 ### Shooting Mechanics
 

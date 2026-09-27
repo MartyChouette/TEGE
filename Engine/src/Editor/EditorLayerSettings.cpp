@@ -1140,7 +1140,7 @@ void EditorLayer::DrawSettingsSection_Accessibility() {
 
             f32 sensitivity = m_InputMap.GetMouseSensitivity();
             // The same range as the players' Controls screen (IN-19)
-            if (ImGui::SliderFloat("Mouse Sensitivity", &sensitivity, 0.05f, 5.0f)) {
+            if (ImGui::SliderFloat("Look Sensitivity", &sensitivity, 0.05f, 5.0f)) {
                 m_InputMap.SetMouseSensitivity(sensitivity);
                 // The editor fly camera follows the same setting.
                 if (m_CameraController) {
