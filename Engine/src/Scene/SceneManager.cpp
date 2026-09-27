@@ -207,8 +207,10 @@ bool SceneManager::LoadProject(const std::string& manifestPath) {
         }
         if (root.contains("defaultRenderSettings")) {
             m_DefaultRenderSettings = Renderer::DeserializeRenderSettings(root["defaultRenderSettings"]);
+            m_HasDefaultRenderSettings = true;
         } else {
             m_DefaultRenderSettings = Renderer::SceneRenderSettings{};
+            m_HasDefaultRenderSettings = false;
         }
 
         // Load game frame settings
@@ -370,7 +372,14 @@ bool SceneManager::SaveProject(const std::string& manifestPath) {
         root["physicsBackend"] = static_cast<int>(m_PhysicsBackendType);
 
         // Save project-level render defaults
-        root["defaultRenderSettings"] = Renderer::SerializeRenderSettings(m_DefaultRenderSettings);
+        // Only a project that set defaults writes them. Writing the engine's
+        // defaults unconditionally made every saved project "have" defaults, and
+        // the players then applied them over every scene marked to use them.
+        if (m_HasDefaultRenderSettings) {
+            root["defaultRenderSettings"] = Renderer::SerializeRenderSettings(m_DefaultRenderSettings);
+        } else {
+            root.erase("defaultRenderSettings");
+        }
         // Written only once a project opts in, so an untouched .enjinproject does
         // not grow a block nobody asked for.
         if (m_RenderQuality.enabled) {

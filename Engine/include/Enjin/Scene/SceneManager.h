@@ -272,7 +272,12 @@ public:
     Physics::PhysicsBackendType GetPhysicsBackendType() const { return m_PhysicsBackendType; }
 
     // --- Project-level render defaults ---
-    void SetDefaultRenderSettings(const Renderer::SceneRenderSettings& s) { m_DefaultRenderSettings = s; }
+    void SetDefaultRenderSettings(const Renderer::SceneRenderSettings& s) { m_DefaultRenderSettings = s; m_HasDefaultRenderSettings = true; }
+    // Whether the project defines defaults at all. A scene marked "use project
+    // defaults" in a project with none keeps its own settings, as both players
+    // do; the editor used to substitute the engine's defaults, which turned
+    // off the Playground's world time in the editor only.
+    bool HasDefaultRenderSettings() const { return m_HasDefaultRenderSettings; }
     const Renderer::SceneRenderSettings& GetDefaultRenderSettings() const { return m_DefaultRenderSettings; }
 
     // Project render quality tiers (ADR-0006). A CEILING on render cost that a
@@ -350,6 +355,7 @@ private:
 
     // Project-level render defaults
     Renderer::SceneRenderSettings m_DefaultRenderSettings;
+    bool m_HasDefaultRenderSettings = false;
     Renderer::RenderQualitySettings m_RenderQuality;
 
     // Game frame rate settings

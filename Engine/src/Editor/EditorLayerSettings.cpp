@@ -1798,6 +1798,8 @@ void EditorLayer::DrawSettingsSection_Environment() {
                 f32 timeOfDay = state.timeOfDay;
                 if (ImGui::SliderFloat("Time of Day", &timeOfDay, 0.0f, 23.99f, "%.2f h")) {
                     m_WorldTime.SetTime(timeOfDay, state.day, state.month, state.year);
+                    m_SceneStartTimeOfDay = timeOfDay;   // what the scene saves and a build starts at
+                    MarkDirty();
                 }
 
                 int day = static_cast<int>(state.day);
@@ -1810,6 +1812,8 @@ void EditorLayer::DrawSettingsSection_Environment() {
                 if (changed) {
                     m_WorldTime.SetTime(state.timeOfDay, static_cast<u32>(day),
                                        static_cast<u32>(month), static_cast<u32>(year));
+                    m_SceneStartMonth = static_cast<u32>(month);
+                    MarkDirty();
                 }
 
                 ImGui::DragFloat("Seconds/Game Hour", &calConfig.secondsPerGameHour, 1.0f, 1.0f, 600.0f);

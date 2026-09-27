@@ -508,6 +508,7 @@ bool EditorLayer::SaveScene(const std::string& path) {
     auto renderSettings = Renderer::SceneRenderSettings::CaptureFromRuntime(
         m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
     renderSettings.useProjectDefaults = m_CurrentSceneUsesProjectDefaults;
+    WriteSceneWorldTime(renderSettings);   // CaptureFromRuntime cannot see these
     // The LUT image itself is owned by PostProcessing, not by the settings
     // struct, so capture its path here or the scene saves the flag without the
     // picture.
@@ -835,14 +836,17 @@ void EditorLayer::OpenSceneImmediate(const std::string& path, const std::string&
     if (result.success) {
         const auto& loaded = serializer.GetRenderSettings();
         m_CurrentSceneUsesProjectDefaults = loaded.useProjectDefaults;
-        if (loaded.useProjectDefaults) {
+        // As the players decide it: project defaults only when the project has them
+        if (loaded.useProjectDefaults && m_SceneManager.HasDefaultRenderSettings()) {
             m_SceneManager.GetDefaultRenderSettings().ApplyToRuntime(
                 m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
             ApplySceneLUT(m_SceneManager.GetDefaultRenderSettings());
+            AdoptSceneWorldTime(m_SceneManager.GetDefaultRenderSettings());
         } else {
             loaded.ApplyToRuntime(
                 m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
             ApplySceneLUT(loaded);
+            AdoptSceneWorldTime(loaded);
         }
     }
 
@@ -1351,6 +1355,7 @@ void EditorLayer::AutoSave() {
     auto renderSettings = Renderer::SceneRenderSettings::CaptureFromRuntime(
         m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
     renderSettings.useProjectDefaults = m_CurrentSceneUsesProjectDefaults;
+    WriteSceneWorldTime(renderSettings);   // CaptureFromRuntime cannot see these
     // The LUT image itself is owned by PostProcessing, not by the settings
     // struct, so capture its path here or the scene saves the flag without the
     // picture.
@@ -1363,6 +1368,39 @@ void EditorLayer::AutoSave() {
     } else {
         ENJIN_LOG_WARN(Editor, "Auto-save failed: %s", result.error.c_str());
     }
+}
+
+} // namespace Editor
+} // namespace Enjin
+
+namespace Enjin {
+namespace Editor {
+
+// World time and the art style preset live in editor members, not in anything
+// CaptureFromRuntime reads, so every editor save wrote the defaults and a
+// build (which saves first) shipped them: a scene authored to start at dawn
+// with seasons on came out at 8:00 with both off (EP-1). And opening a scene
+// never started the editor's clock from it, so the editor previewed a
+// different day from the one the game plays (GR-11).
+void EditorLayer::AdoptSceneWorldTime(const Renderer::SceneRenderSettings& s) {
+    m_WorldTimeEnabled = s.worldTimeEnabled;
+    m_SeasonalWeatherEnabled = s.seasonalWeatherEnabled;
+    m_SceneStartTimeOfDay = s.startTimeOfDay;
+    m_SceneStartMonth = s.startMonth;
+    m_WorldTime.GetCalendarConfig().secondsPerGameHour = s.secondsPerGameHour;
+    m_WorldTime.SetTime(s.startTimeOfDay, 1, s.startMonth, 1);
+    m_SeasonalWeather.GetConfig().weatherChangeInterval = s.seasonalChangeInterval;
+    m_ArtStylePreset = s.artStylePreset;
+}
+
+void EditorLayer::WriteSceneWorldTime(Renderer::SceneRenderSettings& s) const {
+    s.worldTimeEnabled = m_WorldTimeEnabled;
+    s.seasonalWeatherEnabled = m_SeasonalWeatherEnabled;
+    s.startTimeOfDay = m_SceneStartTimeOfDay;
+    s.startMonth = m_SceneStartMonth;
+    s.secondsPerGameHour = const_cast<Effects::WorldTimeSystem&>(m_WorldTime).GetCalendarConfig().secondsPerGameHour;
+    s.seasonalChangeInterval = const_cast<Effects::SeasonalWeatherSystem&>(m_SeasonalWeather).GetConfig().weatherChangeInterval;
+    s.artStylePreset = m_ArtStylePreset;
 }
 
 } // namespace Editor
