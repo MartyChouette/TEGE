@@ -769,6 +769,50 @@ ENJIN_TEST(Interaction, NoLookRequirementAndResetClearsTheHighlight) {
     ENJIN_EXPECT_EQ(r.rs.GetInteractionFocus(), INVALID_ENTITY);
 }
 
+ENJIN_TEST(Interaction, ALockPromptsForItsKeyThenToOpen) {
+    InteractRig r;
+    Entity door = r.w.CreateEntity();
+    r.w.AddComponent<TransformComponent>(door).position = Math::Vector3(0.0f, 0.0f, -1.0f);
+    LockComponent lock;
+    lock.requiredKey = "brass";
+    lock.lockedPrompt = "Needs the brass key";
+    lock.unlockedPrompt = "Open";
+    r.w.AddComponent<LockComponent>(door, lock);
+    r.sys.Update(0.016f, false);
+    ENJIN_EXPECT_EQ(r.sys.GetFocused(), door);
+    ENJIN_EXPECT_EQ(r.sys.GetPrompt(), std::string("Needs the brass key"));
+    // Picking up the key changes the prompt while the door stays focused
+    r.w.AddComponent<InventoryComponent>(r.player).keys.push_back("brass");
+    r.sys.Update(0.016f, false);
+    ENJIN_EXPECT_EQ(r.sys.GetPrompt(), std::string("Open"));
+    // An open door asks for nothing
+    r.w.GetComponent<LockComponent>(door)->isOpen = true;
+    r.sys.Update(0.016f, false);
+    ENJIN_EXPECT_EQ(r.sys.GetFocused(), INVALID_ENTITY);
+}
+
+ENJIN_TEST(Interaction, ASwitchPromptsWhileThePlayerIsOnItUnlessShowPromptIsOff) {
+    InteractRig r;
+    Entity lever = r.w.CreateEntity();
+    r.w.AddComponent<TransformComponent>(lever).position = Math::Vector3(0.5f, 0.0f, 0.0f);
+    r.w.AddComponent<BoxColliderComponent>(lever).size = Math::Vector3(2.0f, 2.0f, 2.0f);
+    SwitchComponent sw;
+    sw.type = SwitchComponent::SwitchType::Toggle;
+    sw.promptText = "Pull";
+    r.w.AddComponent<SwitchComponent>(lever, sw);
+    r.sys.Update(0.016f, false);
+    ENJIN_EXPECT_EQ(r.sys.GetFocused(), lever);
+    ENJIN_EXPECT_EQ(r.sys.GetPrompt(), std::string("Pull"));
+    r.w.GetComponent<SwitchComponent>(lever)->showPrompt = false;
+    r.sys.Update(0.016f, false);
+    ENJIN_EXPECT_EQ(r.sys.GetFocused(), INVALID_ENTITY);
+    // Off the plate: nothing, even with the prompt back on
+    r.w.GetComponent<SwitchComponent>(lever)->showPrompt = true;
+    r.w.GetComponent<TransformComponent>(lever)->position = Math::Vector3(5.0f, 0.0f, 0.0f);
+    r.sys.Update(0.016f, false);
+    ENJIN_EXPECT_EQ(r.sys.GetFocused(), INVALID_ENTITY);
+}
+
 // ===========================================================================
 // Flower sap: SpawnTensionDrip was never called (SD-27)
 // ===========================================================================

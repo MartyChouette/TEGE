@@ -29,6 +29,11 @@ namespace Gameplay {
 //     = the player), which reaches scripts (Events_Listen) and visual scripts
 //     (Custom Event); a single-use one is then spent
 //
+// Locks and interact switches get the same prompt (Locked Prompt until the
+// player holds the key, then Unlocked Prompt; a switch's Prompt Text while the
+// player stands on it, unless Show Prompt is off). GameplaySystem still does
+// the opening and flipping; this only shows what to press.
+//
 // Same overlay shape as SaveIndicator: Update per frame, RenderOverlay beside
 // the other overlays, Reset when play stops.
 class ENJIN_API InteractionSystem {

@@ -6,6 +6,7 @@
 #include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Systems/RenderSystem.h"
+#include "Enjin/ECS/Systems/GameplaySystem.h"
 #include "Enjin/Input/InputAction.h"
 #include "Enjin/Accessibility/Announcer.h"
 #include <imgui.h>
@@ -71,15 +72,57 @@ void InteractionSystem::Update(f32 deltaTime, bool interactPressed) {
         bestDist = dist;
     }
 
-    // Focus, prompt and highlight follow the choice
-    if (best != m_Focused) {
-        m_Focused = best;
-        m_Prompt.clear();
-        if (const auto* ic = m_World->GetComponent<ECS::InteractableComponent>(best)) {
-            m_Prompt = m_InputMap ? m_InputMap->ResolvePromptText(ic->promptText) : ic->promptText;
-            // Once, on focusing: a line re-announced every frame would never stop
-            if (m_Announcer && !m_Prompt.empty()) m_Announcer->Announce(m_Prompt);
+    // Locks and interact switches. GameplaySystem opens and flips them on
+    // Interact itself; this only shows their prompt, which were fields in the
+    // inspector that nothing drew (SD-27). Same reach rules as GameplaySystem:
+    // a lock within Interact Range, a switch whose bounds the player overlaps.
+    std::string promptSource;
+    if (best != ECS::INVALID_ENTITY) {
+        promptSource = m_World->GetComponent<ECS::InteractableComponent>(best)->promptText;
+    }
+    const ECS::WorldBounds playerBounds = player != ECS::INVALID_ENTITY
+        ? ECS::ComputeWorldBounds(m_World, player) : ECS::WorldBounds{reachFrom, reachFrom};
+    for (ECS::Entity e : m_World->GetEntitiesWithComponent<ECS::LockComponent>()) {
+        if (e == player) continue;
+        const auto* lock = m_World->GetComponent<ECS::LockComponent>(e);
+        const auto* t = m_World->GetComponent<ECS::TransformComponent>(e);
+        if (!lock || !t || lock->isOpen || lock->interactRange <= 0.0f) continue;
+        const f32 dist = (t->position - reachFrom).Length();
+        if (dist > lock->interactRange || dist >= bestDist) continue;
+        bool hasKey = !lock->isLocked || lock->requiredKey.empty();
+        if (!hasKey) {
+            if (const auto* inv = m_World->GetComponent<ECS::InventoryComponent>(player)) {
+                hasKey = std::find(inv->keys.begin(), inv->keys.end(), lock->requiredKey) != inv->keys.end();
+            }
         }
+        if (hasKey && lock->autoOpen) continue;   // it opens by itself, nothing to press
+        best = e;
+        bestDist = dist;
+        promptSource = hasKey ? lock->unlockedPrompt : lock->lockedPrompt;
+    }
+    for (ECS::Entity e : m_World->GetEntitiesWithComponent<ECS::SwitchComponent>()) {
+        if (e == player) continue;
+        const auto* sw = m_World->GetComponent<ECS::SwitchComponent>(e);
+        const auto* t = m_World->GetComponent<ECS::TransformComponent>(e);
+        if (!sw || !t || !sw->showPrompt || sw->promptText.empty()) continue;
+        if (sw->type == ECS::SwitchComponent::SwitchType::PressurePlate) continue;
+        if (sw->type == ECS::SwitchComponent::SwitchType::OneShot && sw->isActive) continue;
+        if (!ECS::ComputeWorldBounds(m_World, e).Overlaps(playerBounds)) continue;
+        const f32 dist = (t->position - reachFrom).Length();
+        if (dist >= bestDist) continue;
+        best = e;
+        bestDist = dist;
+        promptSource = sw->promptText;
+    }
+
+    // Focus, prompt and highlight follow the choice. The text is re-resolved
+    // every frame because a lock's changes when the key is picked up.
+    std::string prompt = m_InputMap ? m_InputMap->ResolvePromptText(promptSource) : promptSource;
+    if (best != m_Focused || prompt != m_Prompt) {
+        m_Focused = best;
+        m_Prompt = std::move(prompt);
+        // Once, on a change: a line re-announced every frame would never stop
+        if (m_Announcer && !m_Prompt.empty()) m_Announcer->Announce(m_Prompt);
     }
     if (m_RenderSystem) {
         const auto* ic = m_World->GetComponent<ECS::InteractableComponent>(m_Focused);
