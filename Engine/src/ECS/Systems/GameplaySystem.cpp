@@ -321,6 +321,8 @@ void GameplaySystem::ApplyLinkedActivation(World* world, Entity source, bool act
 // ---------------------------------------------------------------------------
 
 void GameplaySystem::UpdateLocks(World* world, f32 dt) {
+    // Read only with a lock in the scene (a read marks Interact as used)
+    if (world->GetEntitiesWithComponent<LockComponent>().empty()) return;
     const bool interact = InteractPressed();
 
     for (Entity e : world->GetEntitiesWithComponent<LockComponent>()) {
@@ -406,6 +408,7 @@ void GameplaySystem::UpdateLocks(World* world, f32 dt) {
 // ---------------------------------------------------------------------------
 
 void GameplaySystem::UpdateSwitches(World* world, f32 dt) {
+    if (world->GetEntitiesWithComponent<SwitchComponent>().empty()) return;
     const bool interact = InteractPressed();
 
     for (Entity e : world->GetEntitiesWithComponent<SwitchComponent>()) {

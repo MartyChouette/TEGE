@@ -17,7 +17,13 @@ namespace Enjin {
 namespace Gameplay {
 
 void InteractionSystem::Update(f32 deltaTime) {
-    const bool pressed = m_InputMap && m_InputMap->IsActionPressed(InputSystem::GameAction::Interact);
+    // Read only when the scene has something to interact with: a read is what
+    // tells the hint and How to Play that Interact is part of this game
+    const bool anything = m_World &&
+        (!m_World->GetEntitiesWithComponent<ECS::InteractableComponent>().empty() ||
+         !m_World->GetEntitiesWithComponent<ECS::LockComponent>().empty() ||
+         !m_World->GetEntitiesWithComponent<ECS::SwitchComponent>().empty());
+    const bool pressed = anything && m_InputMap && m_InputMap->IsActionPressed(InputSystem::GameAction::Interact);
     Update(deltaTime, pressed);
 }
 

@@ -1,3 +1,4 @@
+#include <algorithm>
 #include "Enjin/Input/TouchActionBridge.h"
 #include "Enjin/Input/InputAction.h"
 #include "Enjin/Input/InputProjectSettings.h"
@@ -26,7 +27,7 @@ namespace {
     // The actions each controller type consumes, in hint order. This ONE table
     // drives both the touch scheme and the controls hint, so a scene only ever
     // shows controls it actually has.
-    const GameAction kPlatformer2D[] = { GameAction::MoveLeft, GameAction::MoveRight, GameAction::Jump };
+    const GameAction kPlatformer2D[] = { GameAction::MoveLeft, GameAction::MoveRight, GameAction::Jump, GameAction::Sprint };
     const GameAction kTopDown2D[]    = { GameAction::MoveForward, GameAction::MoveBack, GameAction::MoveLeft, GameAction::MoveRight,
                                          GameAction::Interact };
     const GameAction kTopDown3D[]    = { GameAction::MoveForward, GameAction::MoveBack, GameAction::MoveLeft, GameAction::MoveRight,
@@ -56,7 +57,7 @@ namespace {
 
     struct PresetDef { const GameAction* actions; int count; bool look; };
     const PresetDef kPresets[static_cast<int>(TouchPreset::Count)] = {
-        { kPlatformer2D, 3, false },
+        { kPlatformer2D, 4, false },
         { kTopDown2D,    5, false },
         { kTopDown3D,    7, true  },
         { kFirstPerson,  8, true  },
@@ -82,6 +83,17 @@ namespace {
 
     bool IsCustom(int action) {
         return s_TouchMap && s_TouchMap->IsProjectAction(action);
+    }
+
+    // Once the game has read any gameplay action, lists follow what it reads
+    // (IN-37). Before that (the first frame of a scene, a headless test) the
+    // preset stands in for it.
+    bool FilterByUse() { return s_TouchMap && s_TouchMap->AnyGameplayActionUsed(); }
+    bool Shows(int action) { return !FilterByUse() || s_TouchMap->IsActionUsed(action); }
+    bool InPreset(TouchPreset p, int action) {
+        const PresetDef& d = Preset(p);
+        for (int i = 0; i < d.count; ++i) if (static_cast<int>(d.actions[i]) == action) return true;
+        return false;
     }
 
     void CopyLabel(char* dst, const char* src) {
@@ -167,6 +179,7 @@ namespace {
 
         for (int i = 0; i < d.count; ++i) {
             GameAction a = d.actions[i];
+            if (!Shows(static_cast<int>(a))) continue;   // a button for something nothing reads
             const ActionInfo& info = GetActionInfo(a);
             switch (info.touch) {
                 case TouchHint::Stick: {
@@ -246,6 +259,11 @@ namespace {
         u64 h = 1469598103934665603ull;
         auto mix = [&h](u64 v) { h ^= v; h *= 1099511628211ull; };
         mix(static_cast<u64>(preset));
+        // Which of the preset's actions the game reads: the buttons follow it
+        if (FilterByUse()) {
+            const PresetDef& d = Preset(preset);
+            for (int i = 0; i < d.count; ++i) mix(Shows(static_cast<int>(d.actions[i])) ? 3u : 5u);
+        }
         if (world) {
             for (ECS::Entity e : world->GetEntitiesWithComponent<ECS::ActionTriggerComponent>()) {
                 auto* t = world->GetComponent<ECS::ActionTriggerComponent>(e);
@@ -376,35 +394,61 @@ void DrawControlsHint(f32 x0, f32 y0, f32 w, f32 h) {
 
     struct Seg { std::string key; std::string verb; };
     std::vector<Seg> segs;
-    std::string moveKeys;
-    const PresetDef& d = Preset(s_ActivePreset);
-    for (int i = 0; i < d.count; ++i) {
-        int a = static_cast<int>(d.actions[i]);
-        if (!s_TouchMap->IsActionListed(a)) continue;
-        const ActionInfo& info = GetActionInfo(d.actions[i]);
+    auto bindingOf = [](int a) -> const char* {
         const char* bind = s_TouchMap->GetBindingDisplayName(a);
-        if (!bind || !bind[0] || std::strcmp(bind, "None") == 0) continue;
-        if (info.touch == TouchHint::Stick) {
-            if (!moveKeys.empty()) moveKeys += "/";
-            moveKeys += bind;
-            continue;
+        return (!bind || !bind[0] || std::strcmp(bind, "None") == 0) ? nullptr : bind;
+    };
+
+    // Movement as one group. "WASD" and "Arrows" read better than the four
+    // keys joined with slashes.
+    const int moveIds[4] = { static_cast<int>(GameAction::MoveForward), static_cast<int>(GameAction::MoveLeft),
+                             static_cast<int>(GameAction::MoveBack), static_cast<int>(GameAction::MoveRight) };
+    std::string moveKeys;
+    {
+        std::string joined, letters;
+        int shown = 0;
+        for (int a : moveIds) {
+            if (FilterByUse() ? !s_TouchMap->IsActionUsed(a) : !InPreset(s_ActivePreset, a)) continue;
+            const char* bind = bindingOf(a);
+            if (!bind) continue;
+            if (!joined.empty()) joined += "/";
+            joined += bind;
+            letters += bind;
+            ++shown;
         }
-        segs.push_back({ bind, info.hintVerb });
+        if (shown == 4 && letters == "WASD") moveKeys = "WASD";
+        else if (shown == 4 && letters == "UpLeftDownRight") moveKeys = "Arrows";
+        else if (shown == 2 && letters == "AD") moveKeys = "A/D";
+        else moveKeys = joined;
     }
-    // Movement first, then look, then the rest in preset order.
+
+    // Then every other action the game reads (or, before it has read any, the
+    // preset's), in table order. Not menu actions, not look (it has its own
+    // label below), not Pause (every game has one; it is in the menus).
+    auto consider = [&](int a) {
+        if (!s_TouchMap->IsActionListed(a) || !Shows(a)) return;
+        if (s_TouchMap->GetActionCategory(a) == static_cast<i32>(ActionCategory::UI)) return;
+        if (a == static_cast<int>(GameAction::Pause)) return;
+        const ActionInfo& info = GetActionInfo(static_cast<GameAction>(a));
+        if (info.touch == TouchHint::Stick || info.touch == TouchHint::Look) return;
+        const char* bind = bindingOf(a);
+        if (!bind) return;
+        std::string verb = s_TouchMap->IsProjectAction(a) ? s_TouchMap->GetActionName(a) : info.hintVerb;
+        for (auto& ch : verb) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+        segs.push_back({ bind, verb });
+    };
+    if (FilterByUse()) {
+        for (int a = 0; a < s_TouchMap->GetActionCount(); ++a) consider(a);
+    } else {
+        const PresetDef& d = Preset(s_ActivePreset);
+        for (int i = 0; i < d.count; ++i) consider(static_cast<int>(d.actions[i]));
+        for (int a = static_cast<int>(kFirstProjectAction); a < s_TouchMap->GetActionCount(); ++a) consider(a);
+    }
+    // Movement first, then look, then the rest
     if (const char* look = ControlsHintLookKey(s_ActivePreset, Input::IsMouseCaptured())) {
         segs.insert(segs.begin(), { look, "look" });
     }
     if (!moveKeys.empty()) segs.insert(segs.begin(), { moveKeys, "move" });
-    // Named custom actions with a binding (game-specific, e.g. "B slo-mo").
-    for (int a = static_cast<int>(kFirstProjectAction); a < s_TouchMap->GetActionCount(); ++a) {
-        if (!s_TouchMap->IsActionListed(a)) continue;
-        const char* bind = s_TouchMap->GetBindingDisplayName(a);
-        if (!bind || !bind[0] || std::strcmp(bind, "None") == 0) continue;
-        std::string verb = s_TouchMap->GetActionName(a);
-        for (auto& ch : verb) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
-        segs.push_back({ bind, verb });
-    }
     bool anyPad = false;
     for (i32 gp = 0; gp < 4; ++gp) if (Input::IsGamepadConnected(gp)) anyPad = true;
     if (anyPad) segs.push_back({ "Gamepad", "connected" });

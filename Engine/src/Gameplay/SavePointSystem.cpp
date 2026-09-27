@@ -74,6 +74,7 @@ void SavePointSystem::Update(f32 deltaTime) {
     const auto* playerXf = m_World->GetComponent<ECS::TransformComponent>(player);
     if (!playerXf) return;
 
+    if (m_World->GetEntitiesWithComponent<ECS::SavePointComponent>().empty()) return;
     const bool interactPressed =
         m_InputMap && m_InputMap->IsActionPressed(InputSystem::GameAction::Interact);
 

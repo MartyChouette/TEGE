@@ -492,4 +492,35 @@ ENJIN_TEST(InputActionMap, ProjectDefaultsForBuiltInActions) {
     ENJIN_EXPECT_EQ(loaded.actionDefaults[1].mouse, -1);
 }
 
+// IN-37 / IN-38: the hint, How to Play and touch list what the game reads.
+// A read is what counts, and the window is counted in gameplay frames.
+ENJIN_TEST(InputActionMap, AnActionIsUsedWhenTheGameReadsIt) {
+    Input::SetInputFocus(Input::InputFocus::Gameplay);
+    InputActionMap map;
+    ENJIN_EXPECT_FALSE(map.AnyGameplayActionUsed());
+    (void)map.IsActionPressed(GameAction::Jump);
+    ENJIN_EXPECT_TRUE(map.IsActionUsed(static_cast<i32>(GameAction::Jump)));
+    ENJIN_EXPECT_FALSE(map.IsActionUsed(static_cast<i32>(GameAction::Dash)));
+    ENJIN_EXPECT_TRUE(map.AnyGameplayActionUsed());
+
+    // Reading a menu action alone is not a game using its controls
+    InputActionMap menuOnly;
+    (void)menuOnly.IsActionPressed(GameAction::UIConfirm);
+    ENJIN_EXPECT_FALSE(menuOnly.AnyGameplayActionUsed());
+
+    // Nobody reads it for long enough and it drops off the list
+    for (u32 i = 0; i <= InputActionMap::kUsageWindow; ++i) map.Update(0.016f);
+    ENJIN_EXPECT_FALSE(map.IsActionUsed(static_cast<i32>(GameAction::Jump)));
+
+    // The clock stops while a menu has focus: pausing keeps the list
+    (void)map.IsActionPressed(GameAction::Jump);
+    Input::SetInputFocus(Input::InputFocus::Menu);
+    for (u32 i = 0; i <= InputActionMap::kUsageWindow * 2; ++i) map.Update(0.016f);
+    ENJIN_EXPECT_TRUE(map.IsActionUsed(static_cast<i32>(GameAction::Jump)));
+    Input::SetInputFocus(Input::InputFocus::Gameplay);
+
+    map.ClearActionUsage();
+    ENJIN_EXPECT_FALSE(map.AnyGameplayActionUsed());
+}
+
 ENJIN_TEST_MAIN()

@@ -120,8 +120,11 @@ ENJIN_TEST(TouchActionBinding, PresetsOnlyShowConsumedControls) {
     ApplyTouchPreset(TouchPreset::Platformer2D);
     const Input::TouchScheme& p = Input::GetTouchScheme();
     ENJIN_EXPECT_FALSE(p.lookRegion);
-    ENJIN_EXPECT_EQ(p.buttonCount, 1);
+    // Jump and Sprint: the platformer controller reads Sprint, and the preset
+    // used to leave it out, so a phone could never run (IN-37)
+    ENJIN_EXPECT_EQ(p.buttonCount, 2);
     ENJIN_EXPECT_EQ(p.buttons[0].action, static_cast<int>(GameAction::Jump));
+    ENJIN_EXPECT_EQ(p.buttons[1].action, static_cast<int>(GameAction::Sprint));
     ENJIN_EXPECT_EQ(p.stickActions[0], static_cast<int>(GameAction::MoveLeft));
     ENJIN_EXPECT_EQ(p.stickActions[2], -1);
     ENJIN_EXPECT_EQ(p.stickKeys[2], -1);

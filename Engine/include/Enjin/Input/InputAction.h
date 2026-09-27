@@ -303,6 +303,18 @@ public:
     // project actions that have a name.
     bool IsActionListed(i32 index) const;
 
+    // Whether the game is reading this action (IN-37, IN-38). Every query
+    // (IsActionDown, Pressed, Released, GetActionValue) stamps the action, so
+    // a controller with dash turned on, a script polling "Grapple" and an
+    // Action Trigger all count, and an action nothing reads does not. The
+    // hint, How to Play and the touch buttons list what is used, not what a
+    // preset guessed. "Recently" is counted in gameplay frames: the clock
+    // stops while a menu has focus, so pausing does not make everything unused.
+    bool IsActionUsed(i32 index) const;
+    bool AnyGameplayActionUsed() const;   // any non-menu action
+    void ClearActionUsage();              // a new scene, or a test
+    static constexpr u32 kUsageWindow = 120;   // gameplay frames
+
     // Display helpers
     i32 GetActionCount() const;
     const char* GetActionName(i32 index) const;
@@ -359,6 +371,10 @@ private:
     // whatever differs from this
     std::vector<ActionConfig> m_DefaultConfigs;
     std::vector<u8> m_TouchDownPrev;   // last frame's Input::IsTouchActionDown, for edges
+    // Usage stamps: the gameplay-frame clock at each action's last query
+    mutable std::vector<u32> m_LastUsed;
+    u32 m_UsageClock = 1;
+    void MarkUsed(GameAction action) const;
 
     // Toggle state tracking
     std::vector<u8> m_ToggleState;

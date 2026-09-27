@@ -910,6 +910,16 @@ void GameMenuSystem::RenderHowToPlay(f32 w, f32 h) {
             // Ordinals match InputSystem::ActionCategory.
             static const char* categories[] = { "Movement", "Actions", "Camera", "Menus", "Game" };
             static const i32 categoryCount = static_cast<i32>(InputSystem::ActionCategory::Count);
+            // The actions this game reads (IN-38): a list of every built-in
+            // action told players about Dash and Block in games with neither.
+            // Before the game has read anything (How to Play from the title
+            // screen) there is nothing to go on, and every action is listed.
+            const bool byUse = m_InputMap->AnyGameplayActionUsed();
+            auto shown = [&](i32 i) {
+                if (!m_InputMap->IsActionListed(i)) return false;
+                if (!byUse || m_InputMap->GetActionCategory(i) == static_cast<i32>(InputSystem::ActionCategory::UI)) return true;
+                return m_InputMap->IsActionUsed(i);
+            };
 
             for (i32 cat = 0; cat < categoryCount; ++cat) {
                 i32 actionsInCategory = 0;
@@ -917,7 +927,7 @@ void GameMenuSystem::RenderHowToPlay(f32 w, f32 h) {
                 // First pass: count actions in this category
                 i32 actionCount = m_InputMap->GetActionCount();
                 for (i32 i = 0; i < actionCount; ++i) {
-                    if (m_InputMap->GetActionCategory(i) == cat && m_InputMap->IsActionListed(i)) {
+                    if (m_InputMap->GetActionCategory(i) == cat && shown(i)) {
                         ++actionsInCategory;
                     }
                 }
@@ -929,10 +939,22 @@ void GameMenuSystem::RenderHowToPlay(f32 w, f32 h) {
 
                 for (i32 i = 0; i < actionCount; ++i) {
                     if (m_InputMap->GetActionCategory(i) != cat) continue;
-                    if (!m_InputMap->IsActionListed(i)) continue;
+                    if (!shown(i)) continue;
 
                     const char* actionName = m_InputMap->GetActionName(i);
-                    const char* bindingName = m_InputMap->GetBindingDisplayName(i);
+                    // The keyboard column names keys and mouse buttons only. Look
+                    // has no key (the mouse does it) and zoom is the wheel; they
+                    // used to show the pad's stick names here.
+                    const char* bindingName = m_InputMap->GetKeyboardBindingDisplayName(i);
+                    if (!bindingName || !*bindingName) {
+                        const auto act = static_cast<InputSystem::GameAction>(i);
+                        if (act == InputSystem::GameAction::LookUp || act == InputSystem::GameAction::LookDown ||
+                            act == InputSystem::GameAction::LookLeft || act == InputSystem::GameAction::LookRight)
+                            bindingName = "Mouse";
+                        else if (act == InputSystem::GameAction::CameraZoomIn) bindingName = "Wheel Up";
+                        else if (act == InputSystem::GameAction::CameraZoomOut) bindingName = "Wheel Down";
+                        else bindingName = "-";
+                    }
 
                     ImGui::Text("  %-22s", actionName);
                     ImGui::SameLine(220);

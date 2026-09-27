@@ -1321,6 +1321,8 @@ static void UpdateDoors(World* world, f32 dt, InputSystem::InputActionMap* input
     // the same trap SavePointComponent::savePointKey carries and the reason
     // SavePointSystem reads the action instead. The fallback keeps doors
     // working in a headless test, where no map is attached.
+    // Read only with a door in the scene (a read marks Interact as used)
+    if (world->GetEntitiesWithComponent<DoorComponent>().empty()) return;
     const bool interactPressed = inputMap
         ? inputMap->IsActionPressed(InputSystem::GameAction::Interact)
         : Input::IsKeyPressed(KeyCode::E);

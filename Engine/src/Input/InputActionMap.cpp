@@ -117,6 +117,7 @@ void InputActionMap::EnsureActionCount(u32 count) {
     m_ActionReleased.resize(count, 0);
     m_ActionValue.resize(count, 0.0f);
     m_TouchDownPrev.resize(count, 0);
+    m_LastUsed.resize(count, 0);
     m_ProjectNames.resize(count - kFirstProjectAction);
 }
 
@@ -292,6 +293,8 @@ bool InputActionMap::IsActionListed(i32 index) const {
 void InputActionMap::Update(f32 dt) {
     (void)dt;
     const u32 count = static_cast<u32>(m_Actions.size());
+    // The usage clock runs in gameplay only, so a paused game keeps its list
+    if (Input::IsGameplayFocused()) ++m_UsageClock;
 
     for (u32 i = 0; i < count; ++i) {
         const auto& cfg = m_Actions[i];
@@ -358,26 +361,54 @@ namespace {
 }
 
 bool InputActionMap::IsActionDown(GameAction action) const {
+    MarkUsed(action);
     if (!IsValidAction(static_cast<i32>(action)) || !ActionPassesFocus(action)) return false;
     return m_ActionDown[static_cast<u32>(action)] != 0;
 }
 
 bool InputActionMap::IsActionPressed(GameAction action) const {
+    MarkUsed(action);
     if (!IsValidAction(static_cast<i32>(action)) || !ActionPassesFocus(action)) return false;
     return m_ActionPressed[static_cast<u32>(action)] != 0;
 }
 
+void InputActionMap::MarkUsed(GameAction action) const {
+    const u32 i = static_cast<u32>(action);
+    if (i < m_LastUsed.size()) m_LastUsed[i] = m_UsageClock;
+}
+
+bool InputActionMap::IsActionUsed(i32 index) const {
+    if (!IsValidAction(index)) return false;
+    const u32 last = m_LastUsed[static_cast<u32>(index)];
+    return last != 0 && m_UsageClock - last <= kUsageWindow;
+}
+
+bool InputActionMap::AnyGameplayActionUsed() const {
+    for (i32 i = 0; i < GetActionCount(); ++i) {
+        if (GetActionCategory(i) != static_cast<i32>(ActionCategory::UI) && IsActionUsed(i)) return true;
+    }
+    return false;
+}
+
+void InputActionMap::ClearActionUsage() {
+    std::fill(m_LastUsed.begin(), m_LastUsed.end(), 0u);
+}
+
+// Not stamped: it is the one read that happens in every menu of every game
+// (Start closes what it opened), which says nothing about what the game uses
 bool InputActionMap::IsActionPressedAnyFocus(GameAction action) const {
     if (!IsValidAction(static_cast<i32>(action))) return false;
     return m_ActionPressed[static_cast<u32>(action)] != 0;
 }
 
 bool InputActionMap::IsActionReleased(GameAction action) const {
+    MarkUsed(action);
     if (!IsValidAction(static_cast<i32>(action)) || !ActionPassesFocus(action)) return false;
     return m_ActionReleased[static_cast<u32>(action)] != 0;
 }
 
 f32 InputActionMap::GetActionValue(GameAction action) const {
+    MarkUsed(action);
     if (!IsValidAction(static_cast<i32>(action)) || !ActionPassesFocus(action)) return 0.0f;
     return m_ActionValue[static_cast<u32>(action)];
 }
