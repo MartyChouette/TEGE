@@ -10345,8 +10345,8 @@ void EditorLayer::SetupCameraForController(ECS::Entity controllerEntity, const s
     camComp->isActive = true;
     camComp->priority = 10;
 
-    // Select the camera so the user can adjust it
-    m_SelectedGameCamera = cameraEntity;
+    // Not pinned as the Game View's camera: at priority 10 and active it is
+    // what the game picks, and a pin would outlive a later camera change (EP-3)
 }
 
 // ============================================================================

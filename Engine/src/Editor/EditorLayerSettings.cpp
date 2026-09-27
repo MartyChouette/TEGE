@@ -226,14 +226,12 @@ void EditorLayer::DrawSettingsSection_Camera() {
 
         // Camera selector (shared with game view)
         if (!settingsCameraEntities.empty() && m_Camera && m_CameraController) {
-            // Validate selection
-            if (m_SelectedGameCamera == ECS::INVALID_ENTITY) {
-                m_SelectedGameCamera = settingsCameraEntities[0];
-            }
+            // No selection = the game's own choice (EP-3), so nothing is
+            // auto-picked here
 
             // Dropdown to pick camera
             if (settingsCameraEntities.size() > 1) {
-                std::string currentName = "None";
+                std::string currentName = "Automatic (as the game)";
                 if (m_SelectedGameCamera != ECS::INVALID_ENTITY && m_World->HasComponent<ECS::NameComponent>(m_SelectedGameCamera)) {
                     currentName = m_World->GetComponent<ECS::NameComponent>(m_SelectedGameCamera)->name;
                 } else if (m_SelectedGameCamera != ECS::INVALID_ENTITY) {
@@ -241,6 +239,9 @@ void EditorLayer::DrawSettingsSection_Camera() {
                 }
                 ImGui::SetNextItemWidth(-1);
                 if (ImGui::BeginCombo("##SettingsCamSelect", currentName.c_str())) {
+                    if (ImGui::Selectable("Automatic (as the game)", m_SelectedGameCamera == ECS::INVALID_ENTITY)) {
+                        m_SelectedGameCamera = ECS::INVALID_ENTITY;
+                    }
                     for (ECS::Entity camEnt : settingsCameraEntities) {
                         std::string name;
                         if (m_World->HasComponent<ECS::NameComponent>(camEnt)) {
@@ -259,6 +260,8 @@ void EditorLayer::DrawSettingsSection_Camera() {
             }
 
             ECS::Entity gameCamEntity = m_SelectedGameCamera;
+            if (gameCamEntity == ECS::INVALID_ENTITY)
+                gameCamEntity = ECS::CameraManager::GetActiveCamera(m_World);
             auto* gameCamComp = m_World->GetComponent<ECS::CameraComponent>(gameCamEntity);
             auto* gameCamTransform = m_World->GetComponent<ECS::TransformComponent>(gameCamEntity);
 

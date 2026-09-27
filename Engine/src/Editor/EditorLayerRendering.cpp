@@ -440,12 +440,15 @@ void EditorLayer::DrawGameViewPanel() {
         if (!found) m_SelectedGameCamera = ECS::INVALID_ENTITY;
     }
 
-    // Auto-select first camera if nothing selected
-    if (m_SelectedGameCamera == ECS::INVALID_ENTITY && !cameraEntities.empty()) {
-        m_SelectedGameCamera = cameraEntities[0];
-    }
-
+    // No selection means the game's own choice (the highest-priority active
+    // camera, then camera zones), resolved where the view is drawn. This used
+    // to pick the first camera in storage order and keep it, so a scene with
+    // two cameras, or a script switching cameras, showed one view in the
+    // editor and another in the game (EP-3). Picking one in the Camera list
+    // below is an editor preview and stays until Automatic is chosen.
     ECS::Entity gameCameraEntity = m_SelectedGameCamera;
+    if (gameCameraEntity == ECS::INVALID_ENTITY && m_World)
+        gameCameraEntity = ECS::CameraManager::GetActiveCamera(m_World);
     ECS::CameraComponent* gameCameraComp = nullptr;
     ECS::TransformComponent* gameCameraTransform = nullptr;
     if (gameCameraEntity != ECS::INVALID_ENTITY && m_World) {
@@ -526,7 +529,7 @@ void EditorLayer::DrawGameViewPanel() {
 
     // Camera selector dropdown (when multiple cameras exist)
     if (cameraEntities.size() > 1) {
-        std::string currentName = "None";
+        std::string currentName = "Automatic (as the game)";
         if (m_SelectedGameCamera != ECS::INVALID_ENTITY && m_World->HasComponent<ECS::NameComponent>(m_SelectedGameCamera)) {
             currentName = m_World->GetComponent<ECS::NameComponent>(m_SelectedGameCamera)->name;
         } else if (m_SelectedGameCamera != ECS::INVALID_ENTITY) {
@@ -535,6 +538,9 @@ void EditorLayer::DrawGameViewPanel() {
 
         ImGui::SetNextItemWidth(200);
         if (ImGui::BeginCombo("Camera", currentName.c_str())) {
+            if (ImGui::Selectable("Automatic (as the game)", m_SelectedGameCamera == ECS::INVALID_ENTITY)) {
+                m_SelectedGameCamera = ECS::INVALID_ENTITY;
+            }
             for (ECS::Entity camEntity : cameraEntities) {
                 std::string name;
                 if (m_World->HasComponent<ECS::NameComponent>(camEntity)) {

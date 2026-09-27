@@ -2775,7 +2775,7 @@ void EditorLayer::Update(f32 deltaTime) {
                                      m_GameViewImageMaxX, m_GameViewImageMaxY);
         flowerSys->SetRenderTargetSize(m_GameViewWidth, m_GameViewHeight);
         flowerSys->SetRenderSystem(m_RenderSystem);
-        flowerSys->SetGameCameraEntity(m_SelectedGameCamera);
+        flowerSys->SetGameCameraEntity(m_GameViewCameraEntity);   // the one the Game View shows (EP-3)
         flowerSys->SetWindSystem(&m_WindSystem);
     }
 
@@ -2789,15 +2789,14 @@ void EditorLayer::Update(f32 deltaTime) {
         const f32 gvH = m_GameViewImageMaxY - m_GameViewImageMinY;
         const bool playing = !m_PlayMode.IsStopped() && !m_PlayMode.IsPaused();
 
+        // The camera the Game View last drew through, zones and blend included.
+        // This read m_SelectedGameCamera, which is empty unless someone picks a
+        // preview camera (EP-3).
         Math::Matrix4 vp;
         const bool haveCamera =
-            playing && m_World && m_SelectedGameCamera != ECS::INVALID_ENTITY && gvW > 0.0f && gvH > 0.0f &&
-            [&]() {
-                Renderer::Camera cam;
-                if (!ECS::BuildCameraFromEntity(m_World, m_SelectedGameCamera, gvW / gvH, cam)) return false;
-                vp = cam.GetProjectionMatrix() * cam.GetViewMatrix();
-                return true;
-            }();
+            playing && m_World && m_GameViewCameraForUIValid && gvW > 0.0f && gvH > 0.0f;
+        if (haveCamera)
+            vp = m_GameViewCameraForUI.GetProjectionMatrix() * m_GameViewCameraForUI.GetViewMatrix();
 
         if (haveCamera) {
             const ImVec2 mouse = ImGui::GetMousePos();
@@ -3227,6 +3226,7 @@ void EditorLayer::UpdateGameViewSims(f32 simDt) {
     if (!m_World->IsValid(gameCameraEntity)) return;
     auto* cameraTransform = m_World->GetComponent<ECS::TransformComponent>(gameCameraEntity);
     if (!cameraTransform) return;
+    m_GameViewCameraEntity = gameCameraEntity;
 
     // Ease the game view over the zone's Blend Time, the same step the players
     // take (ECS::BlendGameCamera); the render pass below uses the result.
@@ -3239,6 +3239,17 @@ void EditorLayer::UpdateGameViewSims(f32 simDt) {
         m_GameCameraPoseValid = ECS::BlendGameCamera(m_World, m_GameCameraBlend, gameCameraEntity,
                                                      blendTime, simDt, m_GameCameraPose);
         if (zoneTrigger == ECS::INVALID_ENTITY) m_GameCameraBlend.lastZoneBlend = 0.0f;
+    }
+
+    // The listener hears from the camera the Game View shows, as the players'
+    // does. PlayMode placed it at the active camera, so inside a camera zone
+    // positional sound came from a camera nobody was looking through (EP-3).
+    if (m_PlayMode.IsPlaying() && m_GameCameraPoseValid) {
+        if (Audio::AudioEngine* audio = m_PlayMode.GetAudioEngine()) {
+            audio->SetListenerPosition(m_GameCameraPose.position,
+                                       m_GameCameraPose.rotation.GetForward(),
+                                       m_GameCameraPose.rotation.GetUp());
+        }
     }
 
     // Find active weather zone containing the game camera
@@ -3867,9 +3878,14 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
     u32 rtWidth = m_GameViewRenderTarget->GetWidth();
     u32 rtHeight = m_GameViewRenderTarget->GetHeight();
 
-    // Evaluate post-process volumes: blend active volumes into the current PP settings
-    if (m_PostProcessing && m_World && m_Camera) {
-        EvaluatePostProcessVolumes(m_Camera->GetPosition());
+    // Evaluate post-process volumes: blend active volumes into the current PP
+    // settings, at the camera this view is drawn from. They were evaluated at the
+    // editor's fly camera, so walking into a volume in play did nothing unless
+    // the Scene View camera happened to be inside it too (EP-3).
+    if (m_PostProcessing && m_World) {
+        EvaluatePostProcessVolumes(gameCamera.GetPosition());
+        m_GameViewCameraForUI = gameCamera;
+        m_GameViewCameraForUIValid = true;
     }
 
     // Tell the renderer whether this frame's temporal jitter will actually be
@@ -4559,7 +4575,7 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         // paused (HUD visible behind the overlay), so this also matches them.
         if (m_PlayMode.IsPlaying() || m_PlayMode.IsPaused()) {
             m_UISystem.Update(m_World, io.DisplaySize.x, io.DisplaySize.y, m_LastDeltaTime,
-                              0.0f, 0.0f, m_Camera);
+                              0.0f, 0.0f, m_GameViewCameraForUIValid ? &m_GameViewCameraForUI : m_Camera);
         }
 
         // Render pause menu overlay on top of fullscreen game view
@@ -6273,8 +6289,11 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
             // overlapping the Game View. Clipping to the viewport rect never
             // fixed that: the rect was right, the depth was wrong.
             m_UISystem.SetTargetDrawList(m_GameViewDrawList);
+            // World-space elements are placed through the game camera, not the
+            // editor's fly camera (EP-3)
             m_UISystem.Update(m_World, gvW, gvH, m_LastDeltaTime,
-                              m_GameViewImageMinX, m_GameViewImageMinY, m_Camera);
+                              m_GameViewImageMinX, m_GameViewImageMinY,
+                              m_GameViewCameraForUIValid ? &m_GameViewCameraForUI : m_Camera);
             m_UISystem.SetTargetDrawList(nullptr);
             // One flag for "the UI took the pointer", so a click on a game-view
             // UI button does not also fire in the world (matches both players).

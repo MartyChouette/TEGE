@@ -1135,6 +1135,11 @@ private:
     // override (RT dispatch runs before the game view rebuilds its local camera,
     // so the override must outlive the frame).
     Renderer::Camera m_RTGameCamera;
+    // The Game View's camera as last drawn: world-space UI is laid out through
+    // it rather than the editor's fly camera (EP-3)
+    Renderer::Camera m_GameViewCameraForUI;
+    bool m_GameViewCameraForUIValid = false;
+    ECS::Entity m_GameViewCameraEntity = ECS::INVALID_ENTITY;   // what the Game View renders through
 
     // Last image view bound as the post-process source. The PP descriptor set is
     // a single plain set (no update-after-bind), so it must only be rewritten when

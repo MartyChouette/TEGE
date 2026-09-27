@@ -1,4 +1,5 @@
 #include "Enjin/Editor/PlayMode.h"
+#include "Enjin/ECS/CameraZones.h"
 #include "Enjin/ECS/EntityEventBridge.h"
 #include "Enjin/ECS/Timers.h"
 #include "Enjin/Assets/Prefab.h"
@@ -1297,7 +1298,9 @@ void PlayMode::Update(f32 deltaTime) {
         // listener stays wherever it was initialized (world origin) and every
         // positional sound attenuates/pans relative to spawn, not the player.
         {
-            ECS::Entity cam = ECS::CameraManager::GetActiveCamera(m_World);
+            // Zones included (the editor then refines this to the blended
+            // Game View pose, EP-3)
+            ECS::Entity cam = ECS::ResolveGameCamera(m_World);
             if (cam != ECS::INVALID_ENTITY) {
                 auto* camT = m_World->GetComponent<ECS::TransformComponent>(cam);
                 if (camT) {
