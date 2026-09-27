@@ -1615,6 +1615,12 @@ public:
     Renderer::SkyboxConfig WeatherSky(const Renderer::SkyboxConfig& cfg) const;
     Math::Vector3 m_SkySunDir = Math::Vector3(0.0f, 1.0f, 0.0f);
     f32 m_FrameDt = 0.0f;
+    // Whether this frame's main pass built m_SortedRenderList. When it did not
+    // (the editor never runs it; the desktop player skips it and draws through
+    // RenderToTarget), RenderToTarget builds its own. The player used to fall
+    // back to every MeshComponent: disabled, culled and far meshes drew,
+    // blended ones unsorted, and LOD never switched (EP-13).
+    bool m_ListBuiltByMainPass = false;
     bool m_SkySunDriven = false;
     // The sky's sun (a direction TOWARDS the sun, the skybox convention) as
     // world time places it. World time turned the directional light and left

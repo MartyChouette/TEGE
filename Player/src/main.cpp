@@ -2365,6 +2365,13 @@ public:
                     // Editor-only RT dispatch site: Update() early-returns on
                     // the skip flag before reaching RT (no-op when RT is off)
                     m_RenderSystem->RecordRTFrame(false);
+                    // Script render targets (mirrors, security cameras), outside
+                    // any render pass and before the view that samples them. Only
+                    // the skipped main pass drew them, so a built game showed
+                    // their quads blank (EP-14). Same order as the editor.
+                    if (m_RenderSystem->HasScriptRenderTargets()) {
+                        m_RenderSystem->RenderScriptTargets(preCmd);
+                    }
                     // Jitter is only correct when something will resolve it.
                     // TAA does, below, now that it is given a colour input.
                     // An upscaler does NOT here: only the editor dispatches one,
@@ -2395,6 +2402,13 @@ public:
                     m_RenderSystem->RenderParticles(ppW, ppH, /*useOffscreenSets*/ true, /*viewport*/ 1);
                     m_RenderSystem->RenderElementalParticles(m_ElementalSystem, ppW, ppH,
                         /*useOffscreenSets*/ true, /*viewport*/ 1);
+                    // Weather particles (rain, snow) too: the main pass drew them
+                    // and this path is the one a built game takes (EP-14)
+                    if (auto* weather = m_RenderSystem->GetMainPassWeather()) {
+                        m_RenderSystem->RenderWeatherParticles(*weather,
+                            m_RenderSystem->GetMainPassWeatherIsRain(), ppW, ppH,
+                            /*useOffscreenSets*/ true, /*viewport*/ 1);
+                    }
                     m_ScenePPTarget->End(preCmd);
 
                     // TAA resolve. It has to happen HERE, between the offscreen

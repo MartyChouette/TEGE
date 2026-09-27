@@ -9769,6 +9769,7 @@ void RenderSystem::Update(f32 deltaTime) {
     // start the main render pass so ImGui has a valid pass to draw into.
     if (m_SkipMainPassRendering) {
         m_SkipMainPassRendering = false;  // Consume for this frame (RenderOffscreen sets it each frame)
+        m_ListBuiltByMainPass = false;    // RenderToTarget builds its own list
         m_VulkanRenderer->BeginMainRenderPass();
         return;
     }
@@ -10307,6 +10308,7 @@ void RenderSystem::Update(f32 deltaTime) {
             m_LastSortHadCam = haveCam;
         }
         // else: m_SortedRenderList already holds these exact entities in sorted order
+        m_ListBuiltByMainPass = true;
     }
 
     // GPU timestamp: main geometry begin
@@ -11440,7 +11442,9 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
     // in after play/stop (which runs Update). Rebuild the list here for the editor so
     // newly-created entities join the color + arena passes immediately. Sorting a few
     // hundred entities per frame is sub-millisecond and only happens in edit mode.
-    if (m_IsEditorMode && m_World) {
+    // The desktop player takes this path too: it skips the main pass and draws
+    // here, so nothing else builds the list for it (EP-13).
+    if ((m_IsEditorMode || !m_ListBuiltByMainPass) && m_World) {
         m_SortedRenderList.clear();
         ECS::View<TransformComponent, MeshComponent> rlView(*m_World);
         rlView.Exclude(m_World->GetComponentStorage<Sprite2DComponent>());
@@ -11471,8 +11475,16 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
             if (mat) mat->ComputeSortKey(rlHaveCam ? (xf->position - rlCam).Length() : 0.0f);
             m_SortedRenderList.push_back(e);
         }
+        // The main pass's order: render queue first (an author's explicit
+        // front or back), then the material key (opaque, mask, blend; blend
+        // back to front)
         std::sort(m_SortedRenderList.begin(), m_SortedRenderList.end(),
-            [rlMat](Entity a, Entity b) {
+            [rlMat, rlMR](Entity a, Entity b) {
+                const MeshRendererComponent* ra = rlMR ? rlMR->Get(a) : nullptr;
+                const MeshRendererComponent* rb = rlMR ? rlMR->Get(b) : nullptr;
+                const i32 qa = ra ? ra->renderQueue : 0;
+                const i32 qb = rb ? rb->renderQueue : 0;
+                if (qa != qb) return qa < qb;
                 auto* ma = rlMat ? rlMat->Get(a) : nullptr;
                 auto* mb = rlMat ? rlMat->Get(b) : nullptr;
                 return (ma ? ma->cachedSortKey : 0ULL) < (mb ? mb->cachedSortKey : 0ULL);
@@ -11536,6 +11548,29 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
 
             // Skip 2D sprites — rendered in sorted pass after 3D geometry
             if (spriteStorageRT && spriteStorageRT->Has(entity)) continue;
+
+            // LOD, as the main pass chooses it, when this path is the desktop
+            // player's frame. It never switched in a desktop build because only
+            // the skipped main pass chose (EP-13). Not in the editor: it draws
+            // here twice a frame from two cameras, and the level would flip
+            // between them, re-uploading buffers every frame.
+            if (!m_ListBuiltByMainPass && !m_IsEditorMode && m_Camera) {
+                auto* lod = m_World->GetComponent<LODComponent>(entity);
+                if (lod && lod->enabled && lod->levelCount > 1) {
+                    const i32 newLOD = ChooseLOD(entity, *lod, *xformRT, m_Camera->GetPosition());
+                    if (newLOD != lod->activeLOD && newLOD < lod->levelCount) {
+                        auto* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity) : nullptr;
+                        if (mesh && lod->levels[newLOD].mesh.IsValid()) {
+                            *mesh = lod->levels[newLOD].mesh;
+                            // Retire, not destroy: mid-recording, and in-flight
+                            // frames still reference the outgoing buffers
+                            if (static_cast<usize>(EntityIndex(entity)) < m_EntityRenderData.size())
+                                RetireEntityBuffers(m_EntityRenderData[static_cast<usize>(EntityIndex(entity))]);
+                            lod->activeLOD = newLOD;
+                        }
+                    }
+                }
+            }
 
             EntityRenderData* pRD = GetOrCreateRenderData(entity);
             if (!pRD) continue;
