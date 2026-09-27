@@ -4209,86 +4209,11 @@ private:
         try {
             auto j = nlohmann::json::parse(jsonStr);
 
-            // Visual settings
-            if (j.contains("colorblindMode"))
-                m_AccessibilitySettings.colorblindMode = static_cast<Enjin::Accessibility::ColorblindMode>(
-                    j["colorblindMode"].get<Enjin::u32>());
-            if (j.contains("colorblindStrength"))
-                m_AccessibilitySettings.colorblindStrength = j["colorblindStrength"].get<Enjin::f32>();
-            if (j.contains("screenBrightness"))
-                m_AccessibilitySettings.screenBrightness = j["screenBrightness"].get<Enjin::f32>();
-            if (j.contains("screenContrast"))
-                m_AccessibilitySettings.screenContrast = j["screenContrast"].get<Enjin::f32>();
-
-            // Motion settings
-            if (j.contains("reducedMotion"))
-                m_AccessibilitySettings.reducedMotion = j["reducedMotion"].get<bool>();
-            if (j.contains("disableScreenShake"))
-                m_AccessibilitySettings.disableScreenShake = j["disableScreenShake"].get<bool>();
-            if (j.contains("disableFOVEffects"))
-                m_AccessibilitySettings.disableFOVEffects = j["disableFOVEffects"].get<bool>();
-            if (j.contains("disableFlashingLights"))
-                m_AccessibilitySettings.disableFlashingLights = j["disableFlashingLights"].get<bool>();
-
-            // Subtitle settings
-            if (j.contains("subtitlesEnabled"))
-                m_AccessibilitySettings.subtitlesEnabled = j["subtitlesEnabled"].get<bool>();
-            if (j.contains("closedCaptionsEnabled"))
-                m_AccessibilitySettings.closedCaptionsEnabled = j["closedCaptionsEnabled"].get<bool>();
-            if (j.contains("subtitleFontSize"))
-                m_AccessibilitySettings.subtitleFontSize = j["subtitleFontSize"].get<Enjin::f32>();
-            if (j.contains("subtitleBgOpacity"))
-                m_AccessibilitySettings.subtitleBgOpacity = j["subtitleBgOpacity"].get<Enjin::f32>();
-            if (j.contains("subtitleSpeakerNames"))
-                m_AccessibilitySettings.subtitleSpeakerNames = j["subtitleSpeakerNames"].get<bool>();
-            if (j.contains("subtitleDirectionIndicators"))
-                m_AccessibilitySettings.subtitleDirectionIndicators = j["subtitleDirectionIndicators"].get<bool>();
-
-            // Font scaling
-            if (j.contains("fontScale")) {
-                Enjin::f32 scale = j["fontScale"].get<Enjin::f32>();
-                m_AccessibilitySettings.fontScale = std::clamp(scale, 0.5f, 3.0f);
-            }
-
-            // Dyslexia-friendly settings
-            if (j.contains("dyslexiaFriendly"))
-                m_AccessibilitySettings.dyslexiaFriendly = j["dyslexiaFriendly"].get<bool>();
-            if (j.contains("letterSpacing"))
-                m_AccessibilitySettings.letterSpacing = j["letterSpacing"].get<Enjin::f32>();
-            if (j.contains("wordSpacing"))
-                m_AccessibilitySettings.wordSpacing = j["wordSpacing"].get<Enjin::f32>();
-            if (j.contains("lineSpacing"))
-                m_AccessibilitySettings.lineSpacing = std::clamp(j["lineSpacing"].get<Enjin::f32>(), 1.0f, 3.0f);
-            if (j.contains("fontFamily")) {
-                Enjin::u32 ff = j["fontFamily"].get<Enjin::u32>();
-                if (ff <= 2) m_AccessibilitySettings.fontFamily = static_cast<Enjin::Accessibility::FontFamily>(ff);
-            }
-
-            // Motor accessibility settings (Task #40)
-            if (j.contains("dwellClickEnabled"))
-                m_AccessibilitySettings.dwellClickEnabled = j["dwellClickEnabled"].get<bool>();
-            if (j.contains("dwellClickTime"))
-                m_AccessibilitySettings.dwellClickTime = std::clamp(j["dwellClickTime"].get<Enjin::f32>(), 0.3f, 3.0f);
-            if (j.contains("stickyDragEnabled"))
-                m_AccessibilitySettings.stickyDragEnabled = j["stickyDragEnabled"].get<bool>();
-            if (j.contains("touchMode") && j["touchMode"].is_number_unsigned())
-                m_AccessibilitySettings.touchMode = std::min(j["touchMode"].get<Enjin::u32>(), 2u);
-            if (j.contains("touchHand") && j["touchHand"].is_number_unsigned())
-                m_AccessibilitySettings.touchHand = std::min(j["touchHand"].get<Enjin::u32>(), 2u);
-            if (j.contains("touchButtonSize") && j["touchButtonSize"].is_number_unsigned())
-                m_AccessibilitySettings.touchButtonSize = std::min(j["touchButtonSize"].get<Enjin::u32>(), 4u);
-            if (j.contains("switchAccessEnabled"))
-                m_AccessibilitySettings.switchAccessEnabled = j["switchAccessEnabled"].get<bool>();
-            if (j.contains("switchScanSpeed"))
-                m_AccessibilitySettings.switchScanSpeed = std::clamp(j["switchScanSpeed"].get<Enjin::f32>(), 0.5f, 5.0f);
-
-            // Audio visual indicators (Task #38)
-            if (j.contains("audioIndicatorsEnabled"))
-                m_AccessibilitySettings.audioIndicatorsEnabled = j["audioIndicatorsEnabled"].get<bool>();
-
-            // Screen reader (announcer status bar + TTS)
-            if (j.contains("screenReaderEnabled"))
-                m_AccessibilitySettings.screenReaderEnabled = j["screenReaderEnabled"].get<bool>();
+            // Every RuntimeAccessibilitySettings field, through the one
+            // serializer: this was a hand-written copy of the key list, and the
+            // gaze settings were never in it (IN-22). Missing keys keep their
+            // value, so the pak's defaults and the player's file layer.
+            m_AccessibilitySettings.FromJson(jsonStr);
 
             // Alternative input device settings (Task #37)
             if (j.contains("alternativeInput")) {
@@ -4345,40 +4270,12 @@ private:
         std::string settingsPath = (fs::path(exeDir) / "accessibility.json").string();
 
         try {
-            nlohmann::json j;
-            j["colorblindMode"] = static_cast<Enjin::u32>(m_AccessibilitySettings.colorblindMode);
-            j["colorblindStrength"] = m_AccessibilitySettings.colorblindStrength;
-            j["screenBrightness"] = m_AccessibilitySettings.screenBrightness;
-            j["screenContrast"] = m_AccessibilitySettings.screenContrast;
-            j["reducedMotion"] = m_AccessibilitySettings.reducedMotion;
-            j["disableScreenShake"] = m_AccessibilitySettings.disableScreenShake;
-            j["disableFOVEffects"] = m_AccessibilitySettings.disableFOVEffects;
-            j["disableFlashingLights"] = m_AccessibilitySettings.disableFlashingLights;
-            j["subtitlesEnabled"] = m_AccessibilitySettings.subtitlesEnabled;
-            j["closedCaptionsEnabled"] = m_AccessibilitySettings.closedCaptionsEnabled;
-            j["subtitleFontSize"] = m_AccessibilitySettings.subtitleFontSize;
-            j["subtitleBgOpacity"] = m_AccessibilitySettings.subtitleBgOpacity;
-            j["subtitleSpeakerNames"] = m_AccessibilitySettings.subtitleSpeakerNames;
-            j["subtitleDirectionIndicators"] = m_AccessibilitySettings.subtitleDirectionIndicators;
-            j["fontScale"] = m_AccessibilitySettings.fontScale;
-            j["dyslexiaFriendly"] = m_AccessibilitySettings.dyslexiaFriendly;
-            j["letterSpacing"] = m_AccessibilitySettings.letterSpacing;
-            j["wordSpacing"] = m_AccessibilitySettings.wordSpacing;
-            j["lineSpacing"] = m_AccessibilitySettings.lineSpacing;
-            j["fontFamily"] = static_cast<Enjin::u32>(m_AccessibilitySettings.fontFamily);
-            j["dwellClickEnabled"] = m_AccessibilitySettings.dwellClickEnabled;
-            j["dwellClickTime"] = m_AccessibilitySettings.dwellClickTime;
-            j["stickyDragEnabled"] = m_AccessibilitySettings.stickyDragEnabled;
-            j["touchMode"] = m_AccessibilitySettings.touchMode;
-            j["touchHand"] = m_AccessibilitySettings.touchHand;
-            j["touchButtonSize"] = m_AccessibilitySettings.touchButtonSize;
-            j["switchAccessEnabled"] = m_AccessibilitySettings.switchAccessEnabled;
-            j["switchScanSpeed"] = m_AccessibilitySettings.switchScanSpeed;
-            j["audioIndicatorsEnabled"] = m_AccessibilitySettings.audioIndicatorsEnabled;
-            j["screenReaderEnabled"] = m_AccessibilitySettings.screenReaderEnabled;
+            // The one serializer, so a new setting is saved without anyone
+            // remembering this file (IN-22)
+            const std::string json = m_AccessibilitySettings.ToJson();
 
             std::ofstream file(settingsPath);
-            file << j.dump(2);
+            file << json;
             ENJIN_LOG_INFO(Player, "Saved accessibility settings to %s", settingsPath.c_str());
         } catch (const std::exception& e) {
             ENJIN_LOG_WARN(Player, "Failed to save accessibility.json: %s", e.what());

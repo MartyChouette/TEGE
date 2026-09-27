@@ -3133,32 +3133,11 @@ private:
     void ApplyWebAccessibilityJson(const std::string& json) {
         try {
             auto j = nlohmann::json::parse(json);
-            auto& s = m_AccessibilitySettings;
-            if (j.contains("colorblindMode")) {
-                Enjin::u32 v = j["colorblindMode"].get<Enjin::u32>();
-                if (v <= 8) s.colorblindMode = static_cast<Enjin::Accessibility::ColorblindMode>(v);
-            }
-            if (j.contains("colorblindStrength")) s.colorblindStrength = j["colorblindStrength"].get<Enjin::f32>();
-            if (j.contains("screenBrightness")) s.screenBrightness = j["screenBrightness"].get<Enjin::f32>();
-            if (j.contains("screenContrast")) s.screenContrast = j["screenContrast"].get<Enjin::f32>();
-            if (j.contains("fontScale")) s.fontScale = j["fontScale"].get<Enjin::f32>();
-            if (j.contains("reducedMotion")) s.reducedMotion = j["reducedMotion"].get<bool>();
-            if (j.contains("subtitlesEnabled")) s.subtitlesEnabled = j["subtitlesEnabled"].get<bool>();
-            if (j.contains("screenReaderEnabled")) s.screenReaderEnabled = j["screenReaderEnabled"].get<bool>();
-            if (j.contains("audioIndicatorsEnabled")) s.audioIndicatorsEnabled = j["audioIndicatorsEnabled"].get<bool>();
-            if (j.contains("dyslexiaFriendly")) s.dyslexiaFriendly = j["dyslexiaFriendly"].get<bool>();
-            if (j.contains("letterSpacing")) s.letterSpacing = j["letterSpacing"].get<Enjin::f32>();
-            if (j.contains("wordSpacing")) s.wordSpacing = j["wordSpacing"].get<Enjin::f32>();
-            if (j.contains("lineSpacing")) s.lineSpacing = j["lineSpacing"].get<Enjin::f32>();
-            if (j.contains("dwellClickEnabled")) s.dwellClickEnabled = j["dwellClickEnabled"].get<bool>();
-            if (j.contains("dwellClickTime")) s.dwellClickTime = j["dwellClickTime"].get<Enjin::f32>();
-            if (j.contains("switchAccessEnabled")) s.switchAccessEnabled = j["switchAccessEnabled"].get<bool>();
-            if (j.contains("switchScanSpeed")) s.switchScanSpeed = j["switchScanSpeed"].get<Enjin::f32>();
-            if (j.contains("stickyDragEnabled")) s.stickyDragEnabled = j["stickyDragEnabled"].get<bool>();
-            // Motion + input options (were desktop-only; audit 2026-08-28)
-            if (j.contains("disableScreenShake")) s.disableScreenShake = j["disableScreenShake"].get<bool>();
-            if (j.contains("disableFOVEffects")) s.disableFOVEffects = j["disableFOVEffects"].get<bool>();
-            if (j.contains("disableFlashingLights")) s.disableFlashingLights = j["disableFlashingLights"].get<bool>();
+            // Every RuntimeAccessibilitySettings field, through the one
+            // serializer (IN-22). The hand-written list here had drifted: it
+            // never read the gaze settings, the font family or the touch
+            // options, so those were lost on every reload.
+            m_AccessibilitySettings.FromJson(json);
             // Sprint/crouch mode, sensitivity and invert-Y now live on the
             // InputActionMap (bindings.json). Migrate an old accessibility.json
             // once, only when the player has not rebound anything yet.
@@ -3168,12 +3147,6 @@ private:
                 if (j.contains("mouseSensitivity")) m_InputMap.SetMouseSensitivity(j["mouseSensitivity"].get<Enjin::f32>());
                 if (j.contains("invertMouseY")) m_InputMap.SetInvertY(j["invertMouseY"].get<bool>());
             }
-            // Subtitle sub-options (Apply read them but they never loaded on web)
-            if (j.contains("closedCaptionsEnabled")) s.closedCaptionsEnabled = j["closedCaptionsEnabled"].get<bool>();
-            if (j.contains("subtitleFontSize")) s.subtitleFontSize = j["subtitleFontSize"].get<Enjin::f32>();
-            if (j.contains("subtitleBgOpacity")) s.subtitleBgOpacity = j["subtitleBgOpacity"].get<Enjin::f32>();
-            if (j.contains("subtitleSpeakerNames")) s.subtitleSpeakerNames = j["subtitleSpeakerNames"].get<bool>();
-            if (j.contains("subtitleDirectionIndicators")) s.subtitleDirectionIndicators = j["subtitleDirectionIndicators"].get<bool>();
             ENJIN_LOG_INFO(Player, "Applied an accessibility settings layer");
         } catch (const std::exception& e) {
             ENJIN_LOG_WARN(Player, "Failed to parse an accessibility.json layer: %s", e.what());
@@ -3182,37 +3155,12 @@ private:
 
     void SaveWebAccessibilitySettings() {
         try {
-            const auto& s = m_AccessibilitySettings;
-            nlohmann::json j;
-            j["colorblindMode"] = static_cast<Enjin::u32>(s.colorblindMode);
-            j["colorblindStrength"] = s.colorblindStrength;
-            j["screenBrightness"] = s.screenBrightness;
-            j["screenContrast"] = s.screenContrast;
-            j["fontScale"] = s.fontScale;
-            j["reducedMotion"] = s.reducedMotion;
-            j["subtitlesEnabled"] = s.subtitlesEnabled;
-            j["screenReaderEnabled"] = s.screenReaderEnabled;
-            j["audioIndicatorsEnabled"] = s.audioIndicatorsEnabled;
-            j["dyslexiaFriendly"] = s.dyslexiaFriendly;
-            j["letterSpacing"] = s.letterSpacing;
-            j["wordSpacing"] = s.wordSpacing;
-            j["lineSpacing"] = s.lineSpacing;
-            j["dwellClickEnabled"] = s.dwellClickEnabled;
-            j["dwellClickTime"] = s.dwellClickTime;
-            j["switchAccessEnabled"] = s.switchAccessEnabled;
-            j["switchScanSpeed"] = s.switchScanSpeed;
-            j["stickyDragEnabled"] = s.stickyDragEnabled;
-            j["disableScreenShake"] = s.disableScreenShake;
-            j["disableFOVEffects"] = s.disableFOVEffects;
-            j["disableFlashingLights"] = s.disableFlashingLights;
-            j["closedCaptionsEnabled"] = s.closedCaptionsEnabled;
-            j["subtitleFontSize"] = s.subtitleFontSize;
-            j["subtitleBgOpacity"] = s.subtitleBgOpacity;
-            j["subtitleSpeakerNames"] = s.subtitleSpeakerNames;
-            j["subtitleDirectionIndicators"] = s.subtitleDirectionIndicators;
+            // The one serializer: this list had drifted from the struct and
+            // dropped the font family, gaze and touch settings (IN-22)
+            const std::string json = m_AccessibilitySettings.ToJson();
             {
                 std::ofstream f("/saves/accessibility.json");
-                f << j.dump(2);
+                f << json;
             }
             // Flush MEMFS -> IndexedDB so the settings survive a reload
             EM_ASM({

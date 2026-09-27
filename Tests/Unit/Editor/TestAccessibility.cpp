@@ -230,4 +230,21 @@ ENJIN_TEST(AccessibilityLayers, ThePlayersSavedFileIsAppliedLast) {
     ENJIN_EXPECT_TRUE(none.empty());
 }
 
+// IN-22: both players now load through FromJson, pak defaults first and the
+// player's file second, so a key one layer lacks must keep the other's value
+ENJIN_TEST(AccessSettings, FromJsonLayersKeyByKey) {
+    Accessibility::RuntimeAccessibilitySettings s;
+    ENJIN_ASSERT_TRUE(s.FromJson("{\"fontScale\":1.5,\"touchMode\":2,\"eyeDwellTime\":2.0}"));   // the project's
+    ENJIN_ASSERT_TRUE(s.FromJson("{\"touchMode\":1}"));                                           // the player's
+    ENJIN_EXPECT_FLOAT_NEAR(s.fontScale, 1.5f, 1e-6f);
+    ENJIN_EXPECT_EQ(s.touchMode, 1u);
+    ENJIN_EXPECT_FLOAT_NEAR(s.eyeDwellTime, 2.0f, 1e-6f);   // gaze settings persist now
+
+    // And everything round-trips through the one serializer
+    Accessibility::RuntimeAccessibilitySettings back;
+    ENJIN_ASSERT_TRUE(back.FromJson(s.ToJson()));
+    ENJIN_EXPECT_EQ(back.touchMode, 1u);
+    ENJIN_EXPECT_FLOAT_NEAR(back.eyeDwellTime, 2.0f, 1e-6f);
+}
+
 ENJIN_TEST_MAIN()
