@@ -1216,6 +1216,10 @@ public:
 
     void Update(Enjin::f32 deltaTime) override {
         m_LastUpdateDt = deltaTime;   // the render-camera blend in Render() steps by it
+        // Render() draws through World::Update(0); RenderSystem's clocks (sprite
+        // frames, pose blending, the hover pulse, movement-driven animation)
+        // take this frame's dt from here instead (EP-7)
+        if (m_RenderSystem) m_RenderSystem->SetFrameDeltaTime(deltaTime);
         // Replay playback (--replay), BEFORE the time scale is applied.
         //
         // A replay carries its own dt stream, recorded after the time scale was
@@ -2528,9 +2532,12 @@ public:
                     ? ImGui::GetBackgroundDrawList()
                     : nullptr);
                 m_UISystem.SetInputEnabled(!m_GameMenu.IsMenuOpen());
+                // The frame's dt, not 0: tooltips, the text cursor, held-arrow
+                // menu repeat and switch-access scanning all run on it, and
+                // none of them moved in a desktop build (EP-7)
                 m_UISystem.Update(m_World.get(),
                     static_cast<Enjin::f32>(extent.width),
-                    static_cast<Enjin::f32>(extent.height), 0.0f,
+                    static_cast<Enjin::f32>(extent.height), m_LastUpdateDt,
                     0.0f, 0.0f, m_Camera.get());
                 // One flag for "the UI took the pointer", from the UI's own hit
                 // test plus ImGui, so a click on a button never also fires in

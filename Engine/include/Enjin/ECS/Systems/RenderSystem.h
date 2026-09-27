@@ -323,6 +323,14 @@ public:
     // a TreeVolume's barkTexturePath into something it can bind.
     Renderer::GPUTextureHandle ResolveWebTexture(const std::string& path);
     void TickHighlightTime(f32 dt) { m_HighlightTimeValue += dt; }
+    // The frame's real delta time, for a runtime that draws by calling Update
+    // with 0. The desktop player calls World::Update(0) from Render, and the
+    // web player's draw call is its second, dt-0 pass, so everything in
+    // Update that advances a clock sat still: web shader time, sprite frames,
+    // pose blending, the hover pulse, movement-driven animation (EP-7, EP-8,
+    // EP-9). Those read this when Update's own dt is 0. Skeletal animators do
+    // not: the runtimes advance those themselves.
+    void SetFrameDeltaTime(f32 dt) { m_FrameDt = dt; }
 private:
     // One generated cookie texture per light entity, keyed by entity. The params
     // it was built from are kept so an unchanged cookie is not rebuilt, and so a
@@ -1606,6 +1614,7 @@ public:
     }
     Renderer::SkyboxConfig WeatherSky(const Renderer::SkyboxConfig& cfg) const;
     Math::Vector3 m_SkySunDir = Math::Vector3(0.0f, 1.0f, 0.0f);
+    f32 m_FrameDt = 0.0f;
     bool m_SkySunDriven = false;
     // The sky's sun (a direction TOWARDS the sun, the skybox convention) as
     // world time places it. World time turned the directional light and left

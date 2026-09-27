@@ -3995,6 +3995,10 @@ void RenderSystem::Update(f32 deltaTime) {
     // whole body, so all of it happened twice and the first time had no frame
     // to draw into (WP-4). The clocks above need the dt and take it from the
     // first call; everything below needs a frame and runs only in the second.
+    // The first call brings the dt; remember it for the drawing pass, which
+    // is called with 0. Advancing m_WebTime below the gate froze every shader
+    // clock on web, vegetation wind and water included (EP-9).
+    if (deltaTime > 0.0f) m_FrameDt = deltaTime;
     if (auto* wr = static_cast<Renderer::WebGPURenderer*>(m_Renderer); wr && !wr->IsFrameOpen()) {
         return;
     }
@@ -4004,8 +4008,9 @@ void RenderSystem::Update(f32 deltaTime) {
     if (!m_Camera) {
         return;
     }
+    const f32 frameDt = deltaTime > 0.0f ? deltaTime : m_FrameDt;
 
-    m_WebTime += deltaTime;
+    m_WebTime += frameDt;
     auto* bufMgr = m_Renderer->GetBufferManager();
     if (!bufMgr) return;
 
@@ -4304,7 +4309,7 @@ void RenderSystem::Update(f32 deltaTime) {
         // Movement-driven playback (web twin of the Vulkan-path block): switch
         // idle/walk/run/air from world-space velocity, cross-faded. The clip
         // switch happens here; the animator itself still ticks in web_main.
-        UpdateMovementDrivenAnimation(*ac, animEntity, deltaTime);
+        UpdateMovementDrivenAnimation(*ac, animEntity, frameDt);
     }
 
     // Terrain sculpted at runtime rebuilds its mesh here too, not only on
@@ -9253,7 +9258,10 @@ void RenderSystem::Update(f32 deltaTime) {
     // Vulkan one did not, so the only runtime with an outline pass to read the
     // clock was reading a clock that never moved: Pulse held at half depth and
     // Flash stayed permanently on.
-    TickHighlightTime(deltaTime);
+    // The desktop player draws through World::Update(0): the clocks here take
+    // the frame's dt it handed over (SetFrameDeltaTime)
+    const f32 frameDt = deltaTime > 0.0f ? deltaTime : m_FrameDt;
+    TickHighlightTime(frameDt);
     // Palette cycling runs off the same clock here as it does on desktop.
     TickPaletteTime(deltaTime);
     if (!m_Renderer || !m_Initialized) {
@@ -9458,7 +9466,7 @@ void RenderSystem::Update(f32 deltaTime) {
         }
 
         // Animated sprite frames: shared with the editor and web (see TickAnimatedSprites)
-        TickAnimatedSprites(deltaTime);
+        TickAnimatedSprites(frameDt);
 
         // Auto-generate sprite quad meshes when dirty
         for (Entity entity : m_World->GetEntitiesWithComponent<Sprite2DComponent>()) {
@@ -9656,7 +9664,7 @@ void RenderSystem::Update(f32 deltaTime) {
         // chains included — moving the import root drives the skinned child's
         // state) and cross-fade. The importer auto-fills the clip names.
         {
-            UpdateMovementDrivenAnimation(*animComp, entity, deltaTime);
+            UpdateMovementDrivenAnimation(*animComp, entity, frameDt);
         }
 
         // Animation LOD. Shared above the backend #if -- see ShouldRefreshAnimator.
@@ -9728,7 +9736,7 @@ void RenderSystem::Update(f32 deltaTime) {
         // solve; skipping also skips the bind-pose restore, which is correct:
         // a pose nobody is editing has nothing to reset.
         if (!job.allowIK) continue;
-        ApplyPoseEdits(entity, animComp, deltaTime);
+        ApplyPoseEdits(entity, animComp, frameDt);
     }
 
     // Bone attachments: shared with the editor and web (see UpdateBoneAttachments)

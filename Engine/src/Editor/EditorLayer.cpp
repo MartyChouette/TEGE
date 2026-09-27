@@ -2229,6 +2229,11 @@ void EditorLayer::Update(f32 deltaTime) {
         for (auto entity : m_World->GetEntitiesWithComponent<ECS::AnimatorComponent>()) {
             auto* animComp = m_World->GetComponent<ECS::AnimatorComponent>(entity);
             if (!animComp) continue;
+            // The Animator's movement block (idle/walk/run from velocity). The
+            // editor never ran it, so a character played in the editor slid
+            // around in its idle (EP-8). Play only: it reads motion.
+            if (m_RenderSystem && m_PlayMode.IsPlaying())
+                m_RenderSystem->UpdateMovementDrivenAnimation(*animComp, entity, deltaTime);
             if (applyAnimLOD) {
                 f32 stepDt = deltaTime;
                 ECS::AnimationQuality quality{};
