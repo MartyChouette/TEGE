@@ -23,7 +23,7 @@ namespace {
     constexpr i32 M(MouseButton b)    { return static_cast<i32>(b); }
     constexpr i32 P(GamepadButton b)  { return static_cast<i32>(b); }
     constexpr i32 AX(GamepadAxis a)   { return static_cast<i32>(a); }
-    constexpr u32 HOLD = 0, PRESS = 2;
+    constexpr u32 HOLD = 0, TOGGLE = 1, PRESS = 2;
     using AC = ActionCategory;
     using TH = TouchHint;
 
@@ -35,7 +35,7 @@ namespace {
         { "Move Right",        AC::Movement, K(KeyCode::D),     K(KeyCode::Right), N,             N,                 N,                  AX(GamepadAxis::LeftX),  true,  0.5f, HOLD,  TH::Stick,    "",     "move" },
         { "Jump",              AC::Movement, K(KeyCode::Space), N,                 N,             P(GamepadButton::A),          N,                       N,       true,  0.5f, PRESS, TH::Button,   "JMP",  "jump" },
         { "Sprint",            AC::Movement, K(KeyCode::LeftShift), K(KeyCode::RightShift), N,    P(GamepadButton::LeftStick),  P(GamepadButton::LeftBumper), N,  true,  0.5f, HOLD,  TH::Button,   "RUN",  "sprint" },
-        { "Crouch",            AC::Movement, K(KeyCode::LeftControl), K(KeyCode::C), N,           P(GamepadButton::B),          N,                       N,       true,  0.5f, PRESS, TH::NotShown, "",     "crouch" },
+        { "Crouch",            AC::Movement, K(KeyCode::LeftControl), K(KeyCode::C), N,           P(GamepadButton::B),          N,                       N,       true,  0.5f, TOGGLE, TH::NotShown, "",     "crouch" },
         { "Dash",              AC::Movement, K(KeyCode::LeftShift), N,             N,             P(GamepadButton::RightBumper), N,                      N,       true,  0.5f, PRESS, TH::NotShown, "",     "dash" },
         { "Interact",          AC::Actions,  K(KeyCode::E),     N,                 N,             P(GamepadButton::X),          N,                       N,       true,  0.5f, PRESS, TH::Button,   "USE",  "interact" },
         { "Attack",            AC::Actions,  N,                 N,                 M(MouseButton::Left),  N,                    N,   AX(GamepadAxis::RightTrigger), true, 0.3f, PRESS, TH::Button,   "FIRE", "attack" },
@@ -85,6 +85,27 @@ namespace {
                   "kActionIdent must have one name per GameAction, in enum order");
 }
 
+const char* GetActionCategoryName(ActionCategory category) {
+    switch (category) {
+        case ActionCategory::Movement: return "Movement";
+        case ActionCategory::Actions:  return "Actions";
+        case ActionCategory::Camera:   return "Camera";
+        case ActionCategory::UI:       return "Menus";
+        case ActionCategory::Custom:   return "Game";
+        default:                       return "Other";
+    }
+}
+
+const char* GetActionModeName(ActionMode mode) {
+    switch (mode) {
+        case ActionMode::Hold:    return "Hold";
+        case ActionMode::Toggle:  return "Toggle";
+        case ActionMode::Press:   return "Press";
+        case ActionMode::Release: return "Release";
+        default:                  return "?";
+    }
+}
+
 const char* GetActionIdentifier(GameAction action) {
     const u32 i = static_cast<u32>(action);
     return i < static_cast<u32>(GameAction::Count) ? kActionIdent[i] : "";
@@ -115,6 +136,7 @@ void InputActionMap::EnsureActionCount(u32 count) {
     m_ActionDown.resize(count, 0);
     m_ActionPressed.resize(count, 0);
     m_ActionReleased.resize(count, 0);
+    m_ActionHeld.resize(count, 0);
     m_ActionValue.resize(count, 0.0f);
     m_TouchDownPrev.resize(count, 0);
     m_LastUsed.resize(count, 0);
@@ -313,6 +335,7 @@ void InputActionMap::Update(f32 dt) {
         if (touchDown && !m_TouchDownPrev[i]) anyPressed = true;
         if (!touchDown && m_TouchDownPrev[i]) anyReleased = true;
         m_TouchDownPrev[i] = touchDown ? 1 : 0;
+        m_ActionHeld[i] = anyDown ? 1 : 0;
 
         switch (cfg.mode) {
             case ActionMode::Hold:
@@ -399,6 +422,12 @@ void InputActionMap::ClearActionUsage() {
 bool InputActionMap::IsActionPressedAnyFocus(GameAction action) const {
     if (!IsValidAction(static_cast<i32>(action))) return false;
     return m_ActionPressed[static_cast<u32>(action)] != 0;
+}
+
+bool InputActionMap::IsActionHeld(GameAction action) const {
+    MarkUsed(action);
+    if (!IsValidAction(static_cast<i32>(action)) || !ActionPassesFocus(action)) return false;
+    return m_ActionHeld[static_cast<u32>(action)] != 0;
 }
 
 bool InputActionMap::IsActionReleased(GameAction action) const {
@@ -733,7 +762,9 @@ bool InputActionMap::IsCrouchToggle() const {
 }
 
 void InputActionMap::SetCrouchToggle(bool toggle) {
-    SetActionMode(GameAction::Crouch, toggle ? ActionMode::Toggle : ActionMode::Press);
+    // Hold means hold. It used to set Press, and first person crouch toggled
+    // on every press either way, so the menu's "Hold" was a toggle (IN-4)
+    SetActionMode(GameAction::Crouch, toggle ? ActionMode::Toggle : ActionMode::Hold);
 }
 
 bool InputActionMap::IsBindingCodeValid(BindingType type, i32 code) {

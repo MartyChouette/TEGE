@@ -103,6 +103,8 @@ ENJIN_TEST(Config, SprintToggleSwitch) {
 
 ENJIN_TEST(Config, CrouchToggleSwitch) {
     InputActionMap map;
+    ENJIN_EXPECT_TRUE(map.IsCrouchToggle());   // the default since IN-4
+    map.SetCrouchToggle(false);
     ENJIN_EXPECT_FALSE(map.IsCrouchToggle());
     map.SetCrouchToggle(true);
     ENJIN_EXPECT_TRUE(map.IsCrouchToggle());

@@ -523,4 +523,29 @@ ENJIN_TEST(InputActionMap, AnActionIsUsedWhenTheGameReadsIt) {
     ENJIN_EXPECT_FALSE(map.AnyGameplayActionUsed());
 }
 
+// IN-8: a Move action emptied by a repair came back with its keys and pad
+// button but not its stick. It now comes back to the whole default.
+ENJIN_TEST(InputActionMap, ARepairedMoveActionGetsItsStickBack) {
+    InputActionMap map;
+    const std::string poisoned =
+        "{\"version\":2,\"preset\":\"None\",\"actions\":[{\"action\":0,\"mode\":0,"
+        "\"sensitivity\":1.0,\"invertAxis\":false,\"bindings\":[{\"type\":0,\"code\":656,"
+        "\"axisThreshold\":0.5,\"axisPositive\":true}]}]}";
+    ENJIN_ASSERT_TRUE(map.FromJson(poisoned));
+    bool stick = false;
+    for (const auto& b : map.GetActionConfig(GameAction::MoveForward).bindings) stick |= b.type == BindingType::GamepadAxis;
+    ENJIN_EXPECT_TRUE(stick);
+}
+
+// IN-4: Hold means hold, and crouch defaults to Toggle, the behaviour it
+// always had under the "Hold" label
+ENJIN_TEST(InputActionMap, CrouchHoldIsHold) {
+    InputActionMap map;
+    ENJIN_EXPECT_TRUE(map.IsCrouchToggle());
+    map.SetCrouchToggle(false);
+    ENJIN_EXPECT_TRUE(map.GetActionConfig(GameAction::Crouch).mode == ActionMode::Hold);
+    ENJIN_EXPECT_EQ(std::string(GetActionModeName(ActionMode::Toggle)), std::string("Toggle"));
+    ENJIN_EXPECT_EQ(std::string(GetActionCategoryName(ActionCategory::UI)), std::string("Menus"));
+}
+
 ENJIN_TEST_MAIN()

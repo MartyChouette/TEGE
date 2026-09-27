@@ -1122,7 +1122,8 @@ void EditorLayer::DrawSettingsSection_Accessibility() {
 
         // -- Input Accessibility --
         if (ImGui::TreeNode("Input")) {
-            const char* holdToggle[] = { "Hold", "Toggle" };
+            const char* holdToggle[] = { InputSystem::GetActionModeName(InputSystem::ActionMode::Hold),
+                                         InputSystem::GetActionModeName(InputSystem::ActionMode::Toggle) };
 
             // These edit the ACTION MAP, which is the same object play mode,
             // the Controls menu and the touch overlay read. There is no second
@@ -2660,7 +2661,10 @@ void EditorLayer::DrawSettingsSection_InputTouch() {
         if (ChoiceCombo("##pad", PadChoices(), def.gamepad)) changed = true;
         ImGui::SameLine();
         {
-            const char* modeNames[] = { "Hold", "Toggle", "Press", "Release" };
+            const char* modeNames[] = { InputSystem::GetActionModeName(InputSystem::ActionMode::Hold),
+                                        InputSystem::GetActionModeName(InputSystem::ActionMode::Toggle),
+                                        InputSystem::GetActionModeName(InputSystem::ActionMode::Press),
+                                        InputSystem::GetActionModeName(InputSystem::ActionMode::Release) };
             int m = static_cast<int>(def.mode <= 3 ? def.mode : 2);
             ImGui::SetNextItemWidth(90);
             if (ImGui::Combo("##mode", &m, modeNames, 4)) { def.mode = static_cast<u32>(m); changed = true; }

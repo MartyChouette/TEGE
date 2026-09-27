@@ -127,6 +127,36 @@ ENJIN_TEST(FirstPersonMovement, HeldForwardKeyWalksTheCapsuleForward) {
     ENJIN_EXPECT_FLOAT_NEAR(end.y, 0.85f, 0.15f);
 }
 
+// IN-4: crouch follows the Crouch action's mode. It flipped on every press
+// whatever the menu said, so "Hold" was a toggle and Toggle worked on every
+// other press.
+static bool Crouching(Walker& w) {
+    return w.world.GetComponent<ECS::FirstPersonController>(w.player)->isCrouching;
+}
+
+ENJIN_TEST(FirstPersonMovement, CrouchTogglesOnEachPressByDefault) {
+    Walker w;
+    w.Build(false);
+    w.world.GetComponent<ECS::FirstPersonController>(w.player)->enableCrouch = true;
+    w.Run(KeyCode::C, 5);
+    w.Run(KeyCode::Unknown, 5);
+    ENJIN_EXPECT_TRUE(Crouching(w));    // still down after letting go
+    w.Run(KeyCode::C, 5);
+    w.Run(KeyCode::Unknown, 5);
+    ENJIN_EXPECT_FALSE(Crouching(w));   // the second press stands up
+}
+
+ENJIN_TEST(FirstPersonMovement, CrouchHoldIsDownOnlyWhileHeld) {
+    Walker w;
+    w.Build(false);
+    w.world.GetComponent<ECS::FirstPersonController>(w.player)->enableCrouch = true;
+    w.map.SetCrouchToggle(false);
+    w.Run(KeyCode::C, 5);
+    ENJIN_EXPECT_TRUE(Crouching(w));
+    w.Run(KeyCode::Unknown, 5);
+    ENJIN_EXPECT_FALSE(Crouching(w));
+}
+
 ENJIN_TEST(FirstPersonMovement, StrafeKeyWalksTheCapsuleSideways) {
     Walker w;
     w.Build(/*givePlayerARigidbody=*/false);

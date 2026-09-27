@@ -62,7 +62,9 @@ ENJIN_TEST(AccessSettings, InputSettingsLiveOnTheActionMapNotHere) {
     map.LoadDefaults();
 
     ENJIN_EXPECT_FALSE(map.IsSprintToggle());
-    ENJIN_EXPECT_FALSE(map.IsCrouchToggle());
+    // Crouch defaults to Toggle: first person crouch has always toggled on a
+    // press, and the menu said "Hold" (IN-4)
+    ENJIN_EXPECT_TRUE(map.IsCrouchToggle());
     ENJIN_EXPECT_FLOAT_EQ(map.GetMouseSensitivity(), 1.0f);
     ENJIN_EXPECT_FALSE(map.GetInvertY());
 

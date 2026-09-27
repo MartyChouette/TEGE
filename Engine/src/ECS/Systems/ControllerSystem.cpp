@@ -680,7 +680,9 @@ bool ControllerSystem::IsJumpHeld() {
 
 bool ControllerSystem::IsCrouchHeld() {
     if (m_ExternalFixedClock && !m_RealtimePass) return m_LatchCrouch;
-    if (m_InputMap) return m_InputMap->IsActionDown(InputSystem::GameAction::Crouch);
+    // Held means the key, not Toggle's latched state: fly and swim descend
+    // while it is down
+    if (m_InputMap) return m_InputMap->IsActionHeld(InputSystem::GameAction::Crouch);
     bool held = Input::IsKeyDown(KeyCode::LeftControl) || Input::IsKeyDown(KeyCode::C);
     for (i32 gp = 0; gp < 4; ++gp) {
         if (Input::IsGamepadConnected(gp) && Input::IsGamepadButtonDown(GamepadButton::B, gp)) {
@@ -1900,11 +1902,18 @@ void ControllerSystem::UpdateFirstPerson(Entity entity, FirstPersonController& c
         }
     }
 
-    // Crouch toggle. The physics capsule follows: shorter while crouched, and
-    // standing up is refused -- the player stays crouched -- when there is no
-    // headroom above (SD-19).
-    if (ctrl.enableCrouch && IsCrouchPressed()) {
-        const bool wantCrouch = !ctrl.isCrouching;
+    // Crouch follows the Crouch action's state: down while held in Hold mode,
+    // latched on and off by presses in Toggle mode (the default). It used to
+    // flip on every press whatever the mode said, so Hold was a toggle and
+    // Toggle only worked on every other press (IN-4). A level needs no latch
+    // under the fixed clock; only an edge can fall between two steps.
+    // The physics capsule follows: shorter while crouched, and standing up is
+    // refused -- the player stays crouched -- when there is no headroom above
+    // (SD-19).
+    const bool crouchWanted = ctrl.enableCrouch &&
+        (m_InputMap ? m_InputMap->IsActionDown(InputSystem::GameAction::Crouch) : IsCrouchPressed() != ctrl.isCrouching);
+    if (ctrl.enableCrouch && crouchWanted != ctrl.isCrouching) {
+        const bool wantCrouch = crouchWanted;
         bool fits = true;
         if (m_Physics && ctrl.standingCapsuleHalf > 0.0f && m_Physics->HasCharacterController(entity)) {
             const f32 scale = (ctrl.standingHeight > 0.0f)

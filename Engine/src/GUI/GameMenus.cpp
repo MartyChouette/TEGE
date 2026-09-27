@@ -908,7 +908,6 @@ void GameMenuSystem::RenderHowToPlay(f32 w, f32 h) {
         if (ImGui::BeginChild("##HowToPlayList", ImVec2(0, -44), true)) {
             // Group actions by category
             // Ordinals match InputSystem::ActionCategory.
-            static const char* categories[] = { "Movement", "Actions", "Camera", "Menus", "Game" };
             static const i32 categoryCount = static_cast<i32>(InputSystem::ActionCategory::Count);
             // The actions this game reads (IN-38): a list of every built-in
             // action told players about Dash and Block in games with neither.
@@ -934,7 +933,8 @@ void GameMenuSystem::RenderHowToPlay(f32 w, f32 h) {
 
                 if (actionsInCategory == 0) continue;
 
-                ImGui::TextColored(TC(Theme().primary), "%s", categories[cat]);
+                ImGui::TextColored(TC(Theme().primary), "%s",
+                                   InputSystem::GetActionCategoryName(static_cast<InputSystem::ActionCategory>(cat)));
                 ImGui::Separator();
 
                 for (i32 i = 0; i < actionCount; ++i) {

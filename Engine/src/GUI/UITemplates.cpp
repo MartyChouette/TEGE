@@ -636,14 +636,7 @@ bool SetOptionSelected(UICanvasComponent& canvas, const std::string& event, i32 
 namespace {
 
 const char* ControlsCategoryLabel(i32 category) {
-    switch (static_cast<InputSystem::ActionCategory>(category)) {
-        case InputSystem::ActionCategory::Movement: return "Movement";
-        case InputSystem::ActionCategory::Actions:  return "Actions";
-        case InputSystem::ActionCategory::Camera:   return "Camera";
-        case InputSystem::ActionCategory::UI:       return "Interface";
-        case InputSystem::ActionCategory::Custom:   return "Game";
-        default: return "Other";
-    }
+    return InputSystem::GetActionCategoryName(static_cast<InputSystem::ActionCategory>(category));
 }
 
 } // namespace
@@ -683,10 +676,10 @@ UICanvasComponent CreateControlsMenu(const InputSystem::InputActionMap& map, i32
     spec.rows.push_back(Options::Checkbox("Invert Look Y", "controls_invert_y", map.GetInvertY()));
 
     spec.rows.push_back(Options::Heading("Hold or Toggle"));
-    spec.rows.push_back(Options::Dropdown("Sprint", "controls_sprint_mode",
-                                          {"Hold", "Toggle"}, map.IsSprintToggle() ? 1 : 0));
-    spec.rows.push_back(Options::Dropdown("Crouch", "controls_crouch_mode",
-                                          {"Hold", "Toggle"}, map.IsCrouchToggle() ? 1 : 0));
+    const std::vector<std::string> holdToggle = { InputSystem::GetActionModeName(InputSystem::ActionMode::Hold),
+                                                  InputSystem::GetActionModeName(InputSystem::ActionMode::Toggle) };
+    spec.rows.push_back(Options::Dropdown("Sprint", "controls_sprint_mode", holdToggle, map.IsSprintToggle() ? 1 : 0));
+    spec.rows.push_back(Options::Dropdown("Crouch", "controls_crouch_mode", holdToggle, map.IsCrouchToggle() ? 1 : 0));
 
     // The presets, the same three on every runtime. The one in use says so,
     // and pressing it again takes it off.

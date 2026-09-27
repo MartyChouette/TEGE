@@ -124,6 +124,12 @@ enum class ActionMode : u32 {
     Release      // Active only on frame released
 };
 
+// The one set of names for categories and modes (IN-3, IN-4). How to Play
+// said "Menus" where the controls screen said "Interface", and "Hold" and
+// "Toggle" were typed out in four places.
+ENJIN_API const char* GetActionCategoryName(ActionCategory category);
+ENJIN_API const char* GetActionModeName(ActionMode mode);
+
 // A single input binding
 struct InputBinding {
     BindingType type = BindingType::Key;
@@ -196,6 +202,9 @@ public:
     bool IsActionDown(GameAction action) const;
     bool IsActionPressed(GameAction action) const;
     bool IsActionReleased(GameAction action) const;
+    // Whether a binding is physically held right now, whatever the action's
+    // mode. In Toggle mode IsActionDown is the latched state; this is the key.
+    bool IsActionHeld(GameAction action) const;
     // Pressed this frame whatever the input focus. For the one case focus
     // cannot answer: the Pause binding that opened a menu (Start on a pad) has
     // to close it again, while the menu holds focus and gameplay actions,
@@ -383,6 +392,7 @@ private:
     std::vector<u8> m_ActionDown;
     std::vector<u8> m_ActionPressed;
     std::vector<u8> m_ActionReleased;
+    std::vector<u8> m_ActionHeld;       // any binding down, before the mode
     std::vector<f32> m_ActionValue;
 };
 
