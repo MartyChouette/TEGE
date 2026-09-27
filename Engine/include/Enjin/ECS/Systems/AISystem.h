@@ -111,7 +111,20 @@ private:
         f32 lostTargetTimer = 0.0f;
         f32 attackCooldownTimer = 0.0f;
         bool patrolForward = true;  // Direction for ping-pong patrol mode
+
+        // The patrolRoute chain, resolved this frame. Kept here rather than
+        // written into patrolPoints, so derived positions are never saved.
+        std::vector<Math::Vector3> routePoints;
+        std::vector<f32> routeWaits;
+        std::vector<f32> routeRadii;
+        bool routeClosed = false;
     };
+
+    // Walks ai.patrolRoute into state.route*; clears them when there is none.
+    void ResolvePatrolRoute(const AIControllerComponent& ai, AgentState& state);
+    static const std::vector<Math::Vector3>& PatrolPointsOf(const AIControllerComponent& ai, const AgentState& state) {
+        return state.routePoints.empty() ? ai.patrolPoints : state.routePoints;
+    }
 
     // Process individual AI states
     void ProcessIdle(Entity entity, AIControllerComponent& ai, TransformComponent& transform,
@@ -126,8 +139,9 @@ private:
                      AgentState& state, f32 dt);
 
     // Movement helpers
+    // finalRadius < 0 uses ai.arrivalRadius for the last point too
     bool MoveAlongPath(TransformComponent& transform, AIControllerComponent& ai,
-                       AgentState& state, f32 speed, f32 dt);
+                       AgentState& state, f32 speed, f32 dt, f32 finalRadius = -1.0f);
     void MoveTowards(TransformComponent& transform, AIControllerComponent& ai,
                      const Math::Vector3& target, f32 speed, f32 dt);
     void FaceTarget(TransformComponent& transform, const Math::Vector3& target, f32 turnSpeed, f32 dt);

@@ -1,4 +1,5 @@
 #include "Enjin/ECS/Systems/AISystem.h"
+#include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/Gameplay/GameplayLoop.h"
 #include "Enjin/AI/Navmesh.h"
 #include "Enjin/ECS/Components/NavmeshVolume.h"
@@ -131,6 +132,8 @@ void AISystem::Update(f32 deltaTime) {
             }
         }
 
+        ResolvePatrolRoute(*ai, state);
+
         // Update state timer
         ai->stateTimer += deltaTime;
 
@@ -241,6 +244,37 @@ void AISystem::UpdatePathFollowers(f32 deltaTime) {
     }
 }
 
+void AISystem::ResolvePatrolRoute(const AIControllerComponent& ai, AgentState& state) {
+    state.routePoints.clear();
+    state.routeWaits.clear();
+    state.routeRadii.clear();
+    state.routeClosed = false;
+    if (ai.patrolRoute == 0 || ai.patrolRoute == INVALID_ENTITY || !m_World->IsValid(ai.patrolRoute)) return;
+
+    // Follow Next Waypoint from the start. Stops at the end of the chain, at a
+    // link to something that is not a waypoint, or on returning to any point
+    // already visited; returning to the START is what makes the route a loop.
+    constexpr usize kMaxRouteLength = 256;
+    std::vector<Entity> visited;
+    Entity e = ai.patrolRoute;
+    while (e != 0 && e != INVALID_ENTITY && m_World->IsValid(e) && visited.size() < kMaxRouteLength) {
+        if (std::find(visited.begin(), visited.end(), e) != visited.end()) {
+            state.routeClosed = (e == ai.patrolRoute);
+            break;
+        }
+        const auto* wp = m_World->GetComponent<WaypointComponent>(e);
+        if (!wp || !m_World->GetComponent<TransformComponent>(e)) break;
+        visited.push_back(e);
+        Math::Vector3 pos;
+        Math::Quaternion rot;
+        GetWorldTransform(m_World, e, pos, rot);
+        state.routePoints.push_back(pos);
+        state.routeWaits.push_back(wp->waitTime);
+        state.routeRadii.push_back(wp->radius);
+        e = wp->nextWaypoint;
+    }
+}
+
 void AISystem::ProcessIdle(Entity entity, AIControllerComponent& ai, TransformComponent& transform,
                            AgentState& state, f32 dt) {
     (void)entity;
@@ -261,7 +295,7 @@ void AISystem::ProcessIdle(Entity entity, AIControllerComponent& ai, TransformCo
     }
 
     // If we have patrol points, transition to patrol
-    if (!ai.patrolPoints.empty()) {
+    if (!PatrolPointsOf(ai, state).empty()) {
         ai.currentState = AIControllerComponent::AIState::Patrol;
         ai.stateTimer = 0.0f;
         state.isFollowingPath = false;
@@ -286,25 +320,29 @@ void AISystem::ProcessPatrol(Entity entity, AIControllerComponent& ai, Transform
         }
     }
 
-    if (ai.patrolPoints.empty()) {
+    if (PatrolPointsOf(ai, state).empty()) {
         ai.currentState = AIControllerComponent::AIState::Idle;
         ai.stateTimer = 0.0f;
         return;
     }
 
+    if (ai.currentPatrolIndex >= PatrolPointsOf(ai, state).size()) ai.currentPatrolIndex = 0;
+
     // Waiting at a patrol point?
     if (state.isWaiting) {
         state.patrolWaitTimer += dt;
-        if (state.patrolWaitTimer >= ai.patrolWaitTime) {
+        const f32 waitHere = (ai.currentPatrolIndex < state.routeWaits.size())
+            ? state.routeWaits[ai.currentPatrolIndex] : ai.patrolWaitTime;
+        if (state.patrolWaitTimer >= waitHere) {
             state.isWaiting = false;
 
             // Advance to next patrol point
-            if (ai.patrolLoop) {
-                ai.currentPatrolIndex = (ai.currentPatrolIndex + 1) % ai.patrolPoints.size();
+            if (ai.patrolLoop || state.routeClosed) {
+                ai.currentPatrolIndex = (ai.currentPatrolIndex + 1) % PatrolPointsOf(ai, state).size();
             } else {
                 // Ping-pong: reverse direction at endpoints
                 if (state.patrolForward) {
-                    if (ai.currentPatrolIndex + 1 >= ai.patrolPoints.size()) {
+                    if (ai.currentPatrolIndex + 1 >= PatrolPointsOf(ai, state).size()) {
                         state.patrolForward = false;
                         if (ai.currentPatrolIndex > 0) ai.currentPatrolIndex--;
                     } else {
@@ -313,7 +351,7 @@ void AISystem::ProcessPatrol(Entity entity, AIControllerComponent& ai, Transform
                 } else {
                     if (ai.currentPatrolIndex == 0) {
                         state.patrolForward = true;
-                        if (ai.patrolPoints.size() > 1) ai.currentPatrolIndex++;
+                        if (PatrolPointsOf(ai, state).size() > 1) ai.currentPatrolIndex++;
                     } else {
                         ai.currentPatrolIndex--;
                     }
@@ -329,7 +367,7 @@ void AISystem::ProcessPatrol(Entity entity, AIControllerComponent& ai, Transform
 
     // If we don't have a valid path, compute one to the current patrol waypoint
     if (!state.isFollowingPath || !state.pathValid) {
-        Math::Vector3 target = ai.patrolPoints[ai.currentPatrolIndex];
+        Math::Vector3 target = PatrolPointsOf(ai, state)[ai.currentPatrolIndex];
         if (ai.useNavmesh && m_Navmesh) {
             if (RequestPath(state, transform.position, target)) {
                 state.isFollowingPath = true;
@@ -355,8 +393,10 @@ void AISystem::ProcessPatrol(Entity entity, AIControllerComponent& ai, Transform
         }
     }
 
-    // Move along the path
-    bool arrived = MoveAlongPath(transform, ai, state, ai.moveSpeed, dt);
+    // Move along the path. A route waypoint's own Radius decides arrival.
+    const f32 radiusHere = (ai.currentPatrolIndex < state.routeRadii.size())
+        ? state.routeRadii[ai.currentPatrolIndex] : -1.0f;
+    bool arrived = MoveAlongPath(transform, ai, state, ai.moveSpeed, dt, radiusHere);
     if (arrived) {
         // Arrived at patrol point, start waiting
         state.isWaiting = true;
@@ -372,7 +412,7 @@ void AISystem::ProcessChase(Entity entity, AIControllerComponent& ai, TransformC
 
     // No target? Return to patrol or idle
     if (ai.targetEntity == 0 || ai.targetEntity == INVALID_ENTITY) {
-        ai.currentState = ai.patrolPoints.empty()
+        ai.currentState = PatrolPointsOf(ai, state).empty()
             ? AIControllerComponent::AIState::Idle
             : AIControllerComponent::AIState::Patrol;
         ai.stateTimer = 0.0f;
@@ -397,7 +437,7 @@ void AISystem::ProcessChase(Entity entity, AIControllerComponent& ai, TransformC
         state.lostTargetTimer += dt;
         if (state.lostTargetTimer > 3.0f) {
             // Give up chase
-            ai.currentState = ai.patrolPoints.empty()
+            ai.currentState = PatrolPointsOf(ai, state).empty()
                 ? AIControllerComponent::AIState::Idle
                 : AIControllerComponent::AIState::Patrol;
             ai.stateTimer = 0.0f;
@@ -553,7 +593,7 @@ void AISystem::ProcessFlee(Entity entity, AIControllerComponent& ai, TransformCo
 // ============================================================================
 
 bool AISystem::MoveAlongPath(TransformComponent& transform, AIControllerComponent& ai,
-                              AgentState& state, f32 speed, f32 dt) {
+                              AgentState& state, f32 speed, f32 dt, f32 finalRadius) {
     if (!state.pathValid || state.currentPath.waypoints.empty()) return true;
 
     // Skip waypoint 0 (it is the start position)
@@ -573,7 +613,9 @@ bool AISystem::MoveAlongPath(TransformComponent& transform, AIControllerComponen
 
     // Check if we reached the waypoint
     f32 dist = DistanceTo(transform.position, target);
-    if (dist < ai.arrivalRadius) {
+    const bool isLast = state.currentWaypointIndex + 1 >= state.currentPath.waypoints.size();
+    const f32 radius = (isLast && finalRadius >= 0.0f) ? finalRadius : ai.arrivalRadius;
+    if (dist < radius) {
         state.currentWaypointIndex++;
         if (state.currentWaypointIndex >= state.currentPath.waypoints.size()) {
             state.isFollowingPath = false;

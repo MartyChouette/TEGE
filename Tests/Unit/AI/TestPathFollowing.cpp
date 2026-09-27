@@ -11,6 +11,7 @@
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Systems/AISystem.h"
 #include "Enjin/ECS/Components/Name.h"
+#include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/Scene/SceneSerializer.h"
 
 #include <cmath>
@@ -237,6 +238,82 @@ ENJIN_TEST(PathFollowing, test_an_authored_route_survives_a_scene_round_trip) {
     ENJIN_EXPECT_FALSE(f->isFollowing);
 
     std::remove(path.c_str());
+}
+
+// ===========================================================================
+// Waypoint patrols: waypoints had nothing reading them (SD-27)
+// ===========================================================================
+
+namespace {
+struct Patrol {
+    ECS::World world;
+    ECS::AISystem ai;
+    ECS::Entity guard = ECS::INVALID_ENTITY;
+    std::vector<ECS::Entity> points;
+
+    ECS::Entity AddWaypoint(const Math::Vector3& at, f32 wait) {
+        ECS::Entity e = world.CreateEntity();
+        ECS::TransformComponent xf;
+        xf.position = at;
+        world.AddComponent<ECS::TransformComponent>(e, xf);
+        ECS::WaypointComponent wp;
+        wp.waitTime = wait;
+        wp.radius = 0.3f;
+        world.AddComponent<ECS::WaypointComponent>(e, wp);
+        if (!points.empty()) world.GetComponent<ECS::WaypointComponent>(points.back())->nextWaypoint = e;
+        points.push_back(e);
+        return e;
+    }
+    void AddGuard(bool loop) {
+        guard = world.CreateEntity();
+        world.AddComponent<ECS::TransformComponent>(guard);
+        ECS::AIControllerComponent c;
+        c.patrolRoute = points.front();
+        c.useNavmesh = false;
+        c.moveSpeed = 5.0f;
+        c.patrolLoop = loop;
+        world.AddComponent<ECS::AIControllerComponent>(guard, c);
+        ai.SetWorld(&world);
+        ai.SetEnabled(true);
+    }
+    Math::Vector3 Pos() { return world.GetComponent<ECS::TransformComponent>(guard)->position; }
+    void Run(f32 seconds) { for (f32 t = 0; t < seconds; t += 1.0f / 60.0f) ai.Update(1.0f / 60.0f); }
+};
+}
+
+ENJIN_TEST(WaypointPatrol, WalksTheChainInOrderAndWaitsWhereTold) {
+    Patrol p;
+    p.AddWaypoint(Math::Vector3(0, 0, 0), 0.0f);
+    p.AddWaypoint(Math::Vector3(10, 0, 0), 2.0f);   // two seconds here
+    p.AddWaypoint(Math::Vector3(10, 0, 10), 0.0f);
+    p.AddGuard(true);
+
+    p.Run(2.6f);                                     // 10 units at 5/s, plus a little
+    ENJIN_EXPECT_TRUE(DistanceXZ(p.Pos(), Math::Vector3(10, 0, 0)) < 0.5f);
+    p.Run(1.0f);                                     // still inside the two-second wait
+    ENJIN_EXPECT_TRUE(DistanceXZ(p.Pos(), Math::Vector3(10, 0, 0)) < 0.5f);
+    p.Run(2.5f);                                     // wait over, walked on to the third
+    ENJIN_EXPECT_TRUE(DistanceXZ(p.Pos(), Math::Vector3(10, 0, 10)) < 1.0f);
+}
+
+ENJIN_TEST(WaypointPatrol, AChainLinkedBackToItsStartLoops) {
+    Patrol p;
+    p.AddWaypoint(Math::Vector3(0, 0, 0), 0.0f);
+    p.AddWaypoint(Math::Vector3(6, 0, 0), 0.0f);
+    p.AddWaypoint(Math::Vector3(6, 0, 6), 0.0f);
+    p.world.GetComponent<ECS::WaypointComponent>(p.points.back())->nextWaypoint = p.points.front();
+    p.AddGuard(false);   // ping-pong for an open route; a closed one loops anyway
+    // Round trip 6+6+~8.5 = 20.5 units at 5/s is ~4.1 s. Track that it heads
+    // from the third point straight back toward the start rather than to the
+    // second: at some point x and z both shrink together.
+    bool cameBackDiagonally = false;
+    for (int i = 0; i < 60 * 5; ++i) {
+        const Math::Vector3 a = p.Pos();
+        p.ai.Update(1.0f / 60.0f);
+        const Math::Vector3 b = p.Pos();
+        if (a.z > 1.0f && b.x < a.x - 0.01f && b.z < a.z - 0.01f) cameBackDiagonally = true;
+    }
+    ENJIN_EXPECT_TRUE(cameBackDiagonally);
 }
 
 ENJIN_TEST_MAIN()

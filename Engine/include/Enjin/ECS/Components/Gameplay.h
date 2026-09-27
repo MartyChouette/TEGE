@@ -1004,7 +1004,13 @@ struct AIControllerComponent {
     f32 attackDamage = 10.0f;
 
     // Patrol
-    std::vector<Math::Vector3> patrolPoints;
+    // A chain of Waypoint entities, placed in the viewport and linked by
+    // Next Waypoint: this is the first. When set it IS the route, and each
+    // waypoint's own Wait Time and Radius apply; a chain that links back to
+    // its start always loops. Resolved every frame, so moving a waypoint moves
+    // the patrol (AISystem; SD-27 -- waypoints had nothing reading them).
+    Entity patrolRoute = 0;
+    std::vector<Math::Vector3> patrolPoints;   // used when there is no route
     usize currentPatrolIndex = 0;
     f32 patrolWaitTime = 2.0f;
     f32 patrolWaitTimer = 0.0f;

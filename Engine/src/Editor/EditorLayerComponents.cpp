@@ -6856,9 +6856,17 @@ void EditorLayer::DrawAIControllerComponent(ECS::Entity entity) {
         }
 
         if (ImGui::TreeNode("Patrol")) {
-            InspectorUndo::DragFloat(m_UndoRedo, "Wait Time", &ai->patrolWaitTime, 0.1f, 0.0f, 30.0f);
+            InspectorUndo::EntityField<ECS::AIControllerComponent>(m_UndoRedo, "Patrol Route", m_World, entity,
+                                                                   &ECS::AIControllerComponent::patrolRoute);
+            ImGui::SetItemTooltip("The first Waypoint of a chain. Place Waypoint entities, link each one's Next\n"
+                                  "Waypoint to the one after, and pick the first here. Each waypoint's own Wait\n"
+                                  "Time and Radius apply; link the last back to the first for a loop.");
+            if (ai->patrolRoute == 0 || ai->patrolRoute == ECS::INVALID_ENTITY) {
+                InspectorUndo::DragFloat(m_UndoRedo, "Wait Time", &ai->patrolWaitTime, 0.1f, 0.0f, 30.0f);
+                ImGui::Text("Patrol Points: %zu (set by script)", ai->patrolPoints.size());
+            }
             InspectorUndo::Checkbox(m_UndoRedo, "Loop Patrol", &ai->patrolLoop);
-            ImGui::Text("Patrol Points: %zu", ai->patrolPoints.size());
+            ImGui::SetItemTooltip("At the end of an open route, go back to the start. Off walks it back the other way.");
             ImGui::Text("Current Index: %zu", ai->currentPatrolIndex);
             ImGui::TreePop();
         }
@@ -7181,7 +7189,25 @@ void EditorLayer::DrawWaypointComponent(ECS::Entity entity) {
         InspectorUndo::EntityField<ECS::WaypointComponent>(m_UndoRedo, "Next Waypoint", m_World, entity,
                                                            &ECS::WaypointComponent::nextWaypoint);
         InspectorUndo::DragFloat(m_UndoRedo, "Wait Time", &wp->waitTime, 0.1f, 0.0f, 60.0f);
+        ImGui::SetItemTooltip("Seconds a patrolling AI stands here before moving on.");
         InspectorUndo::DragFloat(m_UndoRedo, "Radius", &wp->radius, 0.05f, 0.01f, 10.0f);
+        ImGui::SetItemTooltip("How close counts as arrived.");
+
+        // Build a route by walking forward: a copy of this waypoint, placed
+        // after it in the chain and selected, ready to drag into place.
+        if (ImGui::Button("Add Next Waypoint")) {
+            const ECS::Entity oldNext = wp->nextWaypoint;
+            DuplicateEntity(entity);                 // selects the copy; it inherits oldNext
+            const ECS::Entity copy = m_PrimarySelected;
+            if (copy != entity && m_World->HasComponent<ECS::WaypointComponent>(copy)) {
+                ECS::World* world = m_World;
+                m_UndoRedo.Execute(std::make_unique<PropertyEditCommand<ECS::Entity>>(
+                    "Link Next Waypoint", oldNext, copy,
+                    [world, entity](const ECS::Entity& e) {
+                        if (auto* w = world->GetComponent<ECS::WaypointComponent>(entity)) w->nextWaypoint = e;
+                    }));
+            }
+        }
 
         if (ImGui::BeginPopupContextItem("WaypointContext")) {
             if (ImGui::MenuItem("Remove Component")) {

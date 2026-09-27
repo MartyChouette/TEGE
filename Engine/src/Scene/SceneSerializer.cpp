@@ -6260,6 +6260,7 @@ json SerializeAIControllerComponent(const ECS::AIControllerComponent& ai) {
         patrolArr.push_back(SerializeVector3(p));
     }
     j["patrolPoints"] = patrolArr;
+    j["patrolRoute"] = static_cast<u64>(ai.patrolRoute);
     j["patrolWaitTime"] = RF(ai.patrolWaitTime);
     j["patrolLoop"] = ai.patrolLoop;
     j["useNavmesh"] = ai.useNavmesh;
@@ -6285,6 +6286,7 @@ ECS::AIControllerComponent DeserializeAIControllerComponent(const json& j) {
     if (j.contains("stoppingDistance")) ai.stoppingDistance = j["stoppingDistance"].get<f32>();
     if (j.contains("attackCooldown")) ai.attackCooldown = j["attackCooldown"].get<f32>();
     if (j.contains("attackDamage")) ai.attackDamage = j["attackDamage"].get<f32>();
+    if (j.contains("patrolRoute")) ai.patrolRoute = static_cast<ECS::Entity>(j["patrolRoute"].get<u64>());
     if (j.contains("patrolPoints") && j["patrolPoints"].is_array()) {
         for (const auto& p : j["patrolPoints"]) {
             ai.patrolPoints.push_back(DeserializeVector3(p));
@@ -11052,6 +11054,7 @@ void SceneSerializer::DeserializeEntities(const json& sceneJson, Deserialization
         if (auto* j2 = m_World->GetComponent<Physics::Joint2DComponent>(entity)) remap(j2->connectedEntity);
         if (auto* go = m_World->GetComponent<ECS::GameOverComponent>(entity)) remap(go->victoryTriggerEntity);
         if (auto* wp = m_World->GetComponent<ECS::WaypointComponent>(entity)) remap(wp->nextWaypoint);
+        if (auto* aic = m_World->GetComponent<ECS::AIControllerComponent>(entity)) remap(aic->patrolRoute);
         if (auto* cb = m_World->GetComponent<ECS::Camera2DBoundsComponent>(entity)) remap(cb->followTarget);
         if (auto* dd = m_World->GetComponent<ECS::DynamicDifficultyComponent>(entity)) remap(dd->playerEntity);
         if (auto* rg = m_World->GetComponent<ECS::RagdollComponent>(entity)) {
