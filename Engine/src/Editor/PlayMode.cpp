@@ -533,6 +533,24 @@ void PlayMode::Play() {
         m_GameOverRestartListener = m_UISystem->GetEventBus().Listen("gameover_restart",
             [this](const GUI::UIEventData&) { m_RestartRequested = true; });
 
+        // New Game and Continue hide the authored MainMenu, as the players do.
+        // There is no save to continue from in a play session, so both start
+        // the game. Hiding is a field write, safe inside the dispatch; the
+        // canvas comes back visible when play stops and the scene is restored.
+        auto hideMainMenu = [this](const GUI::UIEventData&) {
+            if (!m_World) return;
+            for (ECS::Entity e : m_World->GetEntitiesWithComponent<GUI::UICanvasComponent>()) {
+                auto* c = m_World->GetComponent<GUI::UICanvasComponent>(e);
+                if (c && c->canvasName == "MainMenu") c->visible = false;
+            }
+        };
+        m_MenuListeners[0] = m_UISystem->GetEventBus().Listen("menu_newgame", hideMainMenu);
+        m_MenuListeners[1] = m_UISystem->GetEventBus().Listen("menu_continue", hideMainMenu);
+        // Quit in a built game closes the window. Here it ends the play session,
+        // deferred like the restart because Stop() cannot run mid-dispatch.
+        m_MenuListeners[2] = m_UISystem->GetEventBus().Listen("menu_quit",
+            [this](const GUI::UIEventData&) { m_StopRequested = true; });
+
         // Bridge every UI event into the script event bus so game scripts can
         // react to authored buttons/sliders via Events_Listen("<onClickEvent>", ...).
         m_UISystem->GetEventBus().SetForwarder([this](const GUI::UIEventData& e) {
@@ -1055,6 +1073,11 @@ void PlayMode::Stop() {
         m_UISystem->GetEventBus().RemoveListener(m_GameOverRestartListener);
         m_GameOverRestartListener = 0;
     }
+    for (u32& id : m_MenuListeners) {
+        if (m_UISystem && id != 0) m_UISystem->GetEventBus().RemoveListener(id);
+        id = 0;
+    }
+    m_StopRequested = false;
 
     m_State.store(PlayState::Stopped, std::memory_order_relaxed);
     ENJIN_LOG_INFO(Editor, "Exited Play Mode");
@@ -1066,6 +1089,13 @@ void PlayMode::Update(f32 deltaTime) {
     deltaTime *= Scripting::GetTimeScale();
 
     // Escape is now handled by EditorLayer (which manages focus mode exit vs stop).
+
+    // Deferred stop from the title screen's Quit button
+    if (m_StopRequested) {
+        m_StopRequested = false;
+        Stop();
+        return;
+    }
 
     // Deferred restart from the game-over screen's "Play Again" button
     if (m_RestartRequested) {

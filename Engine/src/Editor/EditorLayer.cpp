@@ -751,6 +751,10 @@ void EditorLayer::SetRenderSystem(ECS::RenderSystem* renderSystem) {
 
 void EditorLayer::StartPlayMode() {
     Scripting::SetBindingsWeather(&m_WeatherSystem);
+    // Both players did this and the editor never did, so in play mode every
+    // WorldTime_* binding answered its fallback: the seed read back empty, an
+    // authored day went nowhere and the date was always day 1.
+    Scripting::SetBindingsWorldTime(&m_WorldTime, &m_SeasonalWeather);
     Scripting::SetBindingsSceneManager(&m_SceneManager);
     s_VisualScriptWater = &m_Water3D;
     m_CachedPlayerEntity = ECS::INVALID_ENTITY;

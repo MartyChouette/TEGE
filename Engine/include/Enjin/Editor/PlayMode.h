@@ -359,6 +359,12 @@ private:
     GUI::UISystem* m_UISystem = nullptr;
     u32 m_GameOverRestartListener = 0;   // UI event bus listener id (0 = none)
     bool m_RestartRequested = false;     // Set by "gameover_restart"; handled in Update()
+    // The authored title screen's buttons (a UICanvas named "MainMenu"). The
+    // players have always answered these; the editor drew the menu, took the
+    // click and answered nothing, so play-testing a game with a title screen
+    // stopped at the title screen.
+    u32 m_MenuListeners[3] = {};
+    bool m_StopRequested = false;        // Set by "menu_quit"; handled in Update()
     Effects::WeatherSystem* m_WeatherSystem = nullptr;
     Scene::SceneManager* m_SceneManager = nullptr;
     Effects::Water3D* m_Water3D = nullptr;
