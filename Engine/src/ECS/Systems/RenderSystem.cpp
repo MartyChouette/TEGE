@@ -4516,7 +4516,7 @@ void RenderSystem::Update(f32 deltaTime) {
             }
             EnsureWebSkyCubemap(sc);
             lit.skyMode = {(sc.type == Renderer::SkyboxType::Cubemap && m_WebSkyCubeLoaded) ? 1.0f : 0.0f,
-                           0.0f, 0.0f, 0.0f};
+                           configured > 0.5f ? sc.cloudShadowStrength : 0.0f, 0.0f, 0.0f};
 
             // Reflection substitute: a scene that wanted ray-traced reflections
             // and never configured a sky has nothing for the environment term to

@@ -355,6 +355,42 @@ fn foamHash(p: vec2<f32>) -> f32 {
     return fract(sin(dot(p, vec2<f32>(127.1, 311.7))) * 43758.5453);
 }
 
+// Cloud shadows: passing sky clouds shade the sun. triangle.frag's
+// csHash/csNoise/CloudShadowFactor, digit for digit, reading the web sky block
+// (skyClouds = coverage, scale, speed; skyMode.y = strength) where desktop has
+// cloudShadowParams. Web had no cloud shadows at all (WP-16).
+fn csHash(p0: vec2<f32>) -> f32 {
+    var p = fract(p0 * vec2<f32>(123.34, 456.21));
+    p = p + dot(p, p + 45.32);
+    return fract(p.x * p.y);
+}
+fn csNoise(p: vec2<f32>) -> f32 {
+    let i = floor(p);
+    var f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    let a = csHash(i);
+    let b = csHash(i + vec2<f32>(1.0, 0.0));
+    let c = csHash(i + vec2<f32>(0.0, 1.0));
+    let d = csHash(i + vec2<f32>(1.0, 1.0));
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+fn cloudShadowFactor(xz: vec2<f32>) -> f32 {
+    let coverage = lighting.skyClouds.x;
+    let scale = lighting.skyClouds.y;
+    let speed = lighting.skyClouds.z;
+    let strength = lighting.skyMode.y;
+    if (coverage <= 0.001 || strength <= 0.001) { return 1.0; }
+    var drift = lighting.windData.xz;
+    if (dot(drift, drift) < 1e-5) { drift = vec2<f32>(1.0, 0.35); }
+    drift = normalize(drift);
+    var p = xz * (0.01 * max(scale, 0.05)) + drift * (lighting.windData.w * speed * 0.01);
+    var v = 0.0;
+    var a = 0.5;
+    for (var i = 0; i < 3; i = i + 1) { v += csNoise(p) * a; p = p * 2.03; a = a * 0.5; }
+    let m = smoothstep(1.0 - coverage, 1.0 - coverage + 0.28, v);
+    return 1.0 - m * clamp(strength, 0.0, 1.0);
+}
+
 // 16-tap Poisson disk, the same one triangle.frag uses for soft shadows
 const SHADOW_POISSON = array<vec2<f32>, 16>(
     vec2<f32>(-0.94201624, -0.39906216), vec2<f32>( 0.94558609, -0.76890725),
@@ -712,6 +748,9 @@ fn shadeSurface(in: VertexOutput) -> vec4<f32> {
         let viewDepth = -(viewProj.view * vec4<f32>(in.world_pos, 1.0)).z;
         shadowFactor = sampleShadow(in.world_pos, N, sunL, viewDepth, in.clip_position.xy);
     }
+    // After the strength, as on desktop: clouds shade the sun whatever the
+    // shadow strength, and on surfaces that do not receive the shadow map
+    let cloudShade = cloudShadowFactor(in.world_pos.xz);
     // Only sample spot/point shadows if there are active shadow casters (otherwise textures contain garbage)
     var spotShadow0 = 1.0;
     var spotShadow1 = 1.0;
@@ -745,7 +784,7 @@ fn shadeSurface(in: VertexOutput) -> vec4<f32> {
         let NdotL = max(dot(N, L), 0.0);
         // Sun shadow applies to ALL directional lights — they share one shadow map,
         // and any unshadowed directional re-lights shadowed areas (washes shadows out)
-        let shadow = mix(1.0, shadowFactor, shadowStrength);
+        let shadow = mix(1.0, shadowFactor, shadowStrength) * cloudShade;
         Lo = Lo + (kD * albedo + specular) * radiance * NdotL * shadow;
     }
 

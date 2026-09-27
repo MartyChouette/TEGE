@@ -58,7 +58,8 @@
     /* group; only the dial lives here. */ \
     X1(lightmapParams)            /* 16 */ \
     /* x = 1 when the scene sky is a Cubemap and its six faces loaded; the */ \
-    /* sky shader then samples the cube instead of the gradient. yzw free. */ \
+    /* sky shader then samples the cube instead of the gradient. y = cloud */ \
+    /* shadow strength (the sky's cloudShadowStrength). zw free. */ \
     X1(skyMode)                   /* 16 */
 
 // One member of the C++ struct.
