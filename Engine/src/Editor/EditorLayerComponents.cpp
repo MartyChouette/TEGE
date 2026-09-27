@@ -3077,9 +3077,6 @@ void EditorLayer::DrawVegetationComponent(ECS::Entity entity) {
         if (!veg) return;
         DrawComponentHelp("vegetation", m_World, entity);
 
-        InspectorUndo::DragFloat(m_UndoRedo, "Sway Strength", &veg->swayStrength, 0.05f, 0.0f, 5.0f);
-        InspectorUndo::DragFloat(m_UndoRedo, "Sway Frequency", &veg->swayFrequency, 0.05f, 0.0f, 5.0f);
-        InspectorUndo::Checkbox(m_UndoRedo, "Use Vertex Color Weight", &veg->useVertexColorWeight);
 
         ImGui::Spacing();
         ImGui::TextDisabled("Red vertex color channel = sway weight");
@@ -9106,7 +9103,6 @@ void EditorLayer::DrawPushableComponent(ECS::Entity entity) {
         InspectorUndo::Checkbox(m_UndoRedo, "Pushable Y##Push", &push->pushableY);
         ImGui::SameLine();
         InspectorUndo::Checkbox(m_UndoRedo, "Pushable Z##Push", &push->pushableZ);
-        InspectorUndo::Checkbox(m_UndoRedo, "Can Be Pushed Off##Push", &push->canBePushedOff);
     }
 }
 
@@ -9457,7 +9453,6 @@ void EditorLayer::DrawCurlNoiseFieldComponent(ECS::Entity entity) {
         }
 
         InspectorUndo::Checkbox(m_UndoRedo, "Affect Particles##CNF", &cn->affectParticles);
-        InspectorUndo::Checkbox(m_UndoRedo, "Affect Mesh Vertices##CNF", &cn->affectMeshVertices);
         InspectorUndo::Checkbox(m_UndoRedo, "Show Debug Arrows##CNF", &cn->showDebugArrows);
 
         if (cn->showDebugArrows) {
@@ -9639,7 +9634,6 @@ void EditorLayer::DrawResourceComponent(ECS::Entity entity) {
             InspectorUndo::DragFloat(m_UndoRedo, "Sprint Cost/s", &r->sprintCostPerSec, 0.5f, 0.0f, 100.0f);
             InspectorUndo::DragFloat(m_UndoRedo, "Jump Cost", &r->jumpCost, 0.5f, 0.0f, 100.0f);
             InspectorUndo::DragFloat(m_UndoRedo, "Dash Cost", &r->dashCost, 0.5f, 0.0f, 100.0f);
-            InspectorUndo::DragFloat(m_UndoRedo, "Attack Cost", &r->attackCost, 0.5f, 0.0f, 100.0f);
             ImGui::TreePop();
         }
 
@@ -11329,7 +11323,6 @@ void EditorLayer::DrawNetworkTransformComponent(ECS::Entity entity) {
                 nt->lastSyncedPosition.x, nt->lastSyncedPosition.y, nt->lastSyncedPosition.z);
     ImGui::Text("Network Velocity: %.2f, %.2f, %.2f",
                 nt->networkVelocity.x, nt->networkVelocity.y, nt->networkVelocity.z);
-    InspectorUndo::DragFloat(m_UndoRedo, "Interp Duration", &nt->interpDuration, 0.01f, 0.01f, 1.0f, "%.3f s");
 }
 
 // ============================================================================
@@ -11685,7 +11678,6 @@ void EditorLayer::DrawArtStyleComponent(ECS::Entity entity) {
             "Override the scene-level art style for this entity.\n"
             "'Inherit' uses whatever the scene is set to.");
 
-        InspectorUndo::Checkbox(m_UndoRedo, "Propagate to Children##AS", &as->propagateToChildren);
         ImGui::SetItemTooltip("Apply this style to all child entities in the hierarchy.");
 
         ImGui::Separator();
@@ -11706,7 +11698,6 @@ void EditorLayer::DrawArtStyleComponent(ECS::Entity entity) {
 
         case ECS::ArtStyleType::HandPainted:
             if (ImGui::TreeNodeEx("Hand-Painted Settings", ImGuiTreeNodeFlags_DefaultOpen)) {
-                InspectorUndo::DragFloat(m_UndoRedo, "Light Wrap##AS", &as->handPainted_lightWrapAmount, 0.01f, 0.0f, 1.0f);
                 ImGui::SetItemTooltip("How much light wraps around the surface.\n0 = standard Lambert, 1 = full wrap.");
                 const char* rampModes[] = { "Off", "Smooth", "Warm", "Cool", "Anime" };
                 int ramp = static_cast<int>(as->handPainted_lightRampMode);
@@ -11861,18 +11852,6 @@ void EditorLayer::DrawArtStyleComponent(ECS::Entity entity) {
                 if (as->analog_crtEnabled) {
                     ImGui::Indent();
                     InspectorUndo::DragFloat(m_UndoRedo, "Scanline Intensity##AS", &as->analog_scanlineIntensity, 0.01f, 0.0f, 1.0f);
-                    ImGui::Unindent();
-                }
-                InspectorUndo::Checkbox(m_UndoRedo, "Film Gate Weave##AS", &as->analog_filmGateWeave);
-                if (as->analog_filmGateWeave) {
-                    ImGui::Indent();
-                    InspectorUndo::DragFloat(m_UndoRedo, "Weave Intensity##AS", &as->analog_gateWeaveIntensity, 0.001f, 0.0f, 0.02f);
-                    ImGui::Unindent();
-                }
-                InspectorUndo::Checkbox(m_UndoRedo, "Light Leaks##AS", &as->analog_lightLeaks);
-                if (as->analog_lightLeaks) {
-                    ImGui::Indent();
-                    InspectorUndo::DragFloat(m_UndoRedo, "Leak Intensity##AS", &as->analog_lightLeakIntensity, 0.01f, 0.0f, 1.0f);
                     ImGui::Unindent();
                 }
                 ImGui::TreePop();

@@ -14,7 +14,6 @@ struct ENJIN_API Terrain2DComponent {
     f32 depth = 5.0f;        // fill depth below surface
     f32 uvScale = 1.0f;
     std::string texturePath;
-    bool autoColliders = true;
     bool meshDirty = true;
 
     void AddPoint(const Math::Vector2& p) {

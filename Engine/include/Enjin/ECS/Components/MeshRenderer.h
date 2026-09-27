@@ -70,7 +70,6 @@ struct MeshRendererComponent {
     // is the feature; this string is an older second way to ask for it that was
     // never built. Left in place rather than deleted so existing scenes keep
     // loading, and labelled so nobody types into it expecting an effect.
-    std::string customShaderName;
 
     // NOT WIRED. Selecting the lightmap's UV set needs the choice to reach the
     // fragment shader, which means a bit in the per-object SSBO and a branch in
@@ -79,7 +78,6 @@ struct MeshRendererComponent {
     //
     // Until then the lightmap samples the primary UVs, which is what 0 means, so
     // the DEFAULT is honest and only a non-zero value is ignored.
-    u8 lightmapUVChannel = 0;
 
     // Instancing hint — entities with identical mesh + material + renderer
     // settings are batched into instanced draw calls when this is true.

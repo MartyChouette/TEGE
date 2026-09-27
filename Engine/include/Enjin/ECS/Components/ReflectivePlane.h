@@ -43,7 +43,6 @@ struct ENJIN_API ReflectivePlaneComponent {
 
     // Runtime: index of the reflection texture owned by the planar-reflection
     // system (-1 = not yet rendered). Not serialized.
-    i32 reflectionTexId = -1;
 };
 
 } // namespace ECS

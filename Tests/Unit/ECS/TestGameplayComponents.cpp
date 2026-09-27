@@ -82,9 +82,7 @@ ENJIN_TEST(HealthComp, ShieldPercentZeroMax) {
 
 ENJIN_TEST(HealthComp, EventEntities) {
     HealthComponent hp;
-    ENJIN_EXPECT_EQ(hp.onDamageNotify, (Entity)0);
     ENJIN_EXPECT_EQ(hp.onDeathNotify, (Entity)0);
-    ENJIN_EXPECT_EQ(hp.onHealNotify, (Entity)0);
 }
 
 // ===========================================================================
@@ -222,7 +220,6 @@ ENJIN_TEST(TriggerZone, SizeDefaults) {
 
 ENJIN_TEST(TriggerZone, FilteringDefaults) {
     TriggerZoneComponent tz;
-    ENJIN_EXPECT_EQ(tz.triggerMask, 0xFFFFFFFFu);
     ENJIN_EXPECT_FALSE(tz.triggerOnce);
     ENJIN_EXPECT_FALSE(tz.hasTriggered);
     ENJIN_EXPECT_EQ(tz.entitiesInside.size(), (size_t)0);

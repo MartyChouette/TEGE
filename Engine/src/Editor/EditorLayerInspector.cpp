@@ -1849,9 +1849,6 @@ void EditorLayer::DrawInspectorPanel() {
                         ImGui::DragFloat("Wire Opacity##MR", &mr->wireframeOpacity, 0.05f, 0.0f, 1.0f, "%.2f");
                     }
 
-                    if (!mr->customShaderName.empty()) {
-                        ImGui::TextDisabled("Shader: %s", mr->customShaderName.c_str());
-                    }
                 }
             }
         }

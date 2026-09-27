@@ -153,7 +153,6 @@ int main() {
         tz.shape = ECS::TriggerZoneComponent::Shape::Sphere;
         tz.boxSize = Math::Vector3(5, 5, 5);
         tz.sphereRadius = 3.0f;
-        tz.triggerMask = 0x0F;
         tz.triggerOnce = true;
 
         auto& ic = srcWorld.AddComponent<ECS::InteractableComponent>(e);
@@ -474,9 +473,6 @@ int main() {
         gv.windSwayStrength = 2.0f;
 
         auto& veg = srcWorld.AddComponent<ECS::VegetationComponent>(e);
-        veg.swayStrength = 1.5f;
-        veg.swayFrequency = 0.8f;
-        veg.useVertexColorWeight = false;
     }
 
     // ---------- Phase 2: Serialize ----------
@@ -918,9 +914,6 @@ int main() {
         HAS_COMPONENT(dstWorld, e, ECS::VegetationComponent, "VegetationComponent");
         auto* veg = dstWorld.GetComponent<ECS::VegetationComponent>(e);
         if (veg) {
-            CHECK_FLOAT(veg->swayStrength, 1.5f, "veg.swayStrength");
-            CHECK_FLOAT(veg->swayFrequency, 0.8f, "veg.swayFrequency");
-            CHECK_BOOL(veg->useVertexColorWeight, false, "veg.useVertexColorWeight");
         }
     }
 

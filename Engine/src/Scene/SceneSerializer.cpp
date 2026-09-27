@@ -1537,7 +1537,6 @@ json SerializeTerrain2DComponent(const ECS::Terrain2DComponent& terrain) {
     j["depth"] = RF(terrain.depth);
     j["uvScale"] = RF(terrain.uvScale);
     j["texturePath"] = terrain.texturePath;
-    j["autoColliders"] = RF(terrain.autoColliders);
     return j;
 }
 
@@ -1551,7 +1550,6 @@ ECS::Terrain2DComponent DeserializeTerrain2DComponent(const json& j) {
     if (j.contains("depth")) terrain.depth = j["depth"].get<f32>();
     if (j.contains("uvScale")) terrain.uvScale = j["uvScale"].get<f32>();
     if (j.contains("texturePath")) terrain.texturePath = SafeStr(j["texturePath"], MAX_STR_PATH);
-    if (j.contains("autoColliders")) terrain.autoColliders = JB(j["autoColliders"]);
     terrain.meshDirty = true;
     return terrain;
 }
@@ -1818,7 +1816,6 @@ json SerializeElementalSurfaceComponent(const ECS::ElementalSurfaceComponent& s)
     j["accumulationRate"] = RF(s.accumulationRate);
     j["decayRate"] = RF(s.decayRate);
     j["maxAccumulation"] = RF(s.maxAccumulation);
-    j["snowDeformation"] = RF(s.snowDeformation);
     return j;
 }
 
@@ -1829,7 +1826,6 @@ ECS::ElementalSurfaceComponent DeserializeElementalSurfaceComponent(const json& 
     if (j.contains("accumulationRate")) s.accumulationRate = j["accumulationRate"].get<f32>();
     if (j.contains("decayRate")) s.decayRate = j["decayRate"].get<f32>();
     if (j.contains("maxAccumulation")) s.maxAccumulation = j["maxAccumulation"].get<f32>();
-    if (j.contains("snowDeformation")) s.snowDeformation = j["snowDeformation"].get<f32>();
     return s;
 }
 
@@ -2669,6 +2665,17 @@ static bool IsRetiredField(std::string_view component, std::string_view field) {
         {"thirdPerson", "enableLockOn"}, {"thirdPerson", "lockOnRange"},
         // SD-27: one parallax algorithm; the mode and its second height scale were never read
         {"material", "parallaxMode"}, {"material", "pomHeightScale"},
+        // SD-27 per-field pass: fields no system read and no system could
+        // (per_field_triage.md lists why for each)
+        {"artStyle", "analog_filmGateWeave"}, {"artStyle", "analog_gateWeaveIntensity"},
+        {"artStyle", "analog_lightLeaks"}, {"artStyle", "analog_lightLeakIntensity"},
+        {"artStyle", "handPainted_lightWrapAmount"}, {"artStyle", "propagateToChildren"},
+        {"curlNoiseField", "affectMeshVertices"}, {"elementalSurface", "snowDeformation"},
+        {"health", "onDamageNotify"}, {"health", "onHealNotify"},
+        {"meshRenderer", "customShaderName"}, {"meshRenderer", "lightmapUVChannel"},
+        {"pushable", "canBePushedOff"}, {"resource", "attackCost"}, {"terrain2d", "autoColliders"},
+        {"triggerZone", "triggerMask"}, {"vegetation", "swayFrequency"}, {"vegetation", "swayStrength"},
+        {"vegetation", "useVertexColorWeight"}, {"networkTransform", "interpDuration"},
     };
     for (const auto& [c, f] : kRetired) {
         if (f == field && (c.empty() || c == component)) return true;
@@ -4076,7 +4083,6 @@ json SerializeNetworkTransformComponent(const ECS::NetworkTransformComponent& nt
     j["lastSyncedPosition"] = SerializeVector3(nt.lastSyncedPosition);
     j["lastSyncedRotation"] = SerializeQuaternion(nt.lastSyncedRotation);
     j["lastSyncedScale"] = SerializeVector3(nt.lastSyncedScale);
-    j["interpDuration"] = RF(nt.interpDuration);
     return j;
 }
 
@@ -4085,7 +4091,6 @@ ECS::NetworkTransformComponent DeserializeNetworkTransformComponent(const json& 
     if (j.contains("lastSyncedPosition")) nt.lastSyncedPosition = DeserializeVector3(j["lastSyncedPosition"]);
     if (j.contains("lastSyncedRotation")) nt.lastSyncedRotation = DeserializeQuaternion(j["lastSyncedRotation"]);
     if (j.contains("lastSyncedScale")) nt.lastSyncedScale = DeserializeVector3(j["lastSyncedScale"]);
-    if (j.contains("interpDuration")) nt.interpDuration = j["interpDuration"].get<f32>();
     return nt;
 }
 
@@ -4315,13 +4320,11 @@ json SerializeMeshRendererComponent(const ECS::MeshRendererComponent& mr) {
     j["shadowMode"] = static_cast<u8>(mr.shadowMode);
     j["contributeMotionVectors"] = mr.contributeMotionVectors;
     j["allowInstancing"] = mr.allowInstancing;
-    j["lightmapUVChannel"] = mr.lightmapUVChannel;
     j["wireframe"] = mr.wireframe;
     if (mr.wireframe) {
         j["wireframeColor"] = { RF(mr.wireframeColor.x), RF(mr.wireframeColor.y), RF(mr.wireframeColor.z) };
         j["wireframeOpacity"] = RF(mr.wireframeOpacity);
     }
-    if (!mr.customShaderName.empty()) j["customShaderName"] = mr.customShaderName;
     return j;
 }
 
@@ -4337,13 +4340,11 @@ ECS::MeshRendererComponent DeserializeMeshRendererComponent(const json& j) {
     if (j.contains("shadowMode")) mr.shadowMode = static_cast<ECS::MeshRendererComponent::ShadowMode>(j["shadowMode"].get<u8>());
     if (j.contains("contributeMotionVectors")) mr.contributeMotionVectors = JB(j["contributeMotionVectors"]);
     if (j.contains("allowInstancing")) mr.allowInstancing = JB(j["allowInstancing"]);
-    if (j.contains("lightmapUVChannel")) mr.lightmapUVChannel = j["lightmapUVChannel"].get<u32>();
     if (j.contains("wireframe")) mr.wireframe = JB(j["wireframe"]);
     if (j.contains("wireframeColor") && j["wireframeColor"].is_array() && j["wireframeColor"].size() == 3) {
         mr.wireframeColor = Math::Vector3(j["wireframeColor"][0].get<f32>(), j["wireframeColor"][1].get<f32>(), j["wireframeColor"][2].get<f32>());
     }
     if (j.contains("wireframeOpacity")) mr.wireframeOpacity = j["wireframeOpacity"].get<f32>();
-    if (j.contains("customShaderName")) mr.customShaderName = j["customShaderName"].get<std::string>();
     return mr;
 }
 
@@ -4367,9 +4368,7 @@ json SerializeHealthComponent(const ECS::HealthComponent& h) {
     j["isDead"] = h.isDead;
     j["invulnerabilityTimer"] = RF(h.invulnerabilityTimer);
     j["timeSinceLastDamage"] = RF(h.timeSinceLastDamage);
-    j["onDamageNotify"] = static_cast<u64>(h.onDamageNotify);
     j["onDeathNotify"] = static_cast<u64>(h.onDeathNotify);
-    j["onHealNotify"] = static_cast<u64>(h.onHealNotify);
     return j;
 }
 
@@ -4391,9 +4390,7 @@ ECS::HealthComponent DeserializeHealthComponent(const json& j) {
     if (j.contains("isDead")) h.isDead = JB(j["isDead"]);
     if (j.contains("invulnerabilityTimer")) h.invulnerabilityTimer = j["invulnerabilityTimer"].get<f32>();
     if (j.contains("timeSinceLastDamage")) h.timeSinceLastDamage = j["timeSinceLastDamage"].get<f32>();
-    if (j.contains("onDamageNotify")) h.onDamageNotify = static_cast<ECS::Entity>(j["onDamageNotify"].get<u64>());
     if (j.contains("onDeathNotify")) h.onDeathNotify = static_cast<ECS::Entity>(j["onDeathNotify"].get<u64>());
-    if (j.contains("onHealNotify")) h.onHealNotify = static_cast<ECS::Entity>(j["onHealNotify"].get<u64>());
     return h;
 }
 
@@ -5126,7 +5123,6 @@ json SerializeTriggerZoneComponent(const ECS::TriggerZoneComponent& tz) {
     j["shape"] = static_cast<u8>(tz.shape);
     j["boxSize"] = SerializeVector3(tz.boxSize);
     j["sphereRadius"] = RF(tz.sphereRadius);
-    j["triggerMask"] = RF(tz.triggerMask);
     j["triggerOnce"] = RF(tz.triggerOnce);
     if (tz.onEnterNotify != 0) j["onEnterNotify"] = static_cast<u64>(tz.onEnterNotify);
     if (tz.onExitNotify != 0)  j["onExitNotify"]  = static_cast<u64>(tz.onExitNotify);
@@ -5139,7 +5135,6 @@ ECS::TriggerZoneComponent DeserializeTriggerZoneComponent(const json& j) {
     if (j.contains("shape")) { u8 v = j["shape"].get<u8>(); if (v <= 1) tz.shape = static_cast<ECS::TriggerZoneComponent::Shape>(v); }
     if (j.contains("boxSize")) tz.boxSize = DeserializeVector3(j["boxSize"]);
     if (j.contains("sphereRadius")) tz.sphereRadius = j["sphereRadius"].get<f32>();
-    if (j.contains("triggerMask")) tz.triggerMask = j["triggerMask"].get<u32>();
     if (j.contains("triggerOnce")) tz.triggerOnce = JB(j["triggerOnce"]);
     if (j.contains("onEnterNotify")) tz.onEnterNotify = static_cast<ECS::Entity>(j["onEnterNotify"].get<u64>());
     if (j.contains("onExitNotify"))  tz.onExitNotify  = static_cast<ECS::Entity>(j["onExitNotify"].get<u64>());
@@ -7729,17 +7724,11 @@ ECS::GrassVolumeComponent DeserializeGrassVolumeComponent(const json& j) {
 
 json SerializeVegetationComponent(const ECS::VegetationComponent& v) {
     json j;
-    j["swayStrength"] = RF(v.swayStrength);
-    j["swayFrequency"] = RF(v.swayFrequency);
-    j["useVertexColorWeight"] = RF(v.useVertexColorWeight);
     return j;
 }
 
 ECS::VegetationComponent DeserializeVegetationComponent(const json& j) {
     ECS::VegetationComponent v;
-    if (j.contains("swayStrength")) v.swayStrength = j["swayStrength"].get<f32>();
-    if (j.contains("swayFrequency")) v.swayFrequency = j["swayFrequency"].get<f32>();
-    if (j.contains("useVertexColorWeight")) v.useVertexColorWeight = JB(j["useVertexColorWeight"]);
     return v;
 }
 
@@ -7820,7 +7809,6 @@ json SerializeResourceComponent(const ECS::ResourceComponent& r) {
     j["sprintCostPerSec"] = RF(r.sprintCostPerSec);
     j["jumpCost"] = RF(r.jumpCost);
     j["dashCost"] = RF(r.dashCost);
-    j["attackCost"] = RF(r.attackCost);
     return j;
 }
 
@@ -7835,7 +7823,6 @@ ECS::ResourceComponent DeserializeResourceComponent(const json& j) {
     if (j.contains("sprintCostPerSec")) r.sprintCostPerSec = j["sprintCostPerSec"].get<f32>();
     if (j.contains("jumpCost")) r.jumpCost = j["jumpCost"].get<f32>();
     if (j.contains("dashCost")) r.dashCost = j["dashCost"].get<f32>();
-    if (j.contains("attackCost")) r.attackCost = j["attackCost"].get<f32>();
     return r;
 }
 
@@ -7984,7 +7971,6 @@ ECS::DynamicDifficultyComponent DeserializeDynamicDifficultyComponent(const json
 json SerializeArtStyleComponent(const ECS::ArtStyleComponent& as) {
     json j;
     j["style"] = static_cast<u32>(as.style);
-    j["propagateToChildren"] = as.propagateToChildren;
 
     // Pre-PBR
     j["prePBR_halfLambert"] = as.prePBR_halfLambert;
@@ -7993,7 +7979,6 @@ json SerializeArtStyleComponent(const ECS::ArtStyleComponent& as) {
     j["prePBR_specularStrength"] = RF(as.prePBR_specularStrength);
 
     // Hand-Painted
-    j["handPainted_lightWrapAmount"] = RF(as.handPainted_lightWrapAmount);
     j["handPainted_lightRampMode"] = as.handPainted_lightRampMode;
     j["handPainted_saturationBoost"] = RF(as.handPainted_saturationBoost);
 
@@ -8046,10 +8031,6 @@ json SerializeArtStyleComponent(const ECS::ArtStyleComponent& as) {
     j["analog_vhsTrackingIntensity"] = RF(as.analog_vhsTrackingIntensity);
     j["analog_crtEnabled"] = as.analog_crtEnabled;
     j["analog_scanlineIntensity"] = RF(as.analog_scanlineIntensity);
-    j["analog_filmGateWeave"] = as.analog_filmGateWeave;
-    j["analog_gateWeaveIntensity"] = RF(as.analog_gateWeaveIntensity);
-    j["analog_lightLeaks"] = as.analog_lightLeaks;
-    j["analog_lightLeakIntensity"] = RF(as.analog_lightLeakIntensity);
 
     return j;
 }
@@ -8057,7 +8038,6 @@ json SerializeArtStyleComponent(const ECS::ArtStyleComponent& as) {
 ECS::ArtStyleComponent DeserializeArtStyleComponent(const json& j) {
     ECS::ArtStyleComponent as;
     if (j.contains("style")) as.style = static_cast<ECS::ArtStyleType>(std::min(j["style"].get<u32>(), static_cast<u32>(ECS::ArtStyleType::Count) - 1));
-    if (j.contains("propagateToChildren")) as.propagateToChildren = JB(j["propagateToChildren"]);
 
     // Pre-PBR
     if (j.contains("prePBR_halfLambert")) as.prePBR_halfLambert = JB(j["prePBR_halfLambert"]);
@@ -8066,7 +8046,6 @@ ECS::ArtStyleComponent DeserializeArtStyleComponent(const json& j) {
     if (j.contains("prePBR_specularStrength")) as.prePBR_specularStrength = j["prePBR_specularStrength"].get<f32>();
 
     // Hand-Painted
-    if (j.contains("handPainted_lightWrapAmount")) as.handPainted_lightWrapAmount = j["handPainted_lightWrapAmount"].get<f32>();
     if (j.contains("handPainted_lightRampMode")) as.handPainted_lightRampMode = j["handPainted_lightRampMode"].get<u8>();
     if (j.contains("handPainted_saturationBoost")) as.handPainted_saturationBoost = j["handPainted_saturationBoost"].get<f32>();
 
@@ -8119,10 +8098,6 @@ ECS::ArtStyleComponent DeserializeArtStyleComponent(const json& j) {
     if (j.contains("analog_vhsTrackingIntensity")) as.analog_vhsTrackingIntensity = j["analog_vhsTrackingIntensity"].get<f32>();
     if (j.contains("analog_crtEnabled")) as.analog_crtEnabled = JB(j["analog_crtEnabled"]);
     if (j.contains("analog_scanlineIntensity")) as.analog_scanlineIntensity = j["analog_scanlineIntensity"].get<f32>();
-    if (j.contains("analog_filmGateWeave")) as.analog_filmGateWeave = JB(j["analog_filmGateWeave"]);
-    if (j.contains("analog_gateWeaveIntensity")) as.analog_gateWeaveIntensity = j["analog_gateWeaveIntensity"].get<f32>();
-    if (j.contains("analog_lightLeaks")) as.analog_lightLeaks = JB(j["analog_lightLeaks"]);
-    if (j.contains("analog_lightLeakIntensity")) as.analog_lightLeakIntensity = j["analog_lightLeakIntensity"].get<f32>();
 
     return as;
 }
@@ -9083,7 +9058,6 @@ json SerializePushableComponent(const ECS::PushableComponent& pb) {
     j["pushableX"] = RF(pb.pushableX);
     j["pushableY"] = RF(pb.pushableY);
     j["pushableZ"] = RF(pb.pushableZ);
-    j["canBePushedOff"] = RF(pb.canBePushedOff);
     return j;
 }
 
@@ -9098,7 +9072,6 @@ ECS::PushableComponent DeserializePushableComponent(const json& j) {
     if (j.contains("pushableX")) pb.pushableX = JB(j["pushableX"]);
     if (j.contains("pushableY")) pb.pushableY = JB(j["pushableY"]);
     if (j.contains("pushableZ")) pb.pushableZ = JB(j["pushableZ"]);
-    if (j.contains("canBePushedOff")) pb.canBePushedOff = JB(j["canBePushedOff"]);
     return pb;
 }
 
@@ -9331,7 +9304,6 @@ json SerializeCurlNoiseFieldComponent(const ECS::CurlNoiseFieldComponent& cn) {
     j["halfExtents"] = SerializeVector3(cn.halfExtents);
     j["falloff"] = static_cast<i32>(cn.falloff);
     j["affectParticles"] = cn.affectParticles;
-    j["affectMeshVertices"] = cn.affectMeshVertices;
     j["showDebugArrows"] = cn.showDebugArrows;
     j["debugArrowResolution"] = cn.debugArrowResolution;
     return j;
@@ -9349,7 +9321,6 @@ ECS::CurlNoiseFieldComponent DeserializeCurlNoiseFieldComponent(const json& j) {
     if (j.contains("halfExtents")) cn.halfExtents = DeserializeVector3(j["halfExtents"]);
     if (j.contains("falloff")) { i32 v = j["falloff"].get<i32>(); if (v >= 0 && v <= 2) cn.falloff = static_cast<ECS::CurlNoiseFieldComponent::Falloff>(v); }
     if (j.contains("affectParticles")) cn.affectParticles = JB(j["affectParticles"]);
-    if (j.contains("affectMeshVertices")) cn.affectMeshVertices = JB(j["affectMeshVertices"]);
     if (j.contains("showDebugArrows")) cn.showDebugArrows = JB(j["showDebugArrows"]);
     if (j.contains("debugArrowResolution")) cn.debugArrowResolution = j["debugArrowResolution"].get<u32>();
     return cn;

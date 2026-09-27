@@ -646,9 +646,7 @@ ENJIN_TEST(SerdesCoverage, HealthAndTimerNotifyLinksSurviveASave) {
     World src;
     Entity e = Base(src);
     HealthComponent h;
-    h.onDamageNotify = 11;
     h.onDeathNotify = 22;
-    h.onHealNotify = 33;
     src.AddComponent<HealthComponent>(e, h);
     TimerComponent t;
     t.onCompleteNotify = 44;
@@ -661,9 +659,7 @@ ENJIN_TEST(SerdesCoverage, HealthAndTimerNotifyLinksSurviveASave) {
     // Assert
     const auto* rh = dst.GetComponent<HealthComponent>(loaded);
     ENJIN_ASSERT_TRUE(rh != nullptr);
-    ENJIN_EXPECT_TRUE(rh->onDamageNotify == 11);
     ENJIN_EXPECT_TRUE(rh->onDeathNotify == 22);
-    ENJIN_EXPECT_TRUE(rh->onHealNotify == 33);
     const auto* rt = dst.GetComponent<TimerComponent>(loaded);
     ENJIN_ASSERT_TRUE(rt != nullptr);
     ENJIN_EXPECT_TRUE(rt->onCompleteNotify == 44);

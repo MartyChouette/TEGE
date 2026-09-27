@@ -56,7 +56,6 @@ struct ArtStyleComponent {
     ArtStyleType style = ArtStyleType::Inherit;
 
     // Whether this entity's style should propagate to child entities in the hierarchy
-    bool propagateToChildren = false;
 
     // === Pre-PBR Parameters (Style 1) ===
     // Classic fixed-function lighting without PBR energy conservation
@@ -67,7 +66,6 @@ struct ArtStyleComponent {
 
     // === Hand-Painted Parameters (Style 2) ===
     // Painterly look with soft light wrapping and artist-authored light ramps
-    f32  handPainted_lightWrapAmount = 0.5f; // Light wrapping (0-1, higher = softer falloff)
     u8   handPainted_lightRampMode = 2;      // 0=off, 1=smooth, 2=warm, 3=cool, 4=anime
     f32  handPainted_saturationBoost = 0.0f; // Extra saturation on diffuse (-0.5 to 0.5)
 
@@ -126,10 +124,6 @@ struct ArtStyleComponent {
     f32  analog_vhsTrackingIntensity = 0.3f;
     bool analog_crtEnabled = false;         // CRT scanlines
     f32  analog_scanlineIntensity = 0.3f;
-    bool analog_filmGateWeave = false;      // Film gate jitter
-    f32  analog_gateWeaveIntensity = 0.002f;
-    bool analog_lightLeaks = false;         // Film light leak overlay
-    f32  analog_lightLeakIntensity = 0.15f;
 };
 
 } // namespace ECS

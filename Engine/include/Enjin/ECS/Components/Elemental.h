@@ -15,7 +15,6 @@ struct ENJIN_API ElementalSurfaceComponent {
     f32 maxAccumulation = 1.0f;    // saturation cap per channel
 
     // Snow specific
-    f32 snowDeformation = 0.0f;    // 0-1, how much snow is compressed
 
     // Derived visual state (computed by system, not serialized)
     f32 charAmount = 0.0f;         // fire accumulation -> char visual

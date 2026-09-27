@@ -828,7 +828,6 @@ Fires events when entities enter, exit, or stay inside the zone.
 | `shape` | enum | Box | `Box` or `Sphere`. |
 | `boxSize` | Vector3 | (2, 2, 2) | Box dimensions (when shape is Box). |
 | `sphereRadius` | f32 | 1.0 | Sphere radius (when shape is Sphere). |
-| `triggerMask` | u32 | 0xFFFFFFFF | Which collision layers can trigger this zone. |
 | `triggerOnce` | bool | false | Only fire the first time (one-shot). |
 | `onEnterNotify` | Entity | 0 | Entity to notify when something enters. |
 | `onExitNotify` | Entity | 0 | Entity to notify when something exits. |
@@ -1574,7 +1573,6 @@ Makes an entity pushable by the player or other forces. Supports Sokoban-style g
 | `gridMoveSpeed` | f32 | 6.0 | Speed of cell-to-cell lerp. |
 | `pushableX` / `pushableZ` | bool | true | Allow pushing on each axis. |
 | `pushableY` | bool | false | Allow vertical pushing. |
-| `canBePushedOff` | bool | false | Allow pushing off ledges. |
 
 #### SwitchComponent
 
@@ -1680,9 +1678,7 @@ Tracks hit points, shield, regeneration, and invulnerability.
 | `currentShield` | f32 | 0.0 | Current shield points. |
 | `shieldRegenRate` | f32 | 0.0 | Shield regenerated per second. |
 | `shieldRegenDelay` | f32 | 5.0 | Seconds after damage before shield regeneration. |
-| `onDamageNotify` | Entity | 0 | Entity to notify when damaged. |
 | `onDeathNotify` | Entity | 0 | Entity to notify on death. |
-| `onHealNotify` | Entity | 0 | Entity to notify on heal. |
 
 Helper methods: `GetHealthPercent()`, `GetShieldPercent()`, `IsFullHealth()`.
 
@@ -1734,7 +1730,6 @@ A generic resource bar for stamina, mana, energy, or any depletable value. Integ
 | `sprintCostPerSec` | f32 | 15.0 | Resource consumed per second while sprinting. |
 | `jumpCost` | f32 | 20.0 | Resource consumed per jump. |
 | `dashCost` | f32 | 25.0 | Resource consumed per dash. |
-| `attackCost` | f32 | 0.0 | Resource consumed per attack. |
 
 Methods: `GetPercent()`, `TryConsume(amount)`, `Regenerate(deltaTime)`.
 
@@ -1900,7 +1895,6 @@ Marks an entity as part of an object pool for efficient reuse (e.g., bullets, pa
 | `isActive` | bool | false | Whether this pooled object is currently active. |
 | `lifetime` | f32 | 0.0 | Auto-return to pool after this many seconds (0 = infinite, manually returned). |
 | `activeTime` | f32 | 0.0 | Time since activation. |
-| `spawnedBy` | Entity | 0 | Entity that spawned this object. |
 
 ---
 
@@ -2040,7 +2034,6 @@ A polyline-based 2D terrain for side-scrolling games. Control points define the 
 | `depth` | f32 | 5.0 | Fill depth below the surface. |
 | `uvScale` | f32 | 1.0 | UV coordinate scaling. |
 | `texturePath` | string | "" | Surface texture path. |
-| `autoColliders` | bool | true | Automatically generate collision from the terrain shape. |
 | `meshDirty` | bool | true | When true, the mesh is regenerated. |
 
 **Methods:**
@@ -2060,9 +2053,6 @@ A tag component that enables wind sway on any mesh entity. When attached, the ve
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `swayStrength` | f32 | 1.0 | Multiplier for wind displacement amplitude. |
-| `swayFrequency` | f32 | 1.0 | Multiplier for wind animation speed. |
-| `useVertexColorWeight` | bool | true | When true, vertex color red channel scales sway per-vertex. |
 
 **How It Works:** The vertex shader applies two sine-wave displacements (a slow primary sway and a faster secondary rustle) along the wind direction. Each vertex's displacement is multiplied by its red channel value, so you get natural-looking motion where the trunk stays planted and leaves/branches move freely.
 
@@ -2319,7 +2309,6 @@ Per-entity art style override. When attached, overrides the scene-level art styl
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `style` | ArtStyleType | Inherit | Inherit, PrePBR, HandPainted, CelToon, NPR, Retro, PixelArt, MaterialExpression, or Analog. |
-| `propagateToChildren` | bool | false | Apply this style to child entities. |
 
 Each style has its own parameter block (see the 9 styles listed under [Art Style Presets](#art-style-presets) in the Effects section). For example, CelToon exposes `cel_diffuseBands`, `cel_outlineWidth`, `cel_outlineColor`; Retro exposes `retro_vertexSnapping`, `retro_snapResolution`, `retro_affineTexturing`.
 

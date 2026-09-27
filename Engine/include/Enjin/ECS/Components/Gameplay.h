@@ -49,9 +49,7 @@ struct HealthComponent {
     f32 shieldRegenDelay = 5.0f;
 
     // Events (entity IDs to notify)
-    Entity onDamageNotify = 0;   // INVALID_ENTITY
     Entity onDeathNotify = 0;
-    Entity onHealNotify = 0;
 
     // Helper methods
     f32 GetHealthPercent() const { return maxHealth > 0 ? currentHealth / maxHealth : 0; }
@@ -246,7 +244,6 @@ struct TriggerZoneComponent {
     f32 sphereRadius = 1.0f;
 
     // Filtering
-    u32 triggerMask = 0xFFFFFFFF;  // Which layers can trigger
     bool triggerOnce = false;      // Only trigger once ever
     bool hasTriggered = false;
 
@@ -2133,7 +2130,6 @@ struct PushableComponent {
     bool pushableX = true;
     bool pushableY = false;        // Usually no vertical pushing
     bool pushableZ = true;
-    bool canBePushedOff = false;   // Can be pushed off ledges
 
     // State
     bool isBeingPushed = false;
@@ -2336,7 +2332,6 @@ struct ResourceComponent {
     f32 sprintCostPerSec = 15.0f;
     f32 jumpCost = 20.0f;
     f32 dashCost = 25.0f;
-    f32 attackCost = 0.0f;
 
     f32 GetPercent() const { return maxValue > 0.0f ? currentValue / maxValue : 0.0f; }
 
@@ -2400,7 +2395,6 @@ struct PoolableComponent {
     bool isActive = false;
     f32 lifetime = 0.0f;      // 0 = infinite (manually returned)
     f32 activeTime = 0.0f;
-    Entity spawnedBy = 0;
 };
 
 // ============================================================================
@@ -2699,7 +2693,6 @@ struct NetworkTransformComponent {
     Math::Quaternion lastSyncedRotation = Math::Quaternion(0, 0, 0, 1);
     Math::Vector3 lastSyncedScale = Math::Vector3(1.0f, 1.0f, 1.0f);
     Math::Vector3 networkVelocity;
-    f32 interpDuration = 0.05f;
 
     // interpStartPosition, interpStartRotation, interpProgress, predictionError
     // and correctionBlend were REMOVED on 2026-09-20. They were the remains of a
@@ -2737,7 +2730,6 @@ struct CurlNoiseFieldComponent {
 
     // What to affect
     bool affectParticles = true;
-    bool affectMeshVertices = false;
 
     // Debug visualization
     bool showDebugArrows = false;
@@ -3034,10 +3026,8 @@ struct SaveSystemComponent {
     bool showAutoSaveWarning = true;      // "Don't turn off" message during auto-save
 
     // --- State (runtime, not serialized) ---
-    f32 autoSaveTimer = 0.0f;
     f32 saveIndicatorTimer = 0.0f;
     bool isSaving = false;
-    u32 autoSaveRotation = 0;            // Current auto-save slot rotation index
 };
 
 // SavePointComponent — attach to an in-world entity (glowing crystal, save
