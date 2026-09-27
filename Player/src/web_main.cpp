@@ -211,6 +211,19 @@ static void FetchRevalidated(const char* url, void* userData,
     emscripten_fetch(&attr, url);
 }
 
+// Whether this page is a harness capture: web_capture.mjs loads it with
+// ?fixedDelta=, the same query the main loop reads for its fixed step
+static bool WebIsCaptureRun() {
+#if defined(__EMSCRIPTEN__)
+    static const bool capture = EM_ASM_INT({
+        return /[?&]fixedDelta=([0-9.]+)/.test(location.search) ? 1 : 0;
+    }) != 0;
+    return capture;
+#else
+    return false;
+#endif
+}
+
 class WebGamePlayer;
 static WebGamePlayer* g_Player = nullptr;
 
@@ -1468,6 +1481,10 @@ public:
 
     // ── Startup flow (WP-9) ─────────────────────────────────────────────────
     bool WebEngineSplashActive() const {
+        // Not in a capture run: the desktop capture reads the scene target, so
+        // its card never shows there, while a browser capture photographs the
+        // canvas and caught the card fading in at frame 30
+        if (WebIsCaptureRun()) return false;
         return m_EngineSplash && m_SimulationStarted && m_EngineSplashTimer < kEngineSplashDuration;
     }
 
@@ -1497,6 +1514,15 @@ public:
     // What follows the card. Desktop always ends at a title unless the flow
     // says otherwise; web used to drop the player straight into play.
     void BeginWebStartup() {
+        // A capture run boots straight into gameplay, as the desktop player's
+        // does (IsCaptureRun): the harness photographs the game, and since the
+        // built-in title arrived (WP-8) every web capture was of the title
+        // menu with the world held, so "animates" failed for any project and
+        // the desktop-web comparison compared a game with a menu.
+        if (WebIsCaptureRun()) {
+            HideWebTitle();
+            return;
+        }
         if (!m_StartupFlow.empty()) {
             m_FlowActive = true;
             m_FlowIndex = -1;
