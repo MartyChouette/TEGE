@@ -1274,11 +1274,19 @@ public:
 
         if (!m_Initialized) return;
         m_FrameDeltaTime = deltaTime;  // Render() needs it for the compute pre-pass
+        // The game's own clock stands still while a menu, the console or a
+        // content warning holds gameplay -- the same condition as the return
+        // further down. The palette tick and the animator loop run before that
+        // return, so under the pause menu characters kept animating and
+        // palettes kept cycling while everything else had stopped.
+        const bool gameplayHeld = m_GameMenu.IsMenuOpen() || m_ControlsScreen.IsOpen() || m_Paused ||
+                                  !m_GameStarted || m_ShowConsole || m_ContentWarnings.IsVisible();
+        const Enjin::f32 gameDt = gameplayHeld ? 0.0f : deltaTime;
         // Render() draws through World::Update(0); RenderSystem's clocks (sprite
         // frames, pose blending, the hover pulse, movement-driven animation)
         // take this frame's dt from here instead (EP-7). After the time scale,
         // so bullet time slows them as it slows everything else (EP-10).
-        if (m_RenderSystem) m_RenderSystem->SetFrameDeltaTime(deltaTime);
+        if (m_RenderSystem) m_RenderSystem->SetFrameDeltaTime(gameDt);
 
         // Palette cycling clock. The player drives the frame delta itself and
         // calls World::Update(0.0f), so RenderSystem::Update sees a zero dt --
@@ -1298,7 +1306,7 @@ public:
         // rendered its palettes perfectly and simply never moved, which is
         // indistinguishable from the feature being switched off.
         if (m_RenderSystem) {
-            m_RenderSystem->TickPaletteTime(deltaTime);
+            m_RenderSystem->TickPaletteTime(gameDt);   // a zero deposit is no tick
         }
 
         // Apply deferred fullscreen change (safe between frames)
@@ -1478,9 +1486,9 @@ public:
             for (auto entity : m_World->GetEntitiesWithComponent<Enjin::ECS::AnimatorComponent>()) {
                 auto* ac = m_World->GetComponent<Enjin::ECS::AnimatorComponent>(entity);
                 if (!ac) continue;
-                Enjin::f32 stepDt = deltaTime;
+                Enjin::f32 stepDt = gameDt;
                 Enjin::ECS::AnimationQuality quality{};
-                if (!m_RenderSystem->ShouldRefreshAnimator(*ac, entity, deltaTime, stepDt, quality)) {
+                if (!m_RenderSystem->ShouldRefreshAnimator(*ac, entity, gameDt, stepDt, quality)) {
                     continue;   // skipped this frame; the dt stays banked for the next
                 }
                 ac->Update(stepDt, quality);
@@ -1490,7 +1498,7 @@ public:
             // there is no band to resolve: everything refreshes.
             for (auto entity : m_World->GetEntitiesWithComponent<Enjin::ECS::AnimatorComponent>()) {
                 auto* ac = m_World->GetComponent<Enjin::ECS::AnimatorComponent>(entity);
-                if (ac) ac->Update(deltaTime);
+                if (ac) ac->Update(gameDt);
             }
         }
 
