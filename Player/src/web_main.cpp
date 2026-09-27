@@ -612,10 +612,10 @@ public:
         // Day/night + seasons reachable from script (buttons, cutscenes, HUD).
         Enjin::Scripting::SetBindingsWorldTime(&m_WorldTime, &m_SeasonalWeather);
         Enjin::Scripting::SetBindingsWind(&m_WindSystem);   // Wind_* -> foliage sway
-        // Render_* script functions (rain-active, fog, ambient, shadows...)
-        // and Dialogue_* — both systems exist on web; without this wiring the
-        // (now-registered) bindings silently no-op.
-        Enjin::Scripting::SetBindingsRenderSystem(m_RenderSystem);
+        // Dialogue_* script functions. The Render_* half is bound once the
+        // RenderSystem exists, below: it used to be bound here, where
+        // m_RenderSystem was still null, so every Render_* call on web did
+        // nothing (WP-2).
         Enjin::Scripting::SetBindingsDialogueSystem(&m_DialogueSystem);
         Enjin::Scripting::SetBindingsSceneManager(&m_SceneManager);
         Enjin::Scripting::SetBindingsPhysics2D(m_Physics2D.get());
@@ -777,11 +777,12 @@ public:
 
         // --- RenderSystem (same system as desktop, uses abstract IRenderBackend) ---
         m_RenderSystem = m_World->RegisterSystem<Enjin::ECS::RenderSystem>(m_World.get(), m_Renderer.get());
-        // Render_* script bindings ARE wired on web (SetBindingsRenderSystem, above,
-        // once m_RenderSystem exists — see the binding block). ScriptBindings_Render.cpp
-        // now compiles on web; simple calls (rain-active, fog, ambient, shadows) drive
-        // the RenderSystem directly, render-target calls degrade to 0/false. (The old
-        // note here claiming they were excluded was stale — corrected.)
+        // Render_* script functions (rain-active, fog, ambient, shadows) drive
+        // this RenderSystem directly; render-target calls degrade to 0/false.
+        // Bound HERE, now that it exists. The comment that stood here said it
+        // was bound "above, once m_RenderSystem exists", and above is where it
+        // was null.
+        Enjin::Scripting::SetBindingsRenderSystem(m_RenderSystem);
         m_RenderSystem->SetCamera(m_Camera.get());
         m_RenderSystem->SetAssetReader(&m_AssetReader);
         m_RenderSystem->Initialize();
