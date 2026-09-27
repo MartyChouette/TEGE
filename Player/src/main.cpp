@@ -2264,6 +2264,8 @@ public:
             Enjin::f32 fov = 45.0f;
             Enjin::f32 nearP = 0.1f;
             Enjin::f32 farP = 1000.0f;
+            bool ortho = false;
+            Enjin::f32 orthoHalfH = 10.0f;
             if (m_World) {
                 // Camera zones apply (SD-17), eased over the zone's Blend Time
                 Enjin::ECS::GameCameraPose pose;
@@ -2272,6 +2274,8 @@ public:
                     if (cc) {
                         nearP = cc->nearPlane;
                         farP = cc->farPlane;
+                        ortho = cc->projectionType == Enjin::ECS::ProjectionType::Orthographic;
+                        if (cc->orthoSize > 0.0f) orthoHalfH = cc->orthoSize;
                     }
                     fov = pose.fieldOfView;
                     // Override FOV from settings if user changed it
@@ -2285,7 +2289,15 @@ public:
                     m_AudioEngine.SetListenerPosition(pose.position, forward, up);
                 }
             }
-            m_Camera->SetPerspective(fov, aspect, nearP, farP);
+            // An orthographic camera was always drawn in perspective here, the
+            // bug web fixed on 09-16: sprites foreshortened and anything that
+            // rebuilds world position from the projection was wrong (EP-12)
+            if (ortho) {
+                m_Camera->SetOrthographic(-orthoHalfH * aspect, orthoHalfH * aspect,
+                                          -orthoHalfH, orthoHalfH, nearP, farP);
+            } else {
+                m_Camera->SetPerspective(fov, aspect, nearP, farP);
+            }
         }
 
         // Splitscreen. The detection rule used to be written out here and
