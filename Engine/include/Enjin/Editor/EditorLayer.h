@@ -685,6 +685,20 @@ private:
     // editor boot, so a project opened from the Hub had no strings and a
     // second project kept the first one's (EP-5).
     void SyncProjectLocalization();
+    // Accessibility in editor play (EP-5): the project's defaults while
+    // playing, the machine's editor settings otherwise
+    void PushRuntimeAccessibility();
+    void AdoptProjectAccessibilityForPlay();
+    void RestoreMachineAccessibility();
+    bool m_AccessibilityFromProject = false;
+    // Game View quality-tier preview (EP-5, decided 2026-09-27): shows the
+    // project's tier clamps without writing them into the scene. -1 = off.
+    // m_QualityPreviewAuthored is the unclamped settings; a save puts every
+    // clamped field back from it (RenderQualitySettings::RestoreAuthored).
+    i32 m_QualityPreviewTier = -1;
+    Renderer::SceneRenderSettings m_QualityPreviewAuthored;
+    Renderer::RenderQualitySettings m_QualityPreviewQuality;
+    void SetQualityPreview(i32 tier);
     std::string m_LocalizationAppliedProject;
     std::string m_LocalizationAppliedJson;
     bool m_LocalizationApplied = false;

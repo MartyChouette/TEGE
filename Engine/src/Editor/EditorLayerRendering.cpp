@@ -562,6 +562,25 @@ void EditorLayer::DrawGameViewPanel() {
         }
     }
 
+    // Quality-tier preview (EP-5): the Game View as a tier would show it,
+    // without the tier's ceilings reaching the scene file
+    {
+        const bool tiersOn = m_SceneManager.GetRenderQuality().enabled;
+        static const char* kTierItems[] = { "As authored", "Low", "Medium", "High", "Ultra" };
+        int current = m_QualityPreviewTier + 1;
+        if (!tiersOn && m_QualityPreviewTier < 0) ImGui::BeginDisabled();
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(120);
+        if (ImGui::Combo("Quality", &current, kTierItems, IM_ARRAYSIZE(kTierItems))) {
+            SetQualityPreview(current - 1);
+        }
+        if (!tiersOn && m_QualityPreviewTier < 0) ImGui::EndDisabled();
+        ImGui::SetItemTooltip(tiersOn
+            ? "Preview the Game View at one of the project's quality tiers. "
+              "Saving keeps the scene's own values."
+            : "The project has no quality tiers (Project Settings > Render Quality Tiers)");
+    }
+
     ImGui::Separator();
 
     if (gameCameraEntity == ECS::INVALID_ENTITY) {

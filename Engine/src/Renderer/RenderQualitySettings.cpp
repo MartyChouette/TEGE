@@ -135,6 +135,33 @@ void RenderQualitySettings::ApplyTo(SceneRenderSettings& s, QualityTier t) const
     s.ddgiAmortizationRate = FloorTo(s.ddgiAmortizationRate, c.minDDGIAmortizationRate);
 }
 
+void RenderQualitySettings::RestoreAuthored(SceneRenderSettings& live,
+                                            const SceneRenderSettings& authored,
+                                            QualityTier t) const {
+    if (!enabled) return;
+    SceneRenderSettings clamped = authored;
+    ApplyTo(clamped, t);
+    // Exactly the fields ApplyTo writes. A field added there has to be added
+    // here, or a save during a preview writes that one field's ceiling.
+#define ENJIN_RESTORE_CLAMPED(f) if (live.f == clamped.f) live.f = authored.f;
+    ENJIN_RESTORE_CLAMPED(rtEnabled)
+    ENJIN_RESTORE_CLAMPED(rtMode)
+    ENJIN_RESTORE_CLAMPED(radianceCacheEnabled)
+    ENJIN_RESTORE_CLAMPED(surfelCacheEnabled)
+    ENJIN_RESTORE_CLAMPED(restirSpatialReuse)
+    ENJIN_RESTORE_CLAMPED(rtPathTracerTargetSPP)
+    ENJIN_RESTORE_CLAMPED(rtGIBounces)
+    ENJIN_RESTORE_CLAMPED(rtDenoiserIterations)
+    ENJIN_RESTORE_CLAMPED(restirInitialCandidates)
+    ENJIN_RESTORE_CLAMPED(restirSpatialNeighbors)
+    ENJIN_RESTORE_CLAMPED(surfelCacheMaxSurfels)
+    ENJIN_RESTORE_CLAMPED(adaptiveRayMaxPerPixel)
+    ENJIN_RESTORE_CLAMPED(ddgiRaysPerProbe)
+    ENJIN_RESTORE_CLAMPED(adaptiveRayMinPerPixel)
+    ENJIN_RESTORE_CLAMPED(ddgiAmortizationRate)
+#undef ENJIN_RESTORE_CLAMPED
+}
+
 namespace {
 
 nlohmann::json CapsToJson(const RenderQualityCaps& c) {

@@ -200,4 +200,45 @@ ENJIN_TEST(RenderQuality, TierNamesRoundTripAndUnknownNamesFallBack) {
     ENJIN_EXPECT_TRUE(QualityTierFromName("Potato", QualityTier::Medium) == QualityTier::Medium);
 }
 
+// A save made while the editor previews a tier (EP-5) must write what the
+// author chose, not the tier's ceiling, and must keep an edit made during the
+// preview.
+ENJIN_TEST(RenderQuality, test_renderquality_save_during_preview_restores_authored_values) {
+    // Arrange
+    RenderQualitySettings q;
+    q.enabled = true;
+    const SceneRenderSettings authored = ExpensiveScene();
+    SceneRenderSettings live = authored;
+    q.ApplyTo(live, QualityTier::Low);   // what the running systems hold
+
+    // Act
+    q.RestoreAuthored(live, authored, QualityTier::Low);
+
+    // Assert
+    ENJIN_EXPECT_TRUE(live.rtEnabled);
+    ENJIN_EXPECT_EQ(live.rtMode, 1u);
+    ENJIN_EXPECT_EQ(live.rtPathTracerTargetSPP, 4096u);
+    ENJIN_EXPECT_EQ(live.rtGIBounces, 8u);
+    ENJIN_EXPECT_TRUE(live.surfelCacheEnabled);
+    ENJIN_EXPECT_EQ(live.adaptiveRayMinPerPixel, authored.adaptiveRayMinPerPixel);
+    ENJIN_EXPECT_EQ(live.ddgiAmortizationRate, authored.ddgiAmortizationRate);
+}
+
+ENJIN_TEST(RenderQuality, test_renderquality_save_during_preview_keeps_an_edit_made_in_it) {
+    // Arrange
+    RenderQualitySettings q;
+    q.enabled = true;
+    const SceneRenderSettings authored = ExpensiveScene();
+    SceneRenderSettings live = authored;
+    q.ApplyTo(live, QualityTier::Medium);
+    live.rtDenoiserIterations = 1;   // the author turned it down while previewing
+
+    // Act
+    q.RestoreAuthored(live, authored, QualityTier::Medium);
+
+    // Assert
+    ENJIN_EXPECT_EQ(live.rtDenoiserIterations, 1u);
+    ENJIN_EXPECT_EQ(live.rtGIBounces, 8u);
+}
+
 ENJIN_TEST_MAIN()

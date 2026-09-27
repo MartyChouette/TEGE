@@ -86,6 +86,15 @@ struct RenderQualitySettings {
 
     // Clamp a scene's cost knobs to this tier. Pure, and a no-op when disabled.
     void ApplyTo(SceneRenderSettings& s, QualityTier t) const;
+
+    // The inverse for a save made while a tier is being previewed (the
+    // editor's Game View quality preview, EP-5). `live` was captured from
+    // systems running the clamped values; every field ApplyTo can change that
+    // still holds its clamped value is put back to `authored`, so the tier's
+    // ceiling is not written into the scene. A field that differs from its
+    // clamped value was changed during the preview, and keeps the change.
+    void RestoreAuthored(SceneRenderSettings& live, const SceneRenderSettings& authored,
+                         QualityTier t) const;
 };
 
 nlohmann::json SerializeRenderQuality(const RenderQualitySettings& q);

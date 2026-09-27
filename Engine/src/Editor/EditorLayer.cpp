@@ -363,6 +363,10 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
     // stomp the player's menu choices, and push the boot-time consumers.
     m_GameMenu.SetAccessibilitySettings(&m_RuntimeAccessibility);
     m_GameMenu.SetAccessibilityChangedCallback([this]() {
+        // In play these are the GAME's settings, started from the project's
+        // defaults (EP-5), and a change in the game's own menu stays in the
+        // game. Only outside play do they mirror the machine's editor settings.
+        if (m_PlayMode.IsStopped()) {
         auto& a = m_RuntimeAccessibility;
         auto& s = m_EditorSettings;
         s.colorblindMode = static_cast<decltype(s.colorblindMode)>(a.colorblindMode);
@@ -384,34 +388,8 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
         s.dwellClickDelay = a.dwellClickTime;
         s.stickyDragEnabled = a.stickyDragEnabled;
 
-        // Push consumers that only read on demand
-        m_Announcer.enabled = a.screenReaderEnabled;
-        m_AudioIndicators.GetConfig().enabled = a.audioIndicatorsEnabled;
-        auto& subConfig = m_SubtitleSystem.GetConfig();
-        subConfig.enabled = a.subtitlesEnabled;
-        subConfig.captionsEnabled = a.closedCaptionsEnabled;
-        subConfig.fontSize = a.subtitleFontSize;
-        subConfig.backgroundOpacity = a.subtitleBgOpacity;
-        subConfig.showSpeakerNames = a.subtitleSpeakerNames;
-        subConfig.showDirectionIndicators = a.subtitleDirectionIndicators;
-        if (auto* ctrlSys = m_PlayMode.GetControllerSystem()) {
-            ctrlSys->SetReducedMotion(a.reducedMotion);
-            ctrlSys->SetDisableScreenShake(a.disableScreenShake);
-            ctrlSys->SetDisableFOVEffects(a.disableFOVEffects);
         }
-        if (auto* uiSys = m_PlayMode.GetUISystem()) {
-            uiSys->SetReducedMotion(a.reducedMotion);
-            uiSys->SetSwitchAccessEnabled(a.switchAccessEnabled, a.switchScanSpeed);
-            // Same setting drives the editor-chrome scanner, so the two
-            // never disagree about being on or scan at different speeds.
-            m_AlternativeInput.ApplyAccessibilitySettings(a.switchAccessEnabled, a.switchScanSpeed);
-            uiSys->SetDwellClickEnabled(a.dwellClickEnabled, a.dwellClickTime);
-            uiSys->SetStickyDragEnabled(a.stickyDragEnabled);
-        }
-        // Text scale reaches the UI, subtitles and the screen-reader bar
-        // together (it used to reach only the UI).
-        Accessibility::ApplyTextScale(a, m_PlayMode.GetUISystem(),
-                                      &m_SubtitleSystem, &m_Announcer);
+        PushRuntimeAccessibility();
     });
     m_GameMenu.SetCallback([this](const std::string& action) {
         if ((action == "new_game" || action == "continue") && m_FromStart.onMenu) {
@@ -782,11 +760,13 @@ void EditorLayer::StartPlayMode() {
     // it had drifted to (EP-11).
     if (m_PlayMode.IsStopped())
         m_WorldTime.SetTime(m_SceneStartTimeOfDay, 1, m_SceneStartMonth, 1);
+    const bool freshPlay = m_PlayMode.IsStopped();
     // A fresh start shows the scene's content warnings; a resume does not
     // (not in an unattended capture, which has nobody to dismiss it)
     if (m_PlayMode.IsStopped() && s_GoldenCapturePath.empty())
         m_ContentWarnings.SetSceneFlags(m_SceneContentFlags);
     m_PlayMode.Play();
+    if (freshPlay) AdoptProjectAccessibilityForPlay();   // after Play: it reads the play state
     m_Telemetry.TrackPlayModeEnter();
     if (m_Announcer.enabled) m_Announcer.Announce("Play mode started", Accessibility::AnnouncePriority::Normal);
 }
@@ -981,9 +961,9 @@ void EditorLayer::Update(f32 deltaTime) {
     // the original values would be gone after one save on a Low tier.
     //
     // Tiers are a runtime concern and are applied by the players, where nothing
-    // captures back into scene files. Previewing one in the editor needs a mode
-    // that suppresses capture while it is active; until that exists, not
-    // applying is the only safe behaviour.
+    // captures back into scene files. The editor applies one only as the Game
+    // View's quality preview (SetQualityPreview), whose saves put the authored
+    // values back (EP-5).
 
     // Cloth/ropes need their generated mesh even in EDIT mode (the sim only
     // runs during play) - build any uninitialized ones to rest pose so a
@@ -2887,6 +2867,8 @@ void EditorLayer::Update(f32 deltaTime) {
         m_ContentWarnings.Dismiss();
     }
     UpdatePlayFromStart(m_LastGameDt);
+    if (m_PlayMode.IsStopped() && !m_PendingPlayStart && !m_RestartPlayPending)
+        RestoreMachineAccessibility();
     if (!m_ContentWarnings.IsVisible() && !FromStartHoldsGameplay()) m_PlayMode.Update(deltaTime);
 
     // The editor's own audio device, for auditioning clips while editing. Only
@@ -6766,6 +6748,69 @@ void EditorLayer::UpdateWindowTitle() {
     }
     if (m_SceneDirty) title += " *";
     m_Window->SetTitle(title.c_str());
+}
+
+// Hands m_RuntimeAccessibility to everything that reads it on demand. Used by
+// the game menu's accessibility screen, and when play starts from the
+// project's defaults or stops back to the machine's settings (EP-5).
+void EditorLayer::PushRuntimeAccessibility() {
+    auto& a = m_RuntimeAccessibility;
+    // Push consumers that only read on demand
+    m_Announcer.enabled = a.screenReaderEnabled;
+    m_AudioIndicators.GetConfig().enabled = a.audioIndicatorsEnabled;
+    auto& subConfig = m_SubtitleSystem.GetConfig();
+    subConfig.enabled = a.subtitlesEnabled;
+    subConfig.captionsEnabled = a.closedCaptionsEnabled;
+    subConfig.fontSize = a.subtitleFontSize;
+    subConfig.backgroundOpacity = a.subtitleBgOpacity;
+    subConfig.showSpeakerNames = a.subtitleSpeakerNames;
+    subConfig.showDirectionIndicators = a.subtitleDirectionIndicators;
+    if (auto* ctrlSys = m_PlayMode.GetControllerSystem()) {
+        ctrlSys->SetReducedMotion(a.reducedMotion);
+        ctrlSys->SetDisableScreenShake(a.disableScreenShake);
+        ctrlSys->SetDisableFOVEffects(a.disableFOVEffects);
+    }
+    if (auto* uiSys = m_PlayMode.GetUISystem()) {
+        uiSys->SetReducedMotion(a.reducedMotion);
+        uiSys->SetSwitchAccessEnabled(a.switchAccessEnabled, a.switchScanSpeed);
+        // Same setting drives the editor-chrome scanner, so the two
+        // never disagree about being on or scan at different speeds.
+        m_AlternativeInput.ApplyAccessibilitySettings(a.switchAccessEnabled, a.switchScanSpeed);
+        uiSys->SetDwellClickEnabled(a.dwellClickEnabled, a.dwellClickTime);
+        uiSys->SetStickyDragEnabled(a.stickyDragEnabled);
+    }
+    // Text scale reaches the UI, subtitles and the screen-reader bar
+    // together (it used to reach only the UI).
+    Accessibility::ApplyTextScale(a, m_PlayMode.GetUISystem(),
+                                  &m_SubtitleSystem, &m_Announcer);
+    // Colour-blind filter, brightness and contrast, as both players apply
+    // them. Only in play: the stop restores the scene's own post settings.
+    if (!m_PlayMode.IsStopped() && m_PostProcessing) {
+        a.ApplyToPostProcessing(m_PostProcessing->GetSettings());
+    }
+}
+
+// Editor play starts from the project's accessibility defaults, as a fresh
+// install of the game does, and not from the machine's editor settings
+// (decided 2026-09-27). A project with none gets the engine defaults, which
+// is also what a fresh install gets. Stop goes back to the machine's.
+void EditorLayer::AdoptProjectAccessibilityForPlay() {
+    Accessibility::RuntimeAccessibilitySettings fresh;
+    const std::string& json = m_SceneManager.GetAccessibilityDefaultsJson();
+    if (!json.empty() && !fresh.FromJson(json)) {
+        ENJIN_LOG_WARN(Editor, "Project accessibility defaults could not be read; using engine defaults");
+        fresh = Accessibility::RuntimeAccessibilitySettings{};
+    }
+    m_RuntimeAccessibility = fresh;
+    m_AccessibilityFromProject = true;
+    PushRuntimeAccessibility();
+}
+
+void EditorLayer::RestoreMachineAccessibility() {
+    if (!m_AccessibilityFromProject) return;
+    m_AccessibilityFromProject = false;
+    SyncRuntimeAccessibility();
+    PushRuntimeAccessibility();
 }
 
 void EditorLayer::SyncRuntimeAccessibility() {

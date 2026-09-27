@@ -836,6 +836,10 @@ void EditorLayer::OpenSceneImmediate(const std::string& path, const std::string&
 
     // Apply loaded render settings
     if (result.success) {
+        // A quality preview belongs to the scene it was started on, and would
+        // otherwise clamp this one as it loads
+        m_QualityPreviewTier = -1;
+        if (m_RenderSystem) m_RenderSystem->SetRenderQuality(Renderer::RenderQualitySettings{});
         const auto& loaded = serializer.GetRenderSettings();
         m_CurrentSceneUsesProjectDefaults = loaded.useProjectDefaults;
         // As the players decide it: project defaults only when the project has them
@@ -1457,6 +1461,11 @@ void EditorLayer::WriteSceneWorldTime(Renderer::SceneRenderSettings& s) const {
         s.ambientColor = m_WorldTimeTakeover.ambientColor;
         s.ambientIntensity = m_WorldTimeTakeover.ambientIntensity;
     }
+    // A quality-tier preview's ceilings are not the author's values (EP-5)
+    if (m_QualityPreviewTier >= 0) {
+        m_QualityPreviewQuality.RestoreAuthored(s, m_QualityPreviewAuthored,
+                                                static_cast<Renderer::QualityTier>(m_QualityPreviewTier));
+    }
     s.worldTimeEnabled = m_WorldTimeEnabled;
     s.seasonalWeatherEnabled = m_SeasonalWeatherEnabled;
     s.startTimeOfDay = m_SceneStartTimeOfDay;
@@ -1464,6 +1473,42 @@ void EditorLayer::WriteSceneWorldTime(Renderer::SceneRenderSettings& s) const {
     s.secondsPerGameHour = const_cast<Effects::WorldTimeSystem&>(m_WorldTime).GetCalendarConfig().secondsPerGameHour;
     s.seasonalChangeInterval = const_cast<Effects::SeasonalWeatherSystem&>(m_SeasonalWeather).GetConfig().weatherChangeInterval;
     s.artStylePreset = m_ArtStylePreset;
+}
+
+} // namespace Editor
+} // namespace Enjin
+
+namespace Enjin {
+namespace Editor {
+
+// Switch the Game View's quality-tier preview. The tier clamps values on their
+// way into the live systems, which is also where a save reads them back, so
+// the unclamped settings are kept aside and a save restores them (see
+// WriteSceneWorldTime). Switching tiers carries any edit made during the
+// preview into the kept settings first.
+void EditorLayer::SetQualityPreview(i32 tier) {
+    if (!m_RenderSystem || tier == m_QualityPreviewTier) return;
+    Renderer::PostProcessSettings* pp = m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr;
+
+    Renderer::SceneRenderSettings authored =
+        Renderer::SceneRenderSettings::CaptureFromRuntime(m_RenderSystem, pp);
+    if (m_QualityPreviewTier >= 0) {
+        m_QualityPreviewQuality.RestoreAuthored(authored, m_QualityPreviewAuthored,
+                                                static_cast<Renderer::QualityTier>(m_QualityPreviewTier));
+    }
+
+    m_QualityPreviewTier = tier;
+    if (tier < 0) {
+        m_RenderSystem->SetRenderQuality(Renderer::RenderQualitySettings{});
+        authored.ApplyToRuntime(m_RenderSystem, pp);
+        return;
+    }
+    m_QualityPreviewAuthored = authored;
+    m_QualityPreviewQuality = m_SceneManager.GetRenderQuality();
+    m_QualityPreviewQuality.enabled = true;   // previewing a tier asks for its clamps
+    m_RenderSystem->SetRenderQuality(m_QualityPreviewQuality);
+    m_RenderSystem->SetActiveQualityTier(static_cast<Renderer::QualityTier>(tier));
+    authored.ApplyToRuntime(m_RenderSystem, pp);   // clamped on the way in
 }
 
 } // namespace Editor
