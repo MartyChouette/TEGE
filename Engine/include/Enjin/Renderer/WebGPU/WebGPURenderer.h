@@ -112,6 +112,9 @@ public:
     WebGPUTextureHandle CreateTexture(u32 width, u32 height, WGPUTextureFormat format,
                                       WGPUTextureUsage usage, const void* pixelData = nullptr);
     WebGPUTextureHandle CreateCubemapTexture(u32 size, WGPUTextureFormat format, WGPUTextureUsage usage);
+    // RGBA8 colour cubemap, faces in +X -X +Y -Y +Z -Z order, each size*size*4
+    // bytes, with a linear clamped sampler. For a skybox.
+    WebGPUTextureHandle CreateColorCubemap(u32 size, const u8* const faces[6]);
     WGPUTextureView CreateCubeFaceView(WGPUTexture texture, WGPUTextureFormat format, u32 faceIndex);
     void UploadTexture(const WebGPUTextureHandle& texture, const void* data, u32 width, u32 height);
     void DestroyTexture(WebGPUTextureHandle& texture);

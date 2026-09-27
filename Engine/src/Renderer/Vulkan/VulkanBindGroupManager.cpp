@@ -51,6 +51,7 @@ VkDescriptorType VulkanBindGroupManager::TranslateBindingType(GPUBindingType typ
         // missing, so it fell to the uniform-buffer fallback below and the point
         // shadow cubemap's binding was declared as the wrong descriptor type.
         case GPUBindingType::DepthTextureCube:      return VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+        case GPUBindingType::SampledTextureCube:    return VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
     }
     return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 }

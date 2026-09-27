@@ -2020,6 +2020,9 @@ ENJIN_WEB_LIGHTING_WGSL
 R"(
 @group(0) @binding(0) var<uniform> viewProj: ViewProjection;
 @group(0) @binding(1) var<uniform> lighting: LightingUBO;
+// Cubemap sky (lighting.skyMode.x == 1). A 1x1 white cube when none loaded.
+@group(1) @binding(0) var skyCube: texture_cube<f32>;
+@group(1) @binding(1) var skyCubeSmp: sampler;
 
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
@@ -2106,6 +2109,13 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         sky = mix(horizon, zenith, (t - 0.5) / 0.5);
     } else {
         sky = mix(horizon, ground, (0.5 - t) / 0.5);
+    }
+    // A Cubemap sky replaces the gradient; the sun, clouds and haze below
+    // still composite over it, as they do over any sky type on desktop.
+    // Sampled unconditionally: textureSample needs uniform control flow.
+    let cubeSky = textureSample(skyCube, skyCubeSmp, worldDir).rgb;
+    if (lighting.skyMode.x > 0.5) {
+        sky = cubeSky;
     }
 
     if (configured) {

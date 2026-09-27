@@ -624,6 +624,55 @@ WebGPUTextureHandle WebGPURenderer::CreateCubemapTexture(u32 size, WGPUTextureFo
     return handle;
 }
 
+WebGPUTextureHandle WebGPURenderer::CreateColorCubemap(u32 size, const u8* const faces[6]) {
+    WebGPUTextureHandle handle;
+    handle.width = size;
+    handle.height = size;
+    handle.format = WGPUTextureFormat_RGBA8Unorm;
+
+    WGPUTextureDescriptor texDesc = {};
+    texDesc.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst;
+    texDesc.dimension = WGPUTextureDimension_2D;
+    texDesc.size = { size, size, 6 };
+    texDesc.format = handle.format;
+    texDesc.mipLevelCount = 1;
+    texDesc.sampleCount = 1;
+    handle.texture = wgpuDeviceCreateTexture(m_Device, &texDesc);
+    if (!handle.texture) return handle;
+
+    for (u32 f = 0; f < 6; ++f) {
+        if (!faces[f]) continue;
+        WGPUTexelCopyTextureInfo dst = {};
+        dst.texture = handle.texture;
+        dst.mipLevel = 0;
+        dst.origin = { 0, 0, f };
+        dst.aspect = WGPUTextureAspect_All;
+        WGPUTexelCopyBufferLayout layout = {};
+        layout.bytesPerRow = size * 4;
+        layout.rowsPerImage = size;
+        WGPUExtent3D extent = { size, size, 1 };
+        wgpuQueueWriteTexture(m_Queue, &dst, faces[f], static_cast<size_t>(size) * size * 4, &layout, &extent);
+    }
+
+    WGPUTextureViewDescriptor viewDesc = {};
+    viewDesc.format = handle.format;
+    viewDesc.dimension = WGPUTextureViewDimension_Cube;
+    viewDesc.mipLevelCount = 1;
+    viewDesc.arrayLayerCount = 6;
+    handle.view = wgpuTextureCreateView(handle.texture, &viewDesc);
+
+    WGPUSamplerDescriptor samplerDesc = {};
+    samplerDesc.addressModeU = WGPUAddressMode_ClampToEdge;
+    samplerDesc.addressModeV = WGPUAddressMode_ClampToEdge;
+    samplerDesc.addressModeW = WGPUAddressMode_ClampToEdge;
+    samplerDesc.magFilter = WGPUFilterMode_Linear;
+    samplerDesc.minFilter = WGPUFilterMode_Linear;
+    samplerDesc.mipmapFilter = WGPUMipmapFilterMode_Nearest;
+    samplerDesc.maxAnisotropy = 1;
+    handle.sampler = wgpuDeviceCreateSampler(m_Device, &samplerDesc);
+    return handle;
+}
+
 WGPUTextureView WebGPURenderer::CreateCubeFaceView(WGPUTexture texture, WGPUTextureFormat format, u32 faceIndex) {
     WGPUTextureViewDescriptor viewDesc = {};
     viewDesc.format = format;

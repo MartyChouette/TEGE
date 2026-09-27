@@ -52,7 +52,10 @@
     XN(spotCookieRight, 4)        /* 64   xyz = the light's local +X */ \
     /* Baked lightmap strength in x. The atlases are textures on the frame */ \
     /* group; only the dial lives here. */ \
-    X1(lightmapParams)            /* 16 */
+    X1(lightmapParams)            /* 16 */ \
+    /* x = 1 when the scene sky is a Cubemap and its six faces loaded; the */ \
+    /* sky shader then samples the cube instead of the gradient. yzw free. */ \
+    X1(skyMode)                   /* 16 */
 
 // One member of the C++ struct.
 #define ENJIN_WEB_LIGHTING_MEMBER1(name)        WebLightVec4 name;

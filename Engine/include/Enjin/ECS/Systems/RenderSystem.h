@@ -2314,6 +2314,15 @@ private:
     // Procedural sky
     Renderer::GPUShaderHandle m_WebSkyShader;
     Renderer::GPUPipelineHandle m_WebSkyPipeline;
+    // Cubemap sky: group 1 of the sky pipeline. A 1x1 cube until a scene asks
+    // for a Cubemap sky and its faces load (WP-18b).
+    Renderer::GPUBindGroupLayoutHandle m_WebSkyCubeLayout;
+    Renderer::GPUBindGroupHandle m_WebSkyCubeBindGroup;
+    Renderer::GPUTextureHandle m_WebSkyCubeTex;
+    std::string m_WebSkyCubeKey;          // the six paths the current cube was built from
+    bool m_WebSkyCubeLoaded = false;      // a real cube, not the placeholder
+    void EnsureWebSkyCubemap(const Renderer::SkyboxConfig& sky);
+    bool WebReadFileBytes(const std::string& path, std::vector<u8>& out) const;
 
     // Pre-rendered background plate (web). One uniform, a colour texture read
     // with a sampler, and a depth texture read with textureLoad -- see

@@ -1432,6 +1432,8 @@ bool RenderSystem::AllowIKFor(Entity entity) const {
 #include "Enjin/Renderer/WebGPU/WebGPURenderer.h"
 #include "Enjin/Renderer/WebGPU/WebGPURenderEncoder.h"
 #include "Enjin/Renderer/WebGPU/WebGPUTextureManager.h"
+#include "stb_image.h"   // sky cubemap faces (EnsureWebSkyCubemap)
+#include <array>
 #include "Enjin/Renderer/WebGPU/WebGPUPipelineManager.h"
 #include "Enjin/Renderer/WebGPU/WebGPUBufferManager.h"
 #include "Enjin/Renderer/WebGPU/WebGPUBindGroupManager.h"
@@ -1521,7 +1523,7 @@ struct alignas(16) WebLightVec4 { f32 x, y, z, w; };
 struct WebLightingUBO {
     ENJIN_WEB_LIGHTING_FIELDS(ENJIN_WEB_LIGHTING_MEMBER1, ENJIN_WEB_LIGHTING_MEMBERN)
 };
-static_assert(sizeof(WebLightingUBO) == 1008,
+static_assert(sizeof(WebLightingUBO) == 1024,
               "WebLightingUBO changed size. APPEND a row to the list in "
               "WebLightingLayout.h (inserting moves every offset after it), then "
               "move this number. The shaders follow automatically.");
@@ -2665,10 +2667,31 @@ void RenderSystem::Initialize() {
             std::strlen(Renderer::WebShaderData::SKY_WGSL),
             Renderer::GPUShaderStage::Vertex, "Sky");
 
+        // Group 1: the sky cubemap. A 1x1 white cube stands in until a scene's
+        // Cubemap sky loads, so the pipeline always has a valid group to bind.
+        {
+            Renderer::GPUBindGroupLayoutDesc cubeLayoutDesc;
+            cubeLayoutDesc.entries = {
+                {0, Renderer::GPUBindingType::SampledTextureCube, Renderer::GPUShaderStage::Fragment, 0},
+                {1, Renderer::GPUBindingType::Sampler, Renderer::GPUShaderStage::Fragment, 0},
+            };
+            m_WebSkyCubeLayout = bindMgr->CreateBindGroupLayout(cubeLayoutDesc);
+            const u8 white[4] = {255, 255, 255, 255};
+            const u8* faces[6] = {white, white, white, white, white, white};
+            auto* webRendererSky = static_cast<Renderer::WebGPURenderer*>(m_Renderer);
+            auto* webTexMgrSky = static_cast<Renderer::WebGPUTextureManager*>(m_Renderer->GetTextureManager());
+            m_WebSkyCubeTex = webTexMgrSky->RegisterNativeTexture(webRendererSky->CreateColorCubemap(1, faces));
+            Renderer::GPUBindGroupDesc cubeBG;
+            cubeBG.layout = m_WebSkyCubeLayout;
+            cubeBG.entries = {{0, {}, 0, 0, m_WebSkyCubeTex, {}}, {1, {}, 0, 0, {}, m_WebSkyCubeTex}};
+            m_WebSkyCubeBindGroup = bindMgr->CreateBindGroup(cubeBG);
+        }
+
         Renderer::GPURenderPipelineDesc skyPipeDesc;
         skyPipeDesc.vertexShader = m_WebSkyShader;
         skyPipeDesc.fragmentShader = m_WebSkyShader;
-        skyPipeDesc.bindGroupLayouts = {m_WebFrameLayout};  // Reuse frame layout (ViewProj at group 0)
+        // Frame layout at group 0 (ViewProj + Lighting), the cubemap at group 1
+        skyPipeDesc.bindGroupLayouts = {m_WebFrameLayout, m_WebSkyCubeLayout};
         skyPipeDesc.topology = Renderer::GPUPrimitiveTopology::TriangleList;
         skyPipeDesc.cullMode = Renderer::GPUCullMode::None;
         skyPipeDesc.frontFace = Renderer::GPUFrontFace::CCW;
@@ -3087,6 +3110,7 @@ void RenderSystem::Shutdown() {
         if (m_WebFrameLayout.IsValid()) bindMgr->DestroyBindGroupLayout(m_WebFrameLayout);
         if (m_WebObjectLayout.IsValid()) bindMgr->DestroyBindGroupLayout(m_WebObjectLayout);
         if (m_WebTextureLayout.IsValid()) bindMgr->DestroyBindGroupLayout(m_WebTextureLayout);
+        if (m_WebSkyCubeLayout.IsValid()) bindMgr->DestroyBindGroupLayout(m_WebSkyCubeLayout);
     }
 
     // Destroy buffers
@@ -3476,6 +3500,78 @@ Renderer::GPUBindGroupHandle RenderSystem::WebGetOrCreateSpriteBindGroup(const s
     auto bg = bindMgr->CreateBindGroup(d);
     m_WebSpriteTexBindGroups[texturePath] = bg;
     return bg;
+}
+
+bool RenderSystem::WebReadFileBytes(const std::string& path, std::vector<u8>& out) const {
+    out.clear();
+    if (path.empty()) return false;
+    if (m_AssetReader && m_AssetReader->IsOpen() && m_AssetReader->HasFile(path)) {
+        out = m_AssetReader->ReadFile(path);
+        if (!out.empty()) return true;
+    }
+    FILE* f = fopen(path.c_str(), "rb");
+    if (!f) return false;
+    fseek(f, 0, SEEK_END);
+    const long sz = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    if (sz > 0) {
+        out.resize(static_cast<usize>(sz));
+        if (fread(out.data(), 1, out.size(), f) != out.size()) out.clear();
+    }
+    fclose(f);
+    return !out.empty();
+}
+
+// Builds the sky cubemap from the scene's six face paths, once per set of
+// paths. The faces must decode, be square and share one size; anything less
+// leaves the gradient in place and says why once, rather than a half-built cube.
+void RenderSystem::EnsureWebSkyCubemap(const Renderer::SkyboxConfig& sky) {
+    if (sky.type != Renderer::SkyboxType::Cubemap) return;
+    std::string key;
+    for (const auto& p : sky.cubemapPaths) { key += p; key += '|'; }
+    if (key == m_WebSkyCubeKey) return;
+    m_WebSkyCubeKey = key;
+
+    std::vector<u8> bytes;
+    std::array<stbi_uc*, 6> pixels{};
+    int size = 0;
+    bool ok = true;
+    for (int f = 0; f < 6 && ok; ++f) {
+        int w = 0, h = 0, n = 0;
+        if (WebReadFileBytes(sky.cubemapPaths[f], bytes)) {
+            pixels[f] = stbi_load_from_memory(bytes.data(), static_cast<int>(bytes.size()), &w, &h, &n, 4);
+        }
+        if (!pixels[f] || w != h || (size != 0 && w != size)) {
+            ENJIN_LOG_WARN(Renderer, "Sky cubemap: face %d ('%s') is missing, not square or a different size; "
+                           "keeping the gradient", f, sky.cubemapPaths[f].c_str());
+            ok = false;
+        }
+        size = w;
+    }
+    if (ok) {
+        const u8* faces[6];
+        for (int f = 0; f < 6; ++f) faces[f] = pixels[f];
+        auto* webRenderer = static_cast<Renderer::WebGPURenderer*>(m_Renderer);
+        auto* webTexMgr = static_cast<Renderer::WebGPUTextureManager*>(m_Renderer->GetTextureManager());
+        auto* bindMgr = m_Renderer->GetBindGroupManager();
+        const auto cube = webTexMgr->RegisterNativeTexture(
+            webRenderer->CreateColorCubemap(static_cast<u32>(size), faces));
+        Renderer::GPUBindGroupDesc bg;
+        bg.layout = m_WebSkyCubeLayout;
+        bg.entries = {{0, {}, 0, 0, cube, {}}, {1, {}, 0, 0, {}, cube}};
+        const auto group = bindMgr ? bindMgr->CreateBindGroup(bg) : Renderer::GPUBindGroupHandle{};
+        if (group.IsValid()) {
+            // The previous cube and group are still referenced by nothing
+            // recorded yet: this runs while the lighting UBO is filled, before
+            // any pass of this frame is encoded
+            if (m_WebSkyCubeBindGroup.IsValid()) bindMgr->DestroyBindGroup(m_WebSkyCubeBindGroup);
+            if (m_WebSkyCubeTex.IsValid()) webTexMgr->DestroyTexture(m_WebSkyCubeTex);
+            m_WebSkyCubeBindGroup = group;
+            m_WebSkyCubeTex = cube;
+            m_WebSkyCubeLoaded = true;
+        }
+    }
+    for (stbi_uc* p : pixels) if (p) stbi_image_free(p);
 }
 
 Renderer::GPUTextureHandle RenderSystem::WebGetOrLoadTexture(const std::string& path) {
@@ -4254,6 +4350,19 @@ void RenderSystem::Update(f32 deltaTime) {
             lit.skyTop = {sc.topColor.x, sc.topColor.y, sc.topColor.z, configured};
             lit.skyBottom = {sc.bottomColor.x, sc.bottomColor.y, sc.bottomColor.z, 0.0f};
             lit.skyHorizon = {sc.horizonColor.x, sc.horizonColor.y, sc.horizonColor.z, sc.horizonHaze};
+            // Cubemap and SolidColor skies drew the gradient on web (WP-18b).
+            // A solid sky is the gradient with one colour at every stop, which
+            // keeps the sun, clouds and haze compositing over it as desktop's
+            // does; a cubemap is sampled by the sky shader when its faces load.
+            if (sc.type == Renderer::SkyboxType::SolidColor) {
+                const Math::Vector3& c = sc.solidColor;
+                lit.skyTop = {c.x, c.y, c.z, configured};
+                lit.skyBottom = {c.x, c.y, c.z, 0.0f};
+                lit.skyHorizon = {c.x, c.y, c.z, sc.horizonHaze};
+            }
+            EnsureWebSkyCubemap(sc);
+            lit.skyMode = {(sc.type == Renderer::SkyboxType::Cubemap && m_WebSkyCubeLoaded) ? 1.0f : 0.0f,
+                           0.0f, 0.0f, 0.0f};
 
             // Reflection substitute: a scene that wanted ray-traced reflections
             // and never configured a sky has nothing for the environment term to
@@ -6101,6 +6210,7 @@ void RenderSystem::Update(f32 deltaTime) {
         scenePassEncoder && !webPlateDrawn) {
         wgpuRenderPassEncoderSetPipeline(scenePassEncoder, webPipeMgr->GetNativePipeline(m_WebSkyPipeline));
         wgpuRenderPassEncoderSetBindGroup(scenePassEncoder, 0, webBindMgr->GetNativeGroup(m_WebFrameBindGroup), 0, nullptr);
+        wgpuRenderPassEncoderSetBindGroup(scenePassEncoder, 1, webBindMgr->GetNativeGroup(m_WebSkyCubeBindGroup), 0, nullptr);
         wgpuRenderPassEncoderDraw(scenePassEncoder, 3, 1, 0, 0);  // Fullscreen triangle at z=1
     }
 
