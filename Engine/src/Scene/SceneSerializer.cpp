@@ -11007,6 +11007,36 @@ void SceneSerializer::DeserializeEntities(const json& sceneJson, Deserialization
                 ba->targetEntity = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
             }
         }
+
+        // The rest of the entity links a person can now pick in the inspector
+        // (GR-21). None of them were remapped, so any of them pointed at the
+        // wrong entity, or nothing, after a reload of a scene that had ever
+        // deleted anything: saved ids are pre-load ids.
+        auto remap = [&oldToNew](ECS::Entity& ref) {
+            if (ref == 0 || ref == ECS::INVALID_ENTITY) return;
+            auto it = oldToNew.find(SceneRefKey(static_cast<u64>(ref)));
+            ref = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
+        };
+        auto remapPair = [&](auto* joint) { if (joint) { remap(joint->entityA); remap(joint->entityB); } };
+        remapPair(m_World->GetComponent<ECS::DistanceJointComponent>(entity));
+        remapPair(m_World->GetComponent<ECS::HingeJointComponent>(entity));
+        remapPair(m_World->GetComponent<ECS::BallSocketJointComponent>(entity));
+        remapPair(m_World->GetComponent<ECS::SpringJointComponent>(entity));
+        remapPair(m_World->GetComponent<ECS::FixedJointComponent>(entity));
+        remapPair(m_World->GetComponent<ECS::SliderJointComponent>(entity));
+        if (auto* j2 = m_World->GetComponent<Physics::Joint2DComponent>(entity)) remap(j2->connectedEntity);
+        if (auto* go = m_World->GetComponent<ECS::GameOverComponent>(entity)) remap(go->victoryTriggerEntity);
+        if (auto* wp = m_World->GetComponent<ECS::WaypointComponent>(entity)) remap(wp->nextWaypoint);
+        if (auto* cb = m_World->GetComponent<ECS::Camera2DBoundsComponent>(entity)) remap(cb->followTarget);
+        if (auto* dd = m_World->GetComponent<ECS::DynamicDifficultyComponent>(entity)) remap(dd->playerEntity);
+        if (auto* rg = m_World->GetComponent<ECS::RagdollComponent>(entity)) {
+            for (auto& bj : rg->boneJoints) remap(bj.jointEntity);
+        }
+        if (auto* tm = m_World->GetComponent<ECS::TimerComponent>(entity)) remap(tm->onCompleteNotify);
+        if (auto* tl = m_World->GetComponent<Animation::TimelineComponent>(entity)) {
+            for (auto& track : tl->propertyTracks) remap(track.targetEntity);
+            for (auto& track : tl->animationTracks) remap(track.targetEntity);
+        }
     }
 
     // BREAK ANY PARENT CYCLE BEFORE ANYTHING WALKS IT.

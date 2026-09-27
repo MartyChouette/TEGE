@@ -208,6 +208,43 @@ ENJIN_TEST(SerdesCoverage, SwimTuningSurvivesASave) {
     ENJIN_EXPECT_TRUE(Near(r->cameraCollisionRadius, 0.75f));
 }
 
+ENJIN_TEST(SerdesCoverage, EntityLinksPointAtTheRightEntityAfterAReload) {
+    // Saved ids are pre-load ids. A scene that ever deleted something saves
+    // ids with gaps, and CreateEntity on load hands out different ones, so an
+    // unremapped link comes back pointing at a neighbour. These links became
+    // pickable in the inspector (GR-21) and none of them was remapped.
+    World src;
+    Entity spacer = src.CreateEntity();          // then deleted: leaves a gap
+    Entity a = Base(src);
+    src.AddComponent<NameComponent>(a, NameComponent("A"));
+    Entity b = Base(src);
+    src.AddComponent<NameComponent>(b, NameComponent("B"));
+    WaypointComponent wp;
+    wp.nextWaypoint = b;
+    src.AddComponent<WaypointComponent>(a, wp);
+    GameOverComponent go;
+    go.victoryTriggerEntity = b;
+    src.AddComponent<GameOverComponent>(a, go);
+    TimerComponent tm;
+    tm.onCompleteNotify = b;
+    src.AddComponent<TimerComponent>(a, tm);
+    src.DestroyEntity(spacer);
+    src.Update(0.0f);                            // flush the deferred destroy
+
+    Scene::SceneSerializer out(&src);
+    const std::string text = out.SaveToString();
+
+    World dst;
+    Scene::SceneSerializer in(&dst);
+    in.LoadFromString(text);
+    Entity la = dst.FindEntityByName("A");
+    Entity lb = dst.FindEntityByName("B");
+    ENJIN_ASSERT_TRUE(la != INVALID_ENTITY && lb != INVALID_ENTITY);
+    ENJIN_EXPECT_EQ(dst.GetComponent<WaypointComponent>(la)->nextWaypoint, lb);
+    ENJIN_EXPECT_EQ(dst.GetComponent<GameOverComponent>(la)->victoryTriggerEntity, lb);
+    ENJIN_EXPECT_EQ(dst.GetComponent<TimerComponent>(la)->onCompleteNotify, lb);
+}
+
 ENJIN_TEST(SerdesCoverage, ARetiredCineComponentIsCarriedOntoCameraAndLens) {
     // Cine folded into the camera (SD-27): an old scene's values land on the
     // camera's field of view and a Lens, with depth of field left off
