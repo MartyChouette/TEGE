@@ -68,6 +68,9 @@ public:
     // Fullscreen toggle at runtime
     virtual void SetFullscreen(bool fullscreen) = 0;
     virtual bool IsFullscreen() const = 0;
+    // The window's size when windowed. In fullscreen it is remembered and used
+    // on the way out. The Options Resolution control had nothing to call.
+    virtual void SetWindowedSize(u32 width, u32 height) { (void)width; (void)height; }
 
     // Block until an event occurs (for use when minimized to avoid busy-spin)
     virtual void WaitEvents() = 0;

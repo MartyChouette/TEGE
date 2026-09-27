@@ -191,6 +191,16 @@ public:
         return m_Window && (glfwGetWindowMonitor(m_Window) != nullptr);
     }
 
+    void SetWindowedSize(u32 width, u32 height) override {
+        if (!m_Window || width == 0 || height == 0) return;
+        if (glfwGetWindowMonitor(m_Window) != nullptr) {
+            m_WindowedW = static_cast<int>(width);
+            m_WindowedH = static_cast<int>(height);
+            return;
+        }
+        glfwSetWindowSize(m_Window, static_cast<int>(width), static_cast<int>(height));
+    }
+
     void SetIcon(const char* iconPath) override {
         if (!m_Window || !iconPath) return;
         int w = 0, h = 0, ch = 0;

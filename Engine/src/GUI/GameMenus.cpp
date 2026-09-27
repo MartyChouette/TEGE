@@ -1,3 +1,4 @@
+#include <nlohmann/json.hpp>
 #include "Enjin/GUI/GameMenus.h"
 #include "Enjin/GUI/Localization.h"
 #include "Enjin/Platform/Input.h"
@@ -111,6 +112,59 @@ void GameMenuSystem::ShowScreen(MenuScreen screen) {
     }
 
     m_CurrentScreen = screen;
+}
+
+std::string GameSettingsToJson(const GraphicsSettings& g, const AudioSettings& a) {
+    nlohmann::json j;
+    j["resolutionWidth"] = g.resolutionWidth;
+    j["resolutionHeight"] = g.resolutionHeight;
+    j["fullscreen"] = g.fullscreen;
+    j["vsync"] = g.vsync;
+    j["qualityPreset"] = g.qualityPreset;
+    j["renderScale"] = g.renderScale;
+    j["fieldOfView"] = g.fieldOfView;
+    j["bloom"] = g.bloom;
+    j["fxaa"] = g.fxaa;
+    j["shadows"] = g.shadows;
+    j["shadowQuality"] = g.shadowQuality;
+    j["masterVolume"] = a.masterVolume;
+    j["musicVolume"] = a.musicVolume;
+    j["sfxVolume"] = a.sfxVolume;
+    j["voiceVolume"] = a.voiceVolume;
+    j["masterMute"] = a.masterMute;
+    j["musicMute"] = a.musicMute;
+    j["sfxMute"] = a.sfxMute;
+    j["voiceMute"] = a.voiceMute;
+    return j.dump(2);
+}
+
+bool GameSettingsFromJson(const std::string& json, GraphicsSettings& g, AudioSettings& a) {
+    try {
+        const nlohmann::json j = nlohmann::json::parse(json);
+        if (!j.is_object()) return false;
+        g.resolutionWidth = j.value("resolutionWidth", g.resolutionWidth);
+        g.resolutionHeight = j.value("resolutionHeight", g.resolutionHeight);
+        g.fullscreen = j.value("fullscreen", g.fullscreen);
+        g.vsync = j.value("vsync", g.vsync);
+        g.qualityPreset = std::min(j.value("qualityPreset", g.qualityPreset), 3u);
+        g.renderScale = std::clamp(j.value("renderScale", g.renderScale), 0.5f, 1.0f);
+        g.fieldOfView = std::clamp(j.value("fieldOfView", g.fieldOfView), 40.0f, 120.0f);
+        g.bloom = j.value("bloom", g.bloom);
+        g.fxaa = j.value("fxaa", g.fxaa);
+        g.shadows = j.value("shadows", g.shadows);
+        g.shadowQuality = std::min(j.value("shadowQuality", g.shadowQuality), 3u);
+        a.masterVolume = std::clamp(j.value("masterVolume", a.masterVolume), 0.0f, 1.0f);
+        a.musicVolume = std::clamp(j.value("musicVolume", a.musicVolume), 0.0f, 1.0f);
+        a.sfxVolume = std::clamp(j.value("sfxVolume", a.sfxVolume), 0.0f, 1.0f);
+        a.voiceVolume = std::clamp(j.value("voiceVolume", a.voiceVolume), 0.0f, 1.0f);
+        a.masterMute = j.value("masterMute", a.masterMute);
+        a.musicMute = j.value("musicMute", a.musicMute);
+        a.sfxMute = j.value("sfxMute", a.sfxMute);
+        a.voiceMute = j.value("voiceMute", a.voiceMute);
+        return true;
+    } catch (...) {
+        return false;
+    }
 }
 
 void GameMenuSystem::HideAll() {
@@ -576,12 +630,16 @@ void GameMenuSystem::RenderGraphics(f32 w, f32 h) {
     // Field of View
     ImGui::SliderFloat("Field of View", &m_Graphics.fieldOfView, 40.0f, 120.0f, "%.0f");
 
-    // Quality preset
+    // Quality preset. Not beside the project's quality tier: that is the
+    // Quality control above, and two quality menus on one tab disagreed about
+    // what "High" meant (IN-18).
+    const bool tierShown = m_RenderQuality && m_ActiveQualityTier &&
+                           m_RenderQuality->enabled && m_RenderQuality->playerCanChange;
     static const char* qualityLabels[] = { "Low", "Medium", "High", "Ultra" };
     i32 quality = static_cast<i32>(m_Graphics.qualityPreset);
     if (quality < 0) quality = 0;
     if (quality > 3) quality = 3;
-    if (ImGui::Combo("Quality Preset", &quality, qualityLabels, 4)) {
+    if (!tierShown && ImGui::Combo("Quality Preset", &quality, qualityLabels, 4)) {
         m_Graphics.qualityPreset = static_cast<u32>(quality);
         // Apply preset defaults
         switch (m_Graphics.qualityPreset) {

@@ -11,6 +11,7 @@
 #include "EnjinTest.h"
 #include "Enjin/GUI/UITemplates.h"
 #include "Enjin/GUI/ControlsScreen.h"
+#include "Enjin/GUI/GameMenus.h"
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/GUI/UISystem.h"
 #include "Enjin/ECS/World.h"
@@ -514,6 +515,36 @@ ENJIN_TEST(ControlsMenu, AnImpossibleBindingCodeIsRefusedRatherThanStored) {
     for (const auto& b : cfg.bindings) {
         ENJIN_EXPECT_TRUE(b.code != 656);
     }
+}
+
+// IN-18: graphics and audio options were applied on Back and lost at exit.
+// Both players now save them through one serializer.
+ENJIN_TEST(GameSettings, RoundTripAndOlderFiles) {
+    GraphicsSettings g;
+    AudioSettings a;
+    g.fullscreen = true;
+    g.renderScale = 0.75f;
+    g.resolutionWidth = 2560;
+    a.musicVolume = 0.25f;
+    a.sfxMute = true;
+
+    GraphicsSettings g2;
+    AudioSettings a2;
+    ENJIN_ASSERT_TRUE(GameSettingsFromJson(GameSettingsToJson(g, a), g2, a2));
+    ENJIN_EXPECT_TRUE(g2.fullscreen);
+    ENJIN_EXPECT_FLOAT_NEAR(g2.renderScale, 0.75f, 1e-6f);
+    ENJIN_EXPECT_EQ(g2.resolutionWidth, 2560u);
+    ENJIN_EXPECT_FLOAT_NEAR(a2.musicVolume, 0.25f, 1e-6f);
+    ENJIN_EXPECT_TRUE(a2.sfxMute);
+
+    // A file without a key leaves that value alone, and silly values are clamped
+    GraphicsSettings g3;
+    AudioSettings a3;
+    a3.voiceVolume = 0.4f;
+    ENJIN_ASSERT_TRUE(GameSettingsFromJson("{\"renderScale\":9.0}", g3, a3));
+    ENJIN_EXPECT_FLOAT_NEAR(g3.renderScale, 1.0f, 1e-6f);
+    ENJIN_EXPECT_FLOAT_NEAR(a3.voiceVolume, 0.4f, 1e-6f);
+    ENJIN_EXPECT_FALSE(GameSettingsFromJson("not json", g3, a3));
 }
 
 ENJIN_TEST_MAIN()

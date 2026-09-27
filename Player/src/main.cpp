@@ -503,6 +503,9 @@ public:
             }
             if (m_RenderSystem) gfx.shadows = m_RenderSystem->IsShadowsEnabled();
             audio.masterVolume = m_AudioEngine.GetMasterVolume();
+            // Fullscreen as it is, or Back after visiting Options dropped a
+            // fullscreen game to windowed (IN-18)
+            if (GetWindow()) gfx.fullscreen = GetWindow()->IsFullscreen();
         });
 
         // Accessibility tab: the menu edits the live settings struct in place;
@@ -542,10 +545,8 @@ public:
         // Some changes (VSync, fullscreen) must be deferred — they recreate the
         // swapchain/window, which is unsafe mid-frame. Store pending changes and
         // apply them at the start of the next Update().
-        m_GameMenu.SetSettingsCallback([this](const Enjin::GUI::GraphicsSettings& gfx,
-                                              const Enjin::GUI::AudioSettings& audio) {
-            // Persist any Controls-tab rebinds along with the settings exit
-            SaveInputBindings();
+        m_ApplyGameSettings = [this](const Enjin::GUI::GraphicsSettings& gfx,
+                                     const Enjin::GUI::AudioSettings& audio) {
             // --- Audio (safe to apply immediately) ---
             m_AudioEngine.SetMasterVolume(audio.masterMute ? 0.0f : audio.masterVolume);
             m_AudioEngine.SetChannelVolume(Enjin::Audio::AudioChannel::Music, audio.musicMute ? 0.0f : audio.musicVolume);
@@ -557,9 +558,11 @@ public:
             // --- VSync (deferred — recreates swapchain) ---
             m_Renderer->RequestVSyncChange(gfx.vsync);
 
-            // --- Fullscreen (deferred to next Update) ---
+            // --- Fullscreen and windowed size (deferred to next Update) ---
             m_PendingFullscreen = gfx.fullscreen;
             m_FullscreenChangeRequested = true;
+            m_PendingWindowW = gfx.resolutionWidth;
+            m_PendingWindowH = gfx.resolutionHeight;
 
             // --- Shadows (safe — just flags) ---
             m_RenderSystem->SetShadowsEnabled(gfx.shadows);
@@ -583,6 +586,12 @@ public:
 
             ENJIN_LOG_INFO(Player, "Settings applied: vsync=%d fullscreen=%d fov=%.0f shadows=%d bloom=%d fxaa=%d",
                 (int)gfx.vsync, (int)gfx.fullscreen, gfx.fieldOfView, (int)gfx.shadows, (int)gfx.bloom, (int)gfx.fxaa);
+        };
+        m_GameMenu.SetSettingsCallback([this](const Enjin::GUI::GraphicsSettings& gfx,
+                                              const Enjin::GUI::AudioSettings& audio) {
+            SaveInputBindings();   // any Controls rebinds, with the settings exit
+            m_ApplyGameSettings(gfx, audio);
+            SaveGameSettings(gfx, audio);
         });
 
         // Initialize scripting engine. Anchor all roots to the exe directory —
@@ -1258,7 +1267,17 @@ public:
         // Apply deferred fullscreen change (safe between frames)
         if (m_FullscreenChangeRequested) {
             m_FullscreenChangeRequested = false;
-            if (GetWindow()) GetWindow()->SetFullscreen(m_PendingFullscreen);
+            if (GetWindow()) {
+                // The Resolution option: the windowed size, or the size to come
+                // back to from fullscreen. It was chosen and never applied.
+                GetWindow()->SetWindowedSize(m_PendingWindowW, m_PendingWindowH);
+                GetWindow()->SetFullscreen(m_PendingFullscreen);
+            }
+        }
+        // The saved options, once the renderer they apply to exists
+        if (m_ApplySavedSettingsPending && m_RenderSystem && m_ApplyGameSettings) {
+            m_ApplySavedSettingsPending = false;
+            m_ApplyGameSettings(m_GameMenu.GetGraphicsSettings(), m_GameMenu.GetAudioSettings());
         }
 
         // Tilde console toggle (Quake-style)
@@ -3480,6 +3499,8 @@ private:
 
         // Load accessibility settings from accessibility.json next to executable
         LoadAccessibilitySettings();
+        // And the graphics and audio options (settings.json beside it)
+        LoadGameSettings();
 
         // Wire announcer to UISystem for screen reader support (Task #36)
         m_UISystem.SetAnnouncerCallback([this](const std::string& text) {
@@ -4265,6 +4286,29 @@ private:
         }
     }
 
+    // Graphics and audio options, beside the exe like accessibility.json. They
+    // were applied on Back and forgotten at exit (IN-18).
+    void SaveGameSettings(const Enjin::GUI::GraphicsSettings& gfx, const Enjin::GUI::AudioSettings& audio) {
+        const std::string path = (fs::path(Enjin::Platform::GetExecutableDirectory()) / "settings.json").string();
+        std::ofstream file(path);
+        if (!file) {
+            ENJIN_LOG_WARN(Player, "Could not write %s", path.c_str());
+            return;
+        }
+        file << Enjin::GUI::GameSettingsToJson(gfx, audio);
+    }
+
+    void LoadGameSettings() {
+        const std::string path = (fs::path(Enjin::Platform::GetExecutableDirectory()) / "settings.json").string();
+        std::ifstream file(path);
+        if (!file) return;
+        const std::string json((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        if (Enjin::GUI::GameSettingsFromJson(json, m_GameMenu.GetGraphicsSettings(), m_GameMenu.GetAudioSettings())) {
+            m_ApplySavedSettingsPending = true;
+            ENJIN_LOG_INFO(Player, "Loaded graphics and audio settings from %s", path.c_str());
+        }
+    }
+
     void SaveAccessibilitySettings() {
         std::string exeDir = Enjin::Platform::GetExecutableDirectory();
         std::string settingsPath = (fs::path(exeDir) / "accessibility.json").string();
@@ -4304,6 +4348,9 @@ private:
     Enjin::ECS::Entity m_PauseMenuEntity = Enjin::ECS::INVALID_ENTITY;
     bool m_FullscreenChangeRequested = false;
     bool m_PendingFullscreen = false;
+    Enjin::u32 m_PendingWindowW = 0, m_PendingWindowH = 0;
+    bool m_ApplySavedSettingsPending = false;
+    std::function<void(const Enjin::GUI::GraphicsSettings&, const Enjin::GUI::AudioSettings&)> m_ApplyGameSettings;
     Enjin::f32 m_PendingFOV = 0.0f;  // 0 = use camera component's FOV
     std::vector<Enjin::ECS::Entity> m_DeferredDestroys;
 

@@ -724,6 +724,7 @@ public:
         // fetch) and push them into every consumer.
         LoadWebAccessibilitySettings();
         LoadWebInputBindings();
+        LoadWebGameSettings();
         ApplyWebAccessibilitySettings();
 
         // Audio-visual sound indicators: ImGui draw lists don't exist on web,
@@ -1601,6 +1602,11 @@ public:
         // capture rather than leaving the screen
         m_ControlsScreen.Attach(m_World.get(), &m_UISystem, &m_InputMap);
         m_ControlsScreen.Update(deltaTime);
+        if (m_ApplySavedGameSettings && m_RenderSystem) {
+            m_ApplySavedGameSettings = false;
+            m_RenderSystem->ApplyRenderScale(m_OptionsRenderScale);
+            m_RenderSystem->SetShadowsEnabled(m_SavedShadows);
+        }
         if (m_ControlsScreen.IsCapturing()) {
             // this frame's input belongs to the capture
         } else if (!m_AtMainMenu && !warningOpen && WebPauseOrBackPressed()) {
@@ -2352,6 +2358,7 @@ public:
                         SaveWebAccessibilitySettings();
                         m_AccessibilityDirty = false;
                     }
+                    SaveWebGameSettings();   // volumes, FOV, render scale, shadows (IN-18)
                     CloseOptionsMenu(true);
                 });
             m_UISystem.GetEventBus().Listen("options_fov",
@@ -2383,8 +2390,9 @@ public:
                     // Slider fraction 0..1 -> 0.5..1.0. Through the one shared
                     // apply so this menu, the desktop menu and the ?scale= URL
                     // all mean the same thing.
+                    m_OptionsRenderScale = 0.5f + e.floatValue * 0.5f;
                     if (m_RenderSystem) {
-                        m_RenderSystem->ApplyRenderScale(0.5f + e.floatValue * 0.5f);
+                        m_RenderSystem->ApplyRenderScale(m_OptionsRenderScale);
                     }
                 });
             m_UISystem.GetEventBus().Listen("options_shadows",
@@ -3153,6 +3161,51 @@ private:
         }
     }
 
+    // The Options canvas's graphics and audio values, through the same
+    // serializer the desktop player uses. They applied live and were gone on
+    // the next visit (IN-18).
+    void SaveWebGameSettings() {
+        Enjin::GUI::GraphicsSettings g;
+        Enjin::GUI::AudioSettings a;
+        g.fieldOfView = m_OptionsFov > 0.0f ? m_OptionsFov : g.fieldOfView;
+        g.renderScale = m_OptionsRenderScale;
+        if (m_RenderSystem) g.shadows = m_RenderSystem->IsShadowsEnabled();
+        a.masterVolume = m_AudioEngine.GetMasterVolume();
+        a.musicVolume = m_AudioEngine.GetChannelVolume(Enjin::Audio::AudioChannel::Music);
+        a.sfxVolume = m_AudioEngine.GetChannelVolume(Enjin::Audio::AudioChannel::SFX);
+        std::string json = Enjin::GUI::GameSettingsToJson(g, a);
+        if (m_OptionsFov <= 0.0f) {
+            // The player never set a FOV: save none, or the authored camera's
+            // own would be replaced by the default on every boot
+            try {
+                auto j = nlohmann::json::parse(json);
+                j.erase("fieldOfView");
+                json = j.dump(2);
+            } catch (...) {}
+        }
+        {
+            std::ofstream f("/saves/settings.json");
+            f << json;
+        }
+        EM_ASM({ FS.syncfs(false, function(err) { if (err) console.warn('[SETTINGS] persist error', err); }); });
+    }
+
+    void LoadWebGameSettings() {
+        std::ifstream f("/saves/settings.json");
+        if (!f) return;
+        const std::string json((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+        Enjin::GUI::GraphicsSettings g;
+        Enjin::GUI::AudioSettings a;
+        if (!Enjin::GUI::GameSettingsFromJson(json, g, a)) return;
+        if (json.find("\"fieldOfView\"") != std::string::npos) m_OptionsFov = g.fieldOfView;
+        m_OptionsRenderScale = g.renderScale;
+        m_SavedShadows = g.shadows;
+        m_AudioEngine.SetMasterVolume(a.masterVolume);
+        m_AudioEngine.SetChannelVolume(Enjin::Audio::AudioChannel::Music, a.musicVolume);
+        m_AudioEngine.SetChannelVolume(Enjin::Audio::AudioChannel::SFX, a.sfxVolume);
+        m_ApplySavedGameSettings = true;   // the renderer may not exist yet
+    }
+
     void SaveWebAccessibilitySettings() {
         try {
             // The one serializer: this list had drifted from the struct and
@@ -3516,6 +3569,9 @@ private:
     // Set by any options-menu change; consumed by the one save on menu close.
     bool m_AccessibilityDirty = false;
     Enjin::f32 m_OptionsFov = 0.0f;   // options menu override; 0 = use the authored camera
+    Enjin::f32 m_OptionsRenderScale = 1.0f;
+    bool m_ApplySavedGameSettings = false;   // render scale + shadows, once the renderer exists
+    bool m_SavedShadows = true;
     Enjin::f32 m_ColorblindPreviewTimer = 0.0f;   // seconds of split-preview left after a slider change
     // One true UI source: the same UISystem that renders UICanvasComponent on
     // desktop renders it on web via ImGui's WebGPU backend (UI unification Phase 1).

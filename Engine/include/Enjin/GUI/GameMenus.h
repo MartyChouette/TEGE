@@ -63,6 +63,11 @@ struct AudioSettings {
     bool voiceMute = false;
 };
 
+// Graphics and audio options as saved by both players (IN-18). A missing key
+// keeps its current value, so an older file still loads.
+ENJIN_API std::string GameSettingsToJson(const GraphicsSettings& gfx, const AudioSettings& audio);
+ENJIN_API bool GameSettingsFromJson(const std::string& json, GraphicsSettings& gfx, AudioSettings& audio);
+
 class ENJIN_API GameMenuSystem {
 public:
     using MenuCallback = std::function<void(const std::string&)>;
