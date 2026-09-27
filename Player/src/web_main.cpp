@@ -57,6 +57,7 @@
 #include "Enjin/GUI/UITemplates.h"
 #include "Enjin/GUI/GameMenus.h"
 #include "Enjin/GUI/EngineSplash.h"
+#include "Enjin/ECS/Components/ArtStyle.h"
 #include "Enjin/GUI/EmbeddedFonts.h"    // web ImGui font (parity with desktop ImGuiLayer)
 #include "Enjin/GUI/EmbeddedPlayfair.h"
 #include "Enjin/Renderer/WebGPU/WebGPUTypes.h"
@@ -2019,11 +2020,17 @@ public:
         // this call existed; the comment where they should have been consumed said
         // the post-process pass "queries ArtStyleComponent on the camera entity",
         // and no such query was ever written.
-        // Web has no PostProcessing object (the pointer is #if'd out of the
-        // registry), so the scene-wide half of the art style goes through the
-        // render system and the post-process half is skipped. ApplyCameraArtStyle
-        // takes a nullable pp for exactly this case.
-        Enjin::Renderer::ApplyCameraArtStyle(m_World.get(), m_RenderSystem, nullptr);
+        // Web has no PostProcessing object, but it has m_WebPostProcessBase,
+        // the settings its post pass is pushed from. The camera's style used to
+        // be handed nullptr here, so its post-process half (grain, CRT, VHS,
+        // palettes, outlines, stipple) never reached a browser (WP-17). It is
+        // pushed below with the volumes, every frame the style is active.
+        Enjin::Renderer::ApplyCameraArtStyle(m_World.get(), m_RenderSystem, &m_WebPostProcessBase);
+        {
+            const Enjin::ECS::Entity cam = Enjin::ECS::CameraManager::GetActiveCamera(m_World.get());
+            const auto* art = cam ? m_World->GetComponent<Enjin::ECS::ArtStyleComponent>(cam) : nullptr;
+            m_WebCameraStyleActive = art && art->style != Enjin::ECS::ArtStyleType::Inherit;
+        }
         m_TweenSystem.Update(m_World.get(), deltaTime);
         m_SwarmSystem.Update(m_World.get(), deltaTime);
         // Brush solids: a loaded scene stores brushes, not geometry, so the
@@ -2085,6 +2092,19 @@ public:
             // The camera's lens rides the same push; its frame without a lens
             // pushes the base back, as a volume's does
             if (Enjin::Renderer::ApplyCameraLens(m_World.get(), blended)) contributing = true;
+            if (m_WebCameraStyleActive) contributing = true;
+            // A camera with Enable Post Processing off gets the plain frame, as
+            // on desktop, where the post pass is skipped for it. Web cannot skip
+            // its post pass (it is the present), so it runs with nothing on.
+            {
+                const auto gameCam = Enjin::ECS::ResolveGameCamera(m_World.get());
+                const auto* cc = gameCam != Enjin::ECS::INVALID_ENTITY
+                    ? m_World->GetComponent<Enjin::ECS::CameraComponent>(gameCam) : nullptr;
+                if (cc && !cc->enablePostProcessing) {
+                    blended = Enjin::Renderer::PostProcessSettings{};
+                    contributing = true;
+                }
+            }
             if (contributing || m_WebPostProcessVolumeActive) {
                 PushWebPostProcessScalars(blended);
             }
@@ -3695,6 +3715,7 @@ private:
     // m_SceneRenderSettings by ApplyToRuntime. Volumes blend on top of this
     // each frame; it is never itself written by a blend.
     Enjin::Renderer::PostProcessSettings m_WebPostProcessBase;
+    bool m_WebCameraStyleActive = false;   // the active camera carries an ArtStyleComponent
     // Whether a volume contributed last frame, so the frame it stops
     // contributing still pushes once and restores the scene's own grade.
     bool m_WebPostProcessVolumeActive = false;
