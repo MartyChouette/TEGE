@@ -167,6 +167,9 @@ public:
     void SetCallback(MenuCallback cb);
     const MenuCallback& GetCallback() const { return m_Callback; }
     void SetGameTitle(const std::string& title);
+    // Whether the title screen offers Quit. A browser has nothing to quit to,
+    // so the web player turns it off rather than showing a dead button.
+    void SetQuitAvailable(bool available) { m_QuitAvailable = available; }
 
     // Game over screen
     // NO CALLERS as of 2026-09-19, and that is correct rather than an oversight.
@@ -219,6 +222,7 @@ private:
     AccessibilityChangedCallback m_AccessibilityChanged;
     std::function<void()> m_BindingsChanged;
     std::string m_GameTitle = "My Game";
+    bool m_QuitAvailable = true;
     i32 m_RebindingAction = -1;
     // Where Back goes from Options / How to Play. Defaults to None, NOT
     // PauseMenu: the pause root is UITemplates::CreatePauseMenu() spawned as a

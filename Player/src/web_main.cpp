@@ -55,6 +55,7 @@
 #include "Enjin/ECS/Systems/GameplaySystem.h"
 #include "Enjin/GUI/UISystem.h"
 #include "Enjin/GUI/UITemplates.h"
+#include "Enjin/GUI/GameMenus.h"
 #include "Enjin/GUI/EmbeddedFonts.h"    // web ImGui font (parity with desktop ImGuiLayer)
 #include "Enjin/GUI/EmbeddedPlayfair.h"
 #include "Enjin/Renderer/WebGPU/WebGPUTypes.h"
@@ -1311,12 +1312,133 @@ public:
             m_World->DestroyEntity(m_OptionsMenuEntity);
         }
         m_OptionsMenuEntity = Enjin::ECS::INVALID_ENTITY;
+        if (reopenPause && m_TitleUnderOptions) {
+            m_TitleUnderOptions = false;
+            m_GameMenu.ShowScreen(Enjin::GUI::MenuScreen::MainMenu);
+        }
         if (reopenPause && m_Paused) {
             m_PauseMenuEntity = m_World->CreateEntity();
             m_World->AddComponent<Enjin::ECS::NameComponent>(m_PauseMenuEntity, "Pause Menu UI");
             m_World->AddComponent<Enjin::GUI::UICanvasComponent>(m_PauseMenuEntity,
                 Enjin::GUI::UITemplates::CreatePauseMenu());
         }
+    }
+
+    // ── Title, new game, continue, play again (WP-8) ────────────────────────
+    // The title is the scene's authored MainMenu canvas when it has one, and
+    // the built-in title otherwise -- never both, as on desktop.
+    void ShowWebTitle() {
+        m_AtMainMenu = true;
+        Enjin::Input::SetMouseCaptured(false);
+        for (auto e : m_World->GetEntitiesWithComponent<Enjin::GUI::UICanvasComponent>()) {
+            auto* c = m_World->GetComponent<Enjin::GUI::UICanvasComponent>(e);
+            if (c && c->canvasName == "MainMenu") {
+                c->visible = true;
+                m_GameMenu.HideAll();
+                return;
+            }
+        }
+        m_GameMenu.ShowScreen(Enjin::GUI::MenuScreen::MainMenu);
+    }
+
+    void HideWebTitle() {
+        m_AtMainMenu = false;
+        for (auto e : m_World->GetEntitiesWithComponent<Enjin::GUI::UICanvasComponent>()) {
+            auto* c = m_World->GetComponent<Enjin::GUI::UICanvasComponent>(e);
+            if (c && c->canvasName == "MainMenu") c->visible = false;
+        }
+        m_GameMenu.HideAll();
+        if (SceneWantsMouseCapture()) Enjin::Input::SetMouseCaptured(true);
+    }
+
+    void QueueWebSceneLoad(const std::string& path, bool startPlaying) {
+        m_PendingWebScene = path;
+        m_PendingStartPlaying = startPlaying;
+    }
+
+    // Taken at the top of Update, the one point with no script on the stack
+    // and nothing recorded yet
+    void TakePendingWebSceneLoad() {
+        if (m_PendingWebScene.empty()) return;
+        const std::string path = m_PendingWebScene;
+        m_PendingWebScene.clear();
+        ClosePauseMenu();
+        CloseOptionsMenu(false);
+        CloseControlsMenu(false);
+        DoWebSceneTransition(path);
+        if (m_PendingSlotLoad >= 0) {
+            if (!m_TieredSaveSystem.LoadFromSlot(static_cast<Enjin::u32>(m_PendingSlotLoad), m_World.get())) {
+                ENJIN_LOG_ERROR(Player, "Slot %d failed to load.", m_PendingSlotLoad);
+            }
+            m_PendingSlotLoad = -1;
+        }
+        if (m_PendingStartPlaying) HideWebTitle();
+        else ShowWebTitle();
+    }
+
+    // New Game is a NEW game: after anything has been played the first scene
+    // loads fresh; on the first press the scene is already pristine.
+    void WebStartNewGame() {
+        if (m_SessionPlayed) QueueWebSceneLoad(m_StartScene, true);
+        else HideWebTitle();
+        m_SessionPlayed = true;
+    }
+
+    // Continue picks up the session in progress after a quit to the title;
+    // from a cold start it loads the most recent readable save, and with none
+    // it starts playing, since an authored button cannot be greyed out
+    void WebContinue() {
+        if (!m_SessionPlayed) {
+            Enjin::i32 best = -1;
+            std::string bestStamp;
+            for (const auto& slot : m_TieredSaveSystem.GetAllSlots()) {
+                if (slot.isEmpty || slot.isCorrupt) continue;
+                if (best < 0 || slot.timestamp > bestStamp) {
+                    best = static_cast<Enjin::i32>(slot.slotIndex);
+                    bestStamp = slot.timestamp;
+                }
+            }
+            if (best >= 0) { WebLoadSlot(best); return; }
+        }
+        HideWebTitle();
+        m_SessionPlayed = true;
+    }
+
+    // A save is a delta over its level, so the level loads first
+    void WebLoadSlot(int slot) {
+        if (slot < 0) return;
+        const auto info = m_TieredSaveSystem.GetSlotInfo(static_cast<Enjin::u32>(slot));
+        if (info.isCorrupt) {
+            ENJIN_LOG_ERROR(Player, "Slot %d cannot be read; refusing to load it.", slot);
+            return;
+        }
+        std::string path = m_CurrentWebScenePath;
+        if (!info.sceneName.empty()) {
+            const auto* entry = m_SceneManager.GetSceneByName(info.sceneName);
+            if (!entry) {
+                ENJIN_LOG_ERROR(Player, "Slot %d names scene '%s', which is not in this build's "
+                                "scene list.", slot, info.sceneName.c_str());
+                return;
+            }
+            path = entry->path;
+        }
+        m_PendingSlotLoad = slot;
+        QueueWebSceneLoad(path, true);
+        m_SessionPlayed = true;
+    }
+
+    // Play Again: the first scene, fresh, straight into play
+    void WebPlayAgain() {
+        QueueWebSceneLoad(m_StartScene, true);
+        m_SessionPlayed = true;
+    }
+
+    // Quit: back to the title. The title lives in the first scene, and so
+    // does the fresh state a later New Game expects
+    void WebReturnToTitle() {
+        ClosePauseMenu();
+        if (m_SessionPlayed && !m_StartScene.empty()) QueueWebSceneLoad(m_StartScene, false);
+        else ShowWebTitle();
     }
 
     void Update(Enjin::f32 deltaTime) {
@@ -1326,13 +1448,15 @@ public:
 
         if (!m_Initialized) return;
         m_LastDeltaTime = deltaTime;
+        TakePendingWebSceneLoad();
 
         // Who owns input this frame. One flag, read by InputActionMap, so
         // gameplay actions go quiet while a menu is up. Matches the desktop
         // player, and is what stops a pause-menu tap also firing in the world.
-        // Held one frame past the dismissal too: the key or click that closed
-        // it is a pressed edge this frame, and it must not also pause or jump
-        const bool warningNow = WebContentWarningOpen();
+        // A content warning or a built-in menu holds the game. Held one frame
+        // past closing too: the key or click that closed it is a pressed edge
+        // this frame, and it must not also pause or jump
+        const bool warningNow = WebContentWarningOpen() || m_GameMenu.IsMenuOpen();
         const bool warningOpen = warningNow || m_WarningOpenLastFrame;
         m_WarningOpenLastFrame = warningNow;
         // Dialogue too, as on desktop: gameplay actions (Jump, Attack, the
@@ -2088,12 +2212,12 @@ public:
                 ENJIN_LOG_ERROR(Player, "ImGui WebGPU backend init failed — game UI disabled");
                 return;
             }
-            // The UICanvas game-over screen's "Play Again" button — on web the
-            // cleanest full restart is a page reload (fresh WASM + scene).
+            // The UICanvas game-over screen's "Play Again": the first scene,
+            // restarted in place and straight into play (Marty, 2026-09-26).
+            // It reloaded the page, which dropped the audio unlock, the
+            // pointer lock and anything a script had not saved.
             m_UISystem.GetEventBus().Listen("gameover_restart",
-                [](const Enjin::GUI::UIEventData&) {
-                    EM_ASM({ location.reload(); });
-                });
+                [this](const Enjin::GUI::UIEventData&) { WebPlayAgain(); });
 
             // Pause menu buttons. Options now opens the built-in options canvas
             // (parity with the PC build); its controls are wired below. Events still
@@ -2306,25 +2430,47 @@ public:
                 [this](const Enjin::GUI::UIEventData&) { m_InputMap.ApplyGamepadOnly(); SaveWebInputBindings(); });
             m_UISystem.GetEventBus().Listen("options_reset_controls",
                 [this](const Enjin::GUI::UIEventData&) { m_InputMap.ResetToDefaults(); SaveWebInputBindings(); });
-            // Authored MainMenu canvas buttons: hide (not destroy -- authored
-            // content) and unfreeze gameplay.
-            auto startGame = [this]() {
-                if (!m_AtMainMenu) return;
-                m_AtMainMenu = false;
-                for (auto e : m_World->GetEntitiesWithComponent<Enjin::GUI::UICanvasComponent>()) {
-                    auto* c = m_World->GetComponent<Enjin::GUI::UICanvasComponent>(e);
-                    if (c && c->canvasName == "MainMenu") c->visible = false;
-                }
-                if (SceneWantsMouseCapture()) Enjin::Input::SetMouseCaptured(true);
-            };
+            // Authored MainMenu canvas buttons, as the desktop player answers
+            // them (WP-8). Options and How to Play had no listener, Continue
+            // was New Game, and Quit reloaded the page -- which on web is also
+            // what every save-less restart looked like.
             m_UISystem.GetEventBus().Listen("menu_newgame",
-                [startGame](const Enjin::GUI::UIEventData&) { startGame(); });
+                [this](const Enjin::GUI::UIEventData&) { WebStartNewGame(); });
             m_UISystem.GetEventBus().Listen("menu_continue",
-                [startGame](const Enjin::GUI::UIEventData&) { startGame(); });
+                [this](const Enjin::GUI::UIEventData&) { WebContinue(); });
+            m_UISystem.GetEventBus().Listen("menu_options",
+                [this](const Enjin::GUI::UIEventData&) { ShowOptionsMenu(); });
+            m_UISystem.GetEventBus().Listen("menu_howtoplay",
+                [this](const Enjin::GUI::UIEventData&) {
+                    m_GameMenu.ShowScreen(Enjin::GUI::MenuScreen::HowToPlay);
+                });
+            // Quit returns to the title screen (Marty, 2026-09-26): a browser
+            // tab has nothing to quit to, and a reload threw the page away
             m_UISystem.GetEventBus().Listen("menu_quit",
-                [](const Enjin::GUI::UIEventData&) { EM_ASM({ location.reload(); }); });
+                [this](const Enjin::GUI::UIEventData&) { WebReturnToTitle(); });
             m_UISystem.GetEventBus().Listen("pause_quit",
-                [](const Enjin::GUI::UIEventData&) { EM_ASM({ location.reload(); }); });
+                [this](const Enjin::GUI::UIEventData&) { WebReturnToTitle(); });
+
+            // The built-in menus. Same actions as desktop's callback; Options
+            // opens web's own options canvas, as the pause menu's does.
+            m_GameMenu.SetInputMap(&m_InputMap);
+            m_GameMenu.SetGameTitle(m_WindowTitle);
+            m_GameMenu.SetQuitAvailable(false);
+            m_GameMenu.SetSaveSlotProvider([this]() { return m_TieredSaveSystem.GetAllSlots(); });
+            m_GameMenu.SetCallback([this](const std::string& action) {
+                if (action == "new_game") WebStartNewGame();
+                else if (action == "continue") WebContinue();
+                else if (action == "load_game") m_GameMenu.ShowScreen(Enjin::GUI::MenuScreen::LoadGame);
+                else if (action.rfind("load_slot:", 0) == 0) WebLoadSlot(std::atoi(action.c_str() + 10));
+                else if (action == "options") {
+                    m_TitleUnderOptions = m_GameMenu.IsMenuOpen();
+                    m_GameMenu.HideAll();
+                    ShowOptionsMenu();
+                }
+                else if (action == "how_to_play") m_GameMenu.ShowScreen(Enjin::GUI::MenuScreen::HowToPlay);
+                else if (action == "quit_to_menu" || action == "game_over_menu") WebReturnToTitle();
+                else if (action == "restart" || action == "game_over_restart") WebPlayAgain();
+            });
 
             // Bridge every UI event into the script event bus so game scripts can
             // react to authored buttons/sliders via Events_Listen("<onClickEvent>", ...).
@@ -2390,6 +2536,10 @@ public:
         m_SubtitleSystem.RenderOverlay(0.0f, 0.0f, w, h);
         m_SaveIndicator.RenderOverlay(0.0f, 0.0f, w, h);
         m_InteractionSystem.RenderOverlay(0.0f, 0.0f, w, h);
+        // Built-in menus over everything else; while one is up the canvases
+        // underneath take no clicks, as on desktop
+        m_UISystem.SetInputEnabled(!m_GameMenu.IsMenuOpen());
+        if (m_GameMenu.IsMenuOpen()) m_GameMenu.Render(static_cast<Enjin::f32>(w), static_cast<Enjin::f32>(h));
         m_DynamicDifficulty.RenderOverlay(0.0f, 0.0f, w, h);
         // Save / load menu -- same draw as desktop. It had no caller on EITHER
         // runtime, because the component it took was a second declaration of
@@ -3278,6 +3428,17 @@ private:
     Enjin::Gameplay::SaveIndicator m_SaveIndicator;
     Enjin::Gameplay::InteractionSystem m_InteractionSystem;
     bool m_WarningOpenLastFrame = false;   // WebContentWarningOpen, previous frame
+    // The built-in menus (title when a game authors none, How to Play, Load
+    // Game), the same GameMenuSystem the desktop player draws (WP-8)
+    Enjin::GUI::GameMenuSystem m_GameMenu;
+    // A scene load asked for by a menu button, taken at the top of Update.
+    // Buttons fire inside the UI update, mid-frame, where a scene swap is not
+    // safe.
+    std::string m_PendingWebScene;
+    bool m_PendingStartPlaying = false;    // after the load: play, or show the title
+    Enjin::i32 m_PendingSlotLoad = -1;     // after the load: apply this save slot
+    bool m_SessionPlayed = false;          // New Game / Continue has been pressed once
+    bool m_TitleUnderOptions = false;      // Options opened from the built-in title
     Enjin::ECS::StateMachineSystem m_StateMachineSystem;
     Enjin::ECS::AISystem m_AISystem;
     Enjin::ECS::DialogueSystem m_DialogueSystem;

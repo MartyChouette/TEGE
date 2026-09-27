@@ -87,7 +87,11 @@ AudioSettings& GameMenuSystem::GetAudioSettings() {
 void GameMenuSystem::ShowScreen(MenuScreen screen) {
     // Track where Options/HowToPlay should return to
     if (screen == MenuScreen::Options || screen == MenuScreen::HowToPlay) {
-        if (m_CurrentScreen == MenuScreen::MainMenu || m_CurrentScreen == MenuScreen::PauseMenu) {
+        // None too: opened over an authored title canvas, Back has to close
+        // the screen and leave that canvas showing, not bring up the built-in
+        // title from some earlier visit
+        if (m_CurrentScreen == MenuScreen::MainMenu || m_CurrentScreen == MenuScreen::PauseMenu ||
+            m_CurrentScreen == MenuScreen::None) {
             m_ReturnScreen = m_CurrentScreen;
         }
     }
@@ -254,7 +258,7 @@ void GameMenuSystem::RenderMainMenu(f32 w, f32 h) {
     CenterButtonEnabled("Load Game", "load_game", haveSaves);
     CenterButton("Options",   "options");
     CenterButton("How to Play", "how_to_play");
-    CenterButton("Quit",      "quit");
+    if (m_QuitAvailable) CenterButton("Quit", "quit");
 
     // Handle options / how-to-play navigation internally as well
     // The callback can decide whether to navigate or the caller can call ShowScreen
