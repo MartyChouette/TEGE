@@ -6358,8 +6358,10 @@ void EditorLayer::SetPanelVisibility(EditorPanel panel, bool visible) {
     if (visible) {
         m_VisiblePanels = m_VisiblePanels | panel;
     } else {
-        m_VisiblePanels = static_cast<EditorPanel>(
-            static_cast<u32>(m_VisiblePanels) & ~static_cast<u32>(panel));
+        // This cleared in u32, which dropped every panel above bit 31 on
+        // any hide. The open Settings window hides four panels every frame,
+        // so Caption Track and Symbol Library could not stay open at all.
+        m_VisiblePanels = WithoutPanel(m_VisiblePanels, panel);
     }
 }
 

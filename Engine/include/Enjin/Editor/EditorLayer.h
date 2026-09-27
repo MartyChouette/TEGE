@@ -172,6 +172,12 @@ inline bool HasPanel(EditorPanel flags, EditorPanel panel) {
     return (static_cast<u64>(flags) & static_cast<u64>(panel)) != 0;
 }
 
+// Clears one panel's bit. In u64: the mask outgrew 32 bits at CaptionTrack,
+// and a clear done in u32 wiped bits 32 and up on every hide of ANY panel.
+inline EditorPanel WithoutPanel(EditorPanel flags, EditorPanel panel) {
+    return static_cast<EditorPanel>(static_cast<u64>(flags) & ~static_cast<u64>(panel));
+}
+
 // Git file status entry
 struct GitFileStatus {
     std::string path;
