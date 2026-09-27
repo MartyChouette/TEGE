@@ -1101,4 +1101,55 @@ ENJIN_TEST(LooseBuildParity, AccessibilityDefaultsAreShipped) {
     fs::remove_all(out, ec);
 }
 
+// EP-19: files the runtime loads that no build packed, and EP-20: a web
+// build with Loose Files shipped no package. Hidden tool folders stay out.
+ENJIN_TEST(BuildPackContents, RuntimeFilesArePackedAndToolFoldersAreNot) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    fs::path root = fs::temp_directory_path() / "enjin_pack_contents_test";
+    fs::remove_all(root, ec);
+    fs::create_directories(root / "scenes", ec);
+    fs::create_directories(root / "prefabs", ec);
+    fs::create_directories(root / "assets", ec);
+    fs::create_directories(root / ".tege", ec);
+    {
+        std::ofstream proj(root / "Pack.enjinproject");
+        proj << R"({"projectName":"Pack","version":"1.0",)"
+                R"("scenes":[{"name":"Main","path":"scenes/Main.enjin",)"
+                R"("buildIndex":0,"isStartScene":true}]})";
+    }
+    { std::ofstream f(root / "scenes" / "Main.enjin");          f << R"({"version":"1.0","entities":[]})"; }
+    { std::ofstream f(root / "prefabs" / "Boulder.prefab");     f << "{}"; }
+    { std::ofstream f(root / "assets" / "strings.json");        f << "{}"; }
+    { std::ofstream f(root / "assets" / "Hud.ttf");             f << "font"; }
+    { std::ofstream f(root / ".tege" / "editor_bindings.json"); f << "{}"; }
+
+    BuildConfig cfg;
+    cfg.projectPath   = (root / "Pack.enjinproject").string();
+    cfg.outputDir     = (root / "Out").string();
+    cfg.target        = BuildTargetPlatform::Web;
+    cfg.packagingMode = PackagingMode::LooseFiles;   // web cannot do loose
+    cfg.assetsOnly    = true;
+    BuildPipeline pipeline;
+    pipeline.Execute(cfg);
+
+    const fs::path pak = root / "Out" / "game.enjpak";
+    ENJIN_ASSERT_TRUE(fs::exists(pak));
+    AssetReader reader;
+    ENJIN_ASSERT_TRUE(reader.Open(pak.string(), ""));
+    bool prefab = false, json = false, font = false, tege = false;
+    for (const auto& f : reader.ListFiles()) {
+        if (f.find("Boulder.prefab") != std::string::npos) prefab = true;
+        if (f.find("strings.json") != std::string::npos) json = true;
+        if (f.find("Hud.ttf") != std::string::npos) font = true;
+        if (f.find(".tege") != std::string::npos) tege = true;
+    }
+    ENJIN_EXPECT_TRUE(prefab);
+    ENJIN_EXPECT_TRUE(json);
+    ENJIN_EXPECT_TRUE(font);
+    ENJIN_EXPECT_FALSE(tege);
+    reader.Close();
+    fs::remove_all(root, ec);
+}
+
 ENJIN_TEST_MAIN()

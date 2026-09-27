@@ -3888,6 +3888,14 @@ private:
         m_WindowTitle = manifest.value("windowTitle", "Enjin Game");
         m_WindowWidth = manifest.value("windowWidth", 1280u);
         m_WindowHeight = manifest.value("windowHeight", 720u);
+        // The window was made before the manifest was read, and nothing gave it
+        // the game's title or size afterwards: every build opened as the
+        // default window whatever the Build dialog said (EP-20). The player's
+        // own saved resolution is applied later and still wins.
+        if (GetWindow()) {
+            GetWindow()->SetTitle(m_WindowTitle.c_str());
+            GetWindow()->SetWindowedSize(m_WindowWidth, m_WindowHeight);
+        }
         m_Fullscreen = manifest.value("fullscreen", false);
         m_EngineSplash = manifest.value("engineSplash", true);
         m_StartScene = manifest.value("startScene", "");

@@ -19,8 +19,17 @@ namespace Enjin::Build {
 // written at the end and cannot do it.
 static constexpr const char* kBuildOutputMarker = ".enjin-build-output";
 
-BuildResult BuildPipeline::Execute(const BuildConfig& config) {
+BuildResult BuildPipeline::Execute(const BuildConfig& requested) {
     m_Result = BuildResult{};
+    BuildConfig config = requested;
+    // A browser game reads one package; there is no loose-file path for it.
+    // Web with Loose Files shipped no game.enjpak at all and booted to
+    // nothing (EP-20). It is packed unobfuscated, the moddable form, instead.
+    if (config.target == BuildTargetPlatform::Web && config.packagingMode == PackagingMode::LooseFiles) {
+        config.packagingMode = PackagingMode::PackedOpen;
+        AddMessage(MessageSeverity::Warning,
+                   "A web build needs a package; Loose Files was built as Packed (Moddable)");
+    }
     m_Config = config;
     m_Scenes.clear();
     m_TexturePaths.clear();
@@ -488,8 +497,11 @@ bool BuildPipeline::ValidateAssets() {
                     // Audio source file paths
                     if (entity.contains("audioSource")) {
                         const auto& audio = entity["audioSource"];
-                        if (audio.contains("filePath")) {
-                            validateAssetPath(audio["filePath"].get<std::string>(), m_AudioPaths, "audio file");
+                        // The serializer writes "clipPath". This read "filePath",
+                        // a key no scene has, so a missing sound was never
+                        // reported and never packed through this path (EP-20).
+                        if (audio.contains("clipPath") && audio["clipPath"].is_string()) {
+                            validateAssetPath(audio["clipPath"].get<std::string>(), m_AudioPaths, "audio file");
                         }
                     }
 
@@ -1225,6 +1237,20 @@ void BuildPipeline::ScanProjectDirectory() {
         { ".enjshader",  &m_DataAssetPaths },     // Graph system assets
         { ".enjaudiopkg", &m_DataAssetPaths },
         { ".enjparticle", &m_DataAssetPaths },
+        // Files the runtime loads that no build carried (EP-19): fonts, JSON
+        // (localization tables, File_ReadText), fluid presets, baked LOD
+        // meshes, glTF and OBJ sidecars, Gaussian splats, and .prefab, which
+        // shipped on no platform while GeneratedGeometry uses it
+        { ".ttf",        &m_DataAssetPaths },
+        { ".otf",        &m_DataAssetPaths },
+        { ".json",       &m_DataAssetPaths },
+        { ".enjfluid",   &m_DataAssetPaths },
+        { ".enjmesh",    &m_DataAssetPaths },
+        { ".bin",        &m_ModelPaths },
+        { ".mtl",        &m_ModelPaths },
+        { ".splat",      &m_DataAssetPaths },
+        { ".spz",        &m_DataAssetPaths },
+        { ".prefab",     &m_PrefabPaths },
     };
 
     // A build output directory nested inside the project must never be
@@ -1273,6 +1299,11 @@ void BuildPipeline::ScanProjectDirectory() {
                                "Skipping build output directory: " + entry.path().string());
                     it.disable_recursion_pending();
                 }
+                // Hidden folders are tools' data, not the game's: .tege holds
+                // the editor's bindings and the script API stub, .vscode and
+                // .git their own. With .json now packed they would ship.
+                const std::string dirName = entry.path().filename().string();
+                if (!dirName.empty() && dirName[0] == '.') it.disable_recursion_pending();
                 continue;
             }
 
