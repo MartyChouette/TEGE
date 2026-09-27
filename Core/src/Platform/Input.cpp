@@ -4,6 +4,9 @@
 #include "Enjin/Logging/Log.h"
 #include <cstring>
 #include <cmath>
+#include <cstdlib>
+#include <string>
+#include <utility>
 
 #if ENJIN_PLATFORM_WEB
 #include <emscripten.h>
@@ -280,14 +283,66 @@ constexpr f32 kWrapMargin = 8.0f;
             case 117: return 295; case 118: return 296; case 119: return 297;
             case 120: return 298; case 121: return 299; case 122: return 300;
             case 123: return 301;
-            default:  return dom; // Letters/digits already match
+            default:
+                // Letters, digits and Space share their numbers with GLFW;
+                // anything else is a different key under the same number
+                if (dom == 32 || (dom >= 48 && dom <= 57) || (dom >= 65 && dom <= 90)) return dom;
+                return -1;
         }
+    }
+
+    // The DOM `code` ("KeyA", "Semicolon", "Numpad4", "ShiftRight") names the
+    // physical key, the same thing a GLFW key token names, and tells left from
+    // right and the numpad from the top row. keyCode does neither, and the
+    // pass-through above sent every key it did not list straight on as its DOM
+    // number: numpad 0-9 (96-105) arrived as GraveAccent and eight unused
+    // codes, the Windows key (91) as LeftBracket, and ; = , - . / ` [ \ ] '
+    // (186-222) as nothing at all, so an action bound to any of them could
+    // not be pressed in a browser (WP-11). -1 = not a key this table knows,
+    // and the caller falls back to keyCode.
+    i32 MapDomCode(const char* code) {
+        if (!code || !code[0]) return -1;
+        const std::string c(code);
+        if (c.size() == 4 && c.compare(0, 3, "Key") == 0 && c[3] >= 'A' && c[3] <= 'Z') return c[3];
+        if (c.size() == 6 && c.compare(0, 5, "Digit") == 0 && c[5] >= '0' && c[5] <= '9') return c[5];
+        if (c.size() == 7 && c.compare(0, 6, "Numpad") == 0 && c[6] >= '0' && c[6] <= '9')
+            return static_cast<i32>(KeyCode::KP0) + (c[6] - '0');
+        if (c.size() >= 2 && c[0] == 'F' && c.size() <= 3) {
+            const int n = std::atoi(c.c_str() + 1);
+            if (n >= 1 && n <= 12) return static_cast<i32>(KeyCode::F1) + n - 1;
+        }
+        static const std::pair<const char*, KeyCode> kNamed[] = {
+            {"Space", KeyCode::Space}, {"Quote", KeyCode::Apostrophe}, {"Comma", KeyCode::Comma},
+            {"Minus", KeyCode::Minus}, {"Period", KeyCode::Period}, {"Slash", KeyCode::Slash},
+            {"Semicolon", KeyCode::Semicolon}, {"Equal", KeyCode::Equal},
+            {"BracketLeft", KeyCode::LeftBracket}, {"Backslash", KeyCode::Backslash},
+            {"BracketRight", KeyCode::RightBracket}, {"Backquote", KeyCode::GraveAccent},
+            {"IntlBackslash", KeyCode::Backslash},
+            {"Escape", KeyCode::Escape}, {"Enter", KeyCode::Enter}, {"Tab", KeyCode::Tab},
+            {"Backspace", KeyCode::Backspace}, {"Insert", KeyCode::Insert}, {"Delete", KeyCode::Delete},
+            {"ArrowRight", KeyCode::Right}, {"ArrowLeft", KeyCode::Left}, {"ArrowDown", KeyCode::Down},
+            {"ArrowUp", KeyCode::Up}, {"PageUp", KeyCode::PageUp}, {"PageDown", KeyCode::PageDown},
+            {"Home", KeyCode::Home}, {"End", KeyCode::End}, {"CapsLock", KeyCode::CapsLock},
+            {"ScrollLock", KeyCode::ScrollLock}, {"NumLock", KeyCode::NumLock},
+            {"PrintScreen", KeyCode::PrintScreen}, {"Pause", KeyCode::Pause},
+            {"NumpadDecimal", KeyCode::KPDecimal}, {"NumpadDivide", KeyCode::KPDivide},
+            {"NumpadMultiply", KeyCode::KPMultiply}, {"NumpadSubtract", KeyCode::KPSubtract},
+            {"NumpadAdd", KeyCode::KPAdd}, {"NumpadEnter", KeyCode::KPEnter}, {"NumpadEqual", KeyCode::KPEqual},
+            {"ShiftLeft", KeyCode::LeftShift}, {"ControlLeft", KeyCode::LeftControl},
+            {"AltLeft", KeyCode::LeftAlt}, {"MetaLeft", KeyCode::LeftSuper},
+            {"ShiftRight", KeyCode::RightShift}, {"ControlRight", KeyCode::RightControl},
+            {"AltRight", KeyCode::RightAlt}, {"MetaRight", KeyCode::RightSuper},
+            {"ContextMenu", KeyCode::Menu},
+        };
+        for (const auto& [name, key] : kNamed) if (c == name) return static_cast<i32>(key);
+        return -1;
     }
 
     // --- Emscripten event callbacks ---
     EM_BOOL WebKeyCallback(int eventType, const EmscriptenKeyboardEvent* e, void* userData) {
         (void)userData;
-        i32 keyCode = MapDomKeyCode(static_cast<i32>(e->keyCode));
+        i32 keyCode = MapDomCode(e->code);
+        if (keyCode < 0) keyCode = MapDomKeyCode(static_cast<i32>(e->keyCode));
         if (keyCode >= 0 && keyCode < MAX_KEYS) {
             bool down = (eventType == EMSCRIPTEN_EVENT_KEYDOWN);
             s_WebKeysLatest[keyCode] = down;

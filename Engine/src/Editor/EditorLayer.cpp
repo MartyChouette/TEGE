@@ -6279,8 +6279,10 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
     // player: actions and a script's raw keys both go quiet.
     const bool gameplayHasInput = m_PlayMode.IsPlaying() && !m_PlayMode.IsPaused();
     const bool typing = ImGui::GetCurrentContext() && ImGui::GetIO().WantTextInput;
+    const bool inDialogue = gameplayHasInput && m_PlayMode.GetDialogueSystem()->GetActiveDialogueEntity() != 0;
     Input::SetInputFocus(!gameplayHasInput ? Input::InputFocus::Menu
                          : typing          ? Input::InputFocus::Console
+                         : inDialogue      ? Input::InputFocus::Dialogue
                                            : Input::InputFocus::Gameplay);
 
     // ImGui keyboard navigation moves focus between widgets with the arrow keys.

@@ -1335,8 +1335,11 @@ public:
         const bool warningNow = WebContentWarningOpen();
         const bool warningOpen = warningNow || m_WarningOpenLastFrame;
         m_WarningOpenLastFrame = warningNow;
+        // Dialogue too, as on desktop: gameplay actions (Jump, Attack, the
+        // walk keys) kept firing while a line was on screen (WP-11)
         Enjin::Input::SetInputFocus((m_Paused || m_AtMainMenu || warningOpen)
             ? Enjin::Input::InputFocus::Menu
+            : m_DialogueSystem.GetActiveDialogueEntity() != 0 ? Enjin::Input::InputFocus::Dialogue
             : Enjin::Input::InputFocus::Gameplay);
 
         // Pause menu (UI unification: the same UITemplates pause canvas as any
