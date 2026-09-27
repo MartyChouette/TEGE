@@ -3330,6 +3330,9 @@ public:
     // calls this; see RenderSystem.cpp.
     void ApplyPoseEdits(Entity entity, AnimatorComponent* animComp, f32 deltaTime);
     bool AllowIKFor(Entity entity) const;
+    // Shared per-frame animation steps; every runtime calls them (see RenderSystem.cpp)
+    void TickAnimatedSprites(f32 deltaTime);
+    void UpdateBoneAttachments();
 
     bool ShouldRefreshAnimator(AnimatorComponent& ac, Entity entity,
                                f32 deltaTime, f32& outStepDt,

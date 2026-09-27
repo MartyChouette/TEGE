@@ -13,6 +13,7 @@
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Systems/RenderSystem.h"
+#include "Enjin/ECS/Components/BoneAttachment.h"
 #include <cmath>
 
 #include <memory>
@@ -315,6 +316,42 @@ ENJIN_TEST(PoseLibrary, ClearingThePoseBlendsBackOut) {
     ENJIN_EXPECT_TRUE(r.ArmAngle() > 20.0f && r.ArmAngle() < 70.0f);
     for (int i = 0; i < 30; ++i) r.Step(1.0f / 60.0f);
     ENJIN_EXPECT_TRUE(r.ArmAngle() < 0.5f);
+}
+
+// ===========================================================================
+// Shared per-frame steps every runtime now calls (WP-18)
+// ===========================================================================
+
+ENJIN_TEST(SharedAnimSteps, AnAnimatedSpriteAdvancesItsFrames) {
+    World w;
+    RenderSystem rs(&w, nullptr);
+    Entity e = w.CreateEntity();
+    w.AddComponent<TransformComponent>(e);
+    w.AddComponent<Sprite2DComponent>(e);
+    AnimatedSprite2DComponent a;
+    AnimatedSprite2DComponent::Frame f0; f0.srcX = 0.0f;  f0.srcY = 0.0f; f0.duration = 0.1f;
+    AnimatedSprite2DComponent::Frame f1; f1.srcX = 32.0f; f1.srcY = 0.0f; f1.duration = 0.1f;
+    a.frames = {f0, f1};
+    w.AddComponent<AnimatedSprite2DComponent>(e, a);
+    rs.TickAnimatedSprites(0.15f);
+    ENJIN_EXPECT_EQ(w.GetComponent<AnimatedSprite2DComponent>(e)->currentFrame, 1u);
+    ENJIN_EXPECT_FLOAT_EQ(w.GetComponent<Sprite2DComponent>(e)->srcX, 32.0f);
+}
+
+ENJIN_TEST(SharedAnimSteps, ABoneAttachmentTurnsWithItsBone) {
+    // The editor's own copy ignored the bone's rotation
+    PoseRig r(0.0f);                             // arm bent 90 degrees about Z
+    r.Step(0.016f);
+    Entity sword = r.world.CreateEntity();
+    r.world.AddComponent<TransformComponent>(sword);
+    BoneAttachmentComponent ba;
+    ba.targetEntity = r.e;
+    ba.targetBoneName = "hand";                  // child of the bent arm
+    r.world.AddComponent<BoneAttachmentComponent>(sword, ba);
+    r.rs.UpdateBoneAttachments();
+    const Math::Quaternion q = r.world.GetComponent<TransformComponent>(sword)->rotation;
+    const Math::Vector3 up = q.Rotate(Math::Vector3(0.0f, 1.0f, 0.0f));
+    ENJIN_EXPECT_TRUE(std::abs(up.x + 1.0f) < 0.05f);   // +Y turned 90 about Z points to -X
 }
 
 ENJIN_TEST_MAIN()

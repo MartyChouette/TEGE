@@ -1560,6 +1560,13 @@ public:
                 if (anim) anim->Update(deltaTime);
             }
         }
+        // Sprite frames and bone attachments, shared with desktop. Web ran
+        // neither (WP-18). Here rather than in RenderSystem::Update, which web
+        // calls with a zero dt.
+        if (m_RenderSystem) {
+            m_RenderSystem->TickAnimatedSprites(deltaTime);
+            m_RenderSystem->UpdateBoneAttachments();
+        }
 
         // Flush deferred entity destroys from previous frame
         m_World->Update(deltaTime);

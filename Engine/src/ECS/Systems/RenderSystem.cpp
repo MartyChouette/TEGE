@@ -2,6 +2,7 @@
 #include "Enjin/ECS/Components/IKComponents.h"
 #include "Enjin/ECS/Components/HandIKComponent.h"
 #include "Enjin/Animation/IKSolver.h"
+#include "Enjin/ECS/Components/BoneAttachment.h"
 #include "Enjin/Renderer/MaterialFlagWord.h"
 #include "Enjin/Renderer/MaterialDrawState.h"
 // Needed by EnsureTilemapMeshes, which both backend Update bodies call.
@@ -952,6 +953,96 @@ void RenderSystem::SolveHandIK(Entity entity, AnimatorComponent& animComp,
             ApplyChainRotation(poseMut, resolved[f].bone[j],
                                before.joints[j], before.joints[j + 1],
                                after.joints[j + 1], after.joints[j]);
+        }
+    }
+}
+
+// Advances every AnimatedSprite2D's frame clock and moves its sprite to the
+// new frame (and a per-frame collider with it). It was ticked only inside the
+// Vulkan Update, which the editor never calls and web does not have, so a
+// sprite animation played in the desktop player and stood on its first frame
+// in editor play mode and in every browser (WP-18).
+void RenderSystem::TickAnimatedSprites(f32 deltaTime) {
+    if (!m_World) return;
+    for (Entity entity : m_World->GetEntitiesWithComponent<AnimatedSprite2DComponent>()) {
+        auto* anim = m_World->GetComponent<AnimatedSprite2DComponent>(entity);
+        auto* sprite = m_World->GetComponent<Sprite2DComponent>(entity);
+        if (!anim || !sprite || !anim->playing || anim->frames.empty()) continue;
+
+        anim->frameTimer += deltaTime * anim->playbackSpeed;
+        const auto& frame = anim->frames[anim->currentFrame];
+        if (anim->frameTimer >= frame.duration) {
+            anim->frameTimer -= frame.duration;
+            anim->frameChanged = true;
+            u32 nextFrame = anim->currentFrame + 1;
+            if (nextFrame >= static_cast<u32>(anim->frames.size())) {
+                if (anim->loop) { nextFrame = 0; }
+                else { nextFrame = anim->currentFrame; anim->playing = false; anim->animationComplete = true; }
+            }
+            anim->currentFrame = nextFrame;
+            const auto& newFrame = anim->frames[anim->currentFrame];
+            sprite->srcX = newFrame.srcX;
+            sprite->srcY = newFrame.srcY;
+            sprite->spriteDirty = true;
+        } else {
+            anim->frameChanged = false;
+        }
+
+        // Apply per-frame collider on frame change
+        if (anim->frameChanged) {
+            auto* pfc = m_World->GetComponent<PerFrameColliderComponent>(entity);
+            if (pfc && pfc->autoApply && anim->currentFrame < static_cast<u32>(pfc->frameColliders.size())) {
+                auto* box = m_World->GetComponent<BoxColliderComponent>(entity);
+                if (box) {
+                    const auto& fc = pfc->frameColliders[anim->currentFrame];
+                    if (fc.enabled) {
+                        box->center = Math::Vector3(fc.offset.x, fc.offset.y, 0.0f);
+                        box->size = Math::Vector3(fc.size.x, fc.size.y, 0.1f);
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Snaps every BoneAttachment to its target bone, bone rotation included. The
+// Vulkan Update had this; the editor carried its own copy that ignored the
+// bone's rotation (a sword in a turning hand kept pointing the same way) and
+// web had none (WP-18). One copy now, called after the animators and pose
+// edits in every runtime.
+void RenderSystem::UpdateBoneAttachments() {
+    if (!m_World) return;
+    for (Entity entity : m_World->GetEntitiesWithComponent<BoneAttachmentComponent>()) {
+        auto* ba = m_World->GetComponent<BoneAttachmentComponent>(entity);
+        if (!ba || ba->targetEntity == INVALID_ENTITY || ba->targetBoneName.empty()) continue;
+        if (!m_World->IsValid(ba->targetEntity)) continue;
+
+        auto* animComp = m_World->GetComponent<AnimatorComponent>(ba->targetEntity);
+        if (!animComp) continue;
+
+        // Get bone world transform (in skeleton/entity-local space)
+        Math::Matrix4 boneLocal = animComp->animator.GetBoneWorldTransform(ba->targetBoneName);
+
+        // Multiply by the target entity's world matrix to get the bone in world space
+        Math::Matrix4 targetWorld = ComputeWorldMatrix(m_World, ba->targetEntity);
+        Math::Matrix4 boneWorld = targetWorld * boneLocal;
+
+        // Extract bone world position
+        Math::Vector3 bonePos(boneWorld.m[12], boneWorld.m[13], boneWorld.m[14]);
+
+        // Extract bone world rotation from the 3x3 portion of the matrix
+        Math::Quaternion boneRot = Math::Quaternion::FromMatrix(boneWorld);
+
+        // Apply offsets
+        Math::Vector3 finalPos = bonePos + boneRot.Rotate(ba->positionOffset);
+        Math::Quaternion finalRot = boneRot * ba->rotationOffset;
+
+        // Write to this entity's transform
+        auto* transform = m_World->GetComponent<TransformComponent>(entity);
+        if (transform) {
+            transform->position = finalPos;
+            transform->rotation = finalRot;
+            transform->worldMatrixDirty = true;
         }
     }
 }
@@ -9144,46 +9235,8 @@ void RenderSystem::Update(f32 deltaTime) {
             }
         }
 
-        // Advance animated sprite timers and mark dirty on frame change
-        for (Entity entity : m_World->GetEntitiesWithComponent<AnimatedSprite2DComponent>()) {
-            auto* anim = m_World->GetComponent<AnimatedSprite2DComponent>(entity);
-            auto* sprite = m_World->GetComponent<Sprite2DComponent>(entity);
-            if (!anim || !sprite || !anim->playing || anim->frames.empty()) continue;
-
-            anim->frameTimer += deltaTime * anim->playbackSpeed;
-            const auto& frame = anim->frames[anim->currentFrame];
-            if (anim->frameTimer >= frame.duration) {
-                anim->frameTimer -= frame.duration;
-                anim->frameChanged = true;
-                u32 nextFrame = anim->currentFrame + 1;
-                if (nextFrame >= static_cast<u32>(anim->frames.size())) {
-                    if (anim->loop) { nextFrame = 0; }
-                    else { nextFrame = anim->currentFrame; anim->playing = false; anim->animationComplete = true; }
-                }
-                anim->currentFrame = nextFrame;
-                const auto& newFrame = anim->frames[anim->currentFrame];
-                sprite->srcX = newFrame.srcX;
-                sprite->srcY = newFrame.srcY;
-                sprite->spriteDirty = true;
-            } else {
-                anim->frameChanged = false;
-            }
-
-            // Apply per-frame collider on frame change
-            if (anim->frameChanged) {
-                auto* pfc = m_World->GetComponent<PerFrameColliderComponent>(entity);
-                if (pfc && pfc->autoApply && anim->currentFrame < static_cast<u32>(pfc->frameColliders.size())) {
-                    auto* box = m_World->GetComponent<BoxColliderComponent>(entity);
-                    if (box) {
-                        const auto& fc = pfc->frameColliders[anim->currentFrame];
-                        if (fc.enabled) {
-                            box->center = Math::Vector3(fc.offset.x, fc.offset.y, 0.0f);
-                            box->size = Math::Vector3(fc.size.x, fc.size.y, 0.1f);
-                        }
-                    }
-                }
-            }
-        }
+        // Animated sprite frames: shared with the editor and web (see TickAnimatedSprites)
+        TickAnimatedSprites(deltaTime);
 
         // Auto-generate sprite quad meshes when dirty
         for (Entity entity : m_World->GetEntitiesWithComponent<Sprite2DComponent>()) {
@@ -9456,40 +9509,8 @@ void RenderSystem::Update(f32 deltaTime) {
         ApplyPoseEdits(entity, animComp, deltaTime);
     }
 
-    // Update bone attachment transforms: snap attached entities to their target bone
-    for (Entity entity : m_World->GetEntitiesWithComponent<BoneAttachmentComponent>()) {
-        auto* ba = m_World->GetComponent<BoneAttachmentComponent>(entity);
-        if (!ba || ba->targetEntity == INVALID_ENTITY || ba->targetBoneName.empty()) continue;
-        if (!m_World->IsValid(ba->targetEntity)) continue;
-
-        auto* animComp = m_World->GetComponent<AnimatorComponent>(ba->targetEntity);
-        if (!animComp) continue;
-
-        // Get bone world transform (in skeleton/entity-local space)
-        Math::Matrix4 boneLocal = animComp->animator.GetBoneWorldTransform(ba->targetBoneName);
-
-        // Multiply by the target entity's world matrix to get the bone in world space
-        Math::Matrix4 targetWorld = ComputeWorldMatrix(m_World, ba->targetEntity);
-        Math::Matrix4 boneWorld = targetWorld * boneLocal;
-
-        // Extract bone world position
-        Math::Vector3 bonePos(boneWorld.m[12], boneWorld.m[13], boneWorld.m[14]);
-
-        // Extract bone world rotation from the 3x3 portion of the matrix
-        Math::Quaternion boneRot = Math::Quaternion::FromMatrix(boneWorld);
-
-        // Apply offsets
-        Math::Vector3 finalPos = bonePos + boneRot.Rotate(ba->positionOffset);
-        Math::Quaternion finalRot = boneRot * ba->rotationOffset;
-
-        // Write to this entity's transform
-        auto* transform = m_World->GetComponent<TransformComponent>(entity);
-        if (transform) {
-            transform->position = finalPos;
-            transform->rotation = finalRot;
-            transform->worldMatrixDirty = true;
-        }
-    }
+    // Bone attachments: shared with the editor and web (see UpdateBoneAttachments)
+    UpdateBoneAttachments();
 
     // Fire deferred animation events LAST — collected during the parallel pose sample,
     // dispatched here on the main thread. Re-resolve the animator per entity (NOT the
