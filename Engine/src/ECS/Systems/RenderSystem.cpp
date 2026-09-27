@@ -8695,6 +8695,17 @@ void RenderSystem::FlushPendingChanges() {
     // is the one case this whole mechanism exists for.
     const Renderer::GpuLifetimeToken gpuSafe;
 
+    // Every dirty material's textures, here as well as in Update. Update does it
+    // only past its skip return, and the desktop player's post-processing path
+    // skips the main pass and draws through RenderToTarget, which built the
+    // material SSBO before its draw loop loaded the textures and then never
+    // rebuilt it: every textured material drew flat base colour in a built game
+    // whose camera had post on. SD-29 made post the default and put every game
+    // on that path (palette panels went grey in Examples/PaletteCycling). This
+    // is the GPU-safe point both paths share; loading here also keeps texture
+    // creation out of the middle of a render pass.
+    ResolveDirtyMaterialTextures();
+
     // Material-slot textures. This creates VkImages and does a blocking staging
     // submit, and it registers bindless slots, so it belongs BELOW the guard
     // with everything else that touches GPU lifetime. It used to sit on the
@@ -16000,6 +16011,9 @@ bool RenderSystem::ResolveMaterialTextureCache(MaterialComponent* material) {
 // first).
 void RenderSystem::ResolveDirtyMaterialTextures() {
     if (!m_World) return;
+    // Called from FlushPendingChanges too, which can run before anything has
+    // refetched the storages since the last World::Clear
+    EnsureStorageCacheFresh();
     bool any = false;
     for (Entity e : m_World->GetEntitiesWithComponent<MaterialComponent>()) {
         any |= ResolveMaterialTextureCache(
