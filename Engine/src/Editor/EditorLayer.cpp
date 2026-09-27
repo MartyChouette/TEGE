@@ -760,6 +760,10 @@ void EditorLayer::StartPlayMode() {
     m_CachedPlayerEntity = ECS::INVALID_ENTITY;
     m_PlayMode.SetDebugRecording(m_EditorSettings.debugRecordPlay, m_EditorSettings.debugRecordSeconds);
     m_DebugScrubOffset = 0.0f;
+    // A fresh start shows the scene's content warnings; a resume does not
+    // (not in an unattended capture, which has nobody to dismiss it)
+    if (m_PlayMode.IsStopped() && s_GoldenCapturePath.empty())
+        m_ContentWarnings.SetSceneFlags(m_SceneContentFlags);
     m_PlayMode.Play();
     m_Telemetry.TrackPlayModeEnter();
     if (m_Announcer.enabled) m_Announcer.Announce("Play mode started", Accessibility::AnnouncePriority::Normal);
@@ -848,18 +852,29 @@ void EditorLayer::InitializePlayMode() {
         inputSettings.ApplyTo(m_InputMap);
         InputSystem::SetTouchProjectSettings(&inputSettings);
 
-        // Project string tables, from the same block an exported game reads,
-        // so play-in-editor shows the text the player will see. Cleared first:
-        // opening a second project must not inherit the first one's strings.
-        GUI::LocalizationManager::Get().Clear();
-        const std::string& locJson = m_SceneManager.GetLocalizationJson();
-        if (!locJson.empty()) {
-            // Tables are authored relative to the project, and GetProjectPath
-            // is the .enjinproject FILE.
-            const std::string projDir =
-                std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path().string();
-            GUI::ApplyLocalizationSettings(locJson, projDir);
-        }
+        // Project string tables: SyncProjectLocalization, every frame
+        SyncProjectLocalization();
+    }
+}
+
+void EditorLayer::SyncProjectLocalization() {
+    const std::string& project = m_SceneManager.GetProjectPath();
+    const std::string& locJson = m_SceneManager.GetLocalizationJson();
+    if (m_LocalizationApplied && project == m_LocalizationAppliedProject &&
+        locJson == m_LocalizationAppliedJson) return;
+    m_LocalizationApplied = true;
+    m_LocalizationAppliedProject = project;
+    m_LocalizationAppliedJson = locJson;
+
+    // From the same block an exported game reads, so play-in-editor shows the
+    // text the player will see. Cleared first: a second project must not
+    // inherit the first one's strings.
+    GUI::LocalizationManager::Get().Clear();
+    if (!locJson.empty()) {
+        // Tables are authored relative to the project, and GetProjectPath
+        // is the .enjinproject FILE.
+        const std::string projDir = std::filesystem::path(project).parent_path().string();
+        GUI::ApplyLocalizationSettings(locJson, projDir);
     }
 }
 
@@ -932,6 +947,7 @@ void EditorLayer::Update(f32 deltaTime) {
     // A different project was opened (by any of the paths that load one):
     // apply its input block and the editor's saved bindings for it
     SyncProjectInput();
+    SyncProjectLocalization();
 
     // NOTE: the editor deliberately does NOT push project quality tiers into
     // RenderSystem, even though it owns them through SceneManager.
@@ -2822,8 +2838,15 @@ void EditorLayer::Update(f32 deltaTime) {
     // exists while you are carving it and is gone in the game.
     ECS::VoxelVolumeSystem::Update(m_World);
 
-    // Update play mode
-    m_PlayMode.Update(deltaTime);
+    // Update play mode. Held while a content warning is up, as both players
+    // hold the game until it is dismissed (EP-5). With no Game View on screen
+    // the warning cannot be seen or dismissed, so it is not allowed to hold
+    // play there; a stop clears it too.
+    if (m_ContentWarnings.IsVisible() &&
+        (m_PlayMode.IsStopped() || (!m_GameViewVisiblePrev && !m_FocusMode))) {
+        m_ContentWarnings.Dismiss();
+    }
+    if (!m_ContentWarnings.IsVisible()) m_PlayMode.Update(deltaTime);
 
     // The editor's own audio device, for auditioning clips while editing. Only
     // ticks once something has actually been played: the device is not opened
@@ -4578,6 +4601,8 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         if (m_PlayMode.IsPlaying() || m_PlayMode.IsPaused()) {
             m_UISystem.Update(m_World, io.DisplaySize.x, io.DisplaySize.y, m_LastDeltaTime,
                               0.0f, 0.0f, m_GameViewCameraForUIValid ? &m_GameViewCameraForUI : m_Camera);
+            m_ContentWarnings.RenderWarningOverlay(static_cast<u32>(io.DisplaySize.x),
+                                                   static_cast<u32>(io.DisplaySize.y));
         }
 
         // Render pause menu overlay on top of fullscreen game view
@@ -6297,6 +6322,12 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                               m_GameViewImageMinX, m_GameViewImageMinY,
                               m_GameViewCameraForUIValid ? &m_GameViewCameraForUI : m_Camera);
             m_UISystem.SetTargetDrawList(nullptr);
+            // The scene's content warnings, over the game image (EP-5)
+            if (m_ContentWarnings.IsVisible()) {
+                m_ContentWarnings.RenderWarningOverlay(static_cast<u32>(gvW), static_cast<u32>(gvH),
+                                                       m_GameViewImageMinX, m_GameViewImageMinY,
+                                                       m_GameViewDrawList);
+            }
             // One flag for "the UI took the pointer", so a click on a game-view
             // UI button does not also fire in the world (matches both players).
             Input::SetUIConsumedPointer(m_UISystem.WasPointerConsumed());
@@ -6320,7 +6351,8 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
     // Typing into any editor text field during play (the console, a search box)
     // is Console focus, so W typed into the console does not also walk the
     // player: actions and a script's raw keys both go quiet.
-    const bool gameplayHasInput = m_PlayMode.IsPlaying() && !m_PlayMode.IsPaused();
+    const bool gameplayHasInput = m_PlayMode.IsPlaying() && !m_PlayMode.IsPaused() &&
+                                  !m_ContentWarnings.IsVisible();
     const bool typing = ImGui::GetCurrentContext() && ImGui::GetIO().WantTextInput;
     const bool inDialogue = gameplayHasInput && m_PlayMode.GetDialogueSystem()->GetActiveDialogueEntity() != 0;
     Input::SetInputFocus(!gameplayHasInput ? Input::InputFocus::Menu

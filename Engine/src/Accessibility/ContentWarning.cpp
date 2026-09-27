@@ -33,20 +33,21 @@ std::string ContentWarningSystem::GetWarningText(ContentWarningType type) const 
     }
 }
 
-void ContentWarningSystem::RenderWarningOverlay(u32 viewportWidth, u32 viewportHeight) {
+void ContentWarningSystem::RenderWarningOverlay(u32 viewportWidth, u32 viewportHeight,
+                                                f32 originX, f32 originY, ImDrawList* targetDrawList) {
     if (!m_Visible || m_Dismissed) return;
 
     f32 screenW = static_cast<f32>(viewportWidth);
     f32 screenH = static_cast<f32>(viewportHeight);
 
     // Semi-transparent background
-    ImDrawList* drawList = ImGui::GetForegroundDrawList();
+    ImDrawList* drawList = targetDrawList ? targetDrawList : ImGui::GetForegroundDrawList();
     drawList->AddRectFilled(
-        ImVec2(0, 0), ImVec2(screenW, screenH),
+        ImVec2(originX, originY), ImVec2(originX + screenW, originY + screenH),
         ImGui::ColorConvertFloat4ToU32(ImVec4(0.0f, 0.0f, 0.0f, 0.85f)));
 
-    f32 centerX = screenW * 0.5f;
-    f32 y = screenH * 0.25f;
+    f32 centerX = originX + screenW * 0.5f;
+    f32 y = originY + screenH * 0.25f;
 
     // Title
     const char* title = "Content Warning";

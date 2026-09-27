@@ -5,6 +5,8 @@
 #include <string>
 #include <vector>
 
+struct ImDrawList;
+
 namespace Enjin {
 namespace Accessibility {
 
@@ -51,8 +53,11 @@ public:
     // Show warning overlay (returns true while overlay is visible)
     bool IsVisible() const { return m_Visible; }
 
-    // Render warning overlay (call during ImGui frame)
-    void RenderWarningOverlay(u32 viewportWidth, u32 viewportHeight);
+    // Render warning overlay (call during ImGui frame). The players cover the
+    // window; the editor passes the Game View's origin and draw list.
+    void RenderWarningOverlay(u32 viewportWidth, u32 viewportHeight,
+                              f32 originX = 0.0f, f32 originY = 0.0f,
+                              ImDrawList* targetDrawList = nullptr);
 
     // Dismiss the warning
     void Dismiss();

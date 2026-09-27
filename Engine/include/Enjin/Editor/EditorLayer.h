@@ -678,6 +678,14 @@ private:
     // an exported game, kept per project in .tege/editor_bindings.json. When the
     // open project changes, its input block is applied and its file loaded.
     void SyncProjectInput();
+    // The project's string tables, re-read whenever a different project is
+    // open or its localization block changes. They were loaded once at
+    // editor boot, so a project opened from the Hub had no strings and a
+    // second project kept the first one's (EP-5).
+    void SyncProjectLocalization();
+    std::string m_LocalizationAppliedProject;
+    std::string m_LocalizationAppliedJson;
+    bool m_LocalizationApplied = false;
     void SaveEditorBindings();
     std::string m_InputAppliedProject;
     void DrawSettingsSection_AccessibilityDefaults();
@@ -1884,6 +1892,10 @@ private:
     // Per-scene content warning flags — authored in Settings > Scene, saved
     // with the scene, shown by the player before gameplay starts
     Accessibility::SceneContentFlags m_SceneContentFlags;
+    // Shown over the Game View when play starts, as both players show it
+    // before the game runs; gameplay holds until it is dismissed. The flags
+    // were saved and never shown in editor play (EP-5).
+    Accessibility::ContentWarningSystem m_ContentWarnings;
 
     // One-button local preview of web exports ("Run in Browser") — browsers
     // refuse wasm over file://, so the editor serves the export itself
