@@ -2599,9 +2599,71 @@ void ControllerSystem::UpdateVehicle(Entity entity, VehicleController& ctrl, Tra
     ctrl.velocity.z = ctrl.forwardDir.z * ctrl.currentSpeed + rightDir.z * lateralVel;
     ctrl.lateralVelocity = rightDir * lateralVel;
 
+    // --- Walls ---
+    // The car moved its transform straight through anything, walls included:
+    // only the ground was checked. Three rays along the motion at bumper
+    // height (the centre and both front corners) find the nearest solid,
+    // non-walkable surface within this frame's travel plus the car's
+    // half-length; the car stops at it and the velocity into it reflects with
+    // a small bounce, so it glances off a wall at an angle and stops dead
+    // head-on. Sized from the car's own box collider when it has one.
+    // Pushing a dynamic body it hits needs a physics impulse, which the
+    // backend interface does not offer yet.
+    Math::Vector3 move(ctrl.velocity.x * dt, 0.0f, ctrl.velocity.z * dt);
+    const f32 moveLen = std::sqrt(move.x * move.x + move.z * move.z);
+    if (m_Physics && moveLen > 1e-5f) {
+        f32 halfLength = ctrl.wheelBase * 0.5f + 0.5f;
+        f32 halfWidth = 0.9f;
+        f32 bumperY = 0.5f;
+        if (m_World) {
+            if (const auto* box = m_World->GetComponent<BoxColliderComponent>(entity)) {
+                halfLength = std::max(box->size.z * 0.5f, 0.1f);
+                halfWidth = std::max(box->size.x * 0.5f - 0.05f, 0.0f);
+                bumperY = box->center.y;
+            }
+        }
+        const Math::Vector3 dir(move.x / moveLen, 0.0f, move.z / moveLen);
+        const Math::Vector3 side(-dir.z, 0.0f, dir.x);
+        const f32 reach = moveLen + halfLength;
+        Physics::RaycastHit nearest;
+        nearest.distance = reach;
+        for (f32 lateral : { 0.0f, -halfWidth, halfWidth }) {
+            Physics::Ray ray;
+            ray.origin = transform.position + Math::Vector3(0.0f, bumperY, 0.0f) + side * lateral;
+            ray.direction = dir;
+            for (const Physics::RaycastHit& h : m_Physics->RaycastAll(ray, reach)) {
+                if (!h.hit || h.entity == entity || h.distance >= nearest.distance) continue;
+                if (h.normal.y > 0.7f) continue;   // a slope to drive up, not a wall
+                if (m_World) {
+                    const auto* hb = m_World->GetComponent<BoxColliderComponent>(h.entity);
+                    if (hb && hb->isTrigger) continue;
+                }
+                nearest = h;
+            }
+        }
+        if (nearest.hit) {
+            // Travel up to the wall, less the half-length already in front
+            const f32 allowed = std::max(nearest.distance - halfLength, 0.0f);
+            move = dir * allowed;
+            Math::Vector3 n(nearest.normal.x, 0.0f, nearest.normal.z);
+            const f32 nLen = std::sqrt(n.x * n.x + n.z * n.z);
+            if (nLen > 1e-4f) {
+                n = n * (1.0f / nLen);
+                const f32 into = ctrl.velocity.x * n.x + ctrl.velocity.z * n.z;
+                if (into < 0.0f) {
+                    constexpr f32 kWallBounce = 0.2f;
+                    ctrl.velocity.x -= n.x * into * (1.0f + kWallBounce);
+                    ctrl.velocity.z -= n.z * into * (1.0f + kWallBounce);
+                }
+            }
+            // The engine's speed follows what is left along the nose
+            ctrl.currentSpeed = ctrl.velocity.x * ctrl.forwardDir.x + ctrl.velocity.z * ctrl.forwardDir.z;
+        }
+    }
+
     // --- Apply position ---
-    transform.position.x += ctrl.velocity.x * dt;
-    transform.position.z += ctrl.velocity.z * dt;
+    transform.position.x += move.x;
+    transform.position.z += move.z;
 
     // Ground check (keep on ground)
     f32 groundY = 0.0f;
