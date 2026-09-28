@@ -957,7 +957,14 @@ void Input::Update() {
     // stop looking the moment it reaches the edge. Warp it across and skip
     // this frame's delta -- reading it would report the width of the window as
     // a flick.
-    if (s_CaptureMode == MouseCaptureMode::VisibleWrapped && s_Window) {
+    //
+    // Only while this window is visible AND focused. SetCursorPos needs no
+    // focus, so a wrap left armed in a window the person is not using (a
+    // missed release, a hidden capture run) pulled their cursor into its
+    // rectangle every frame, whatever they were doing in another program.
+    if (s_CaptureMode == MouseCaptureMode::VisibleWrapped && s_Window &&
+        glfwGetWindowAttrib(s_Window, GLFW_VISIBLE) &&
+        glfwGetWindowAttrib(s_Window, GLFW_FOCUSED)) {
         int ww = 0, wh = 0;
         glfwGetWindowSize(s_Window, &ww, &wh);
         if (ww > 0 && wh > 0) {
@@ -1389,7 +1396,11 @@ void Input::SetMouseCaptureMode(MouseCaptureMode mode) {
     }
 #else
     if (s_Window) {
-        if (mode == MouseCaptureMode::Hidden) {
+        // A hidden window never takes the cursor: a --golden capture or a
+        // headless run is a window nobody can see, and confining the real
+        // cursor to it takes the machine from whoever is using it.
+        const bool windowShown = glfwGetWindowAttrib(s_Window, GLFW_VISIBLE) != 0;
+        if (mode == MouseCaptureMode::Hidden && windowShown) {
             glfwSetInputMode(s_Window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
             if (s_UseRawInput && glfwRawMouseMotionSupported()) {
                 glfwSetInputMode(s_Window, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);

@@ -15,6 +15,8 @@
 // needs a real window and is exercised by using the editor.
 #include "EnjinTest.h"
 #include "Enjin/Platform/Input.h"
+#include "Enjin/Platform/Window.h"
+#include <GLFW/glfw3.h>
 
 using namespace Enjin;
 
@@ -105,6 +107,39 @@ ENJIN_TEST(CursorModes, EveryTransitionIsReachable) {
         ENJIN_EXPECT_TRUE(Input::GetMouseCaptureMode() == m);
         ENJIN_EXPECT_TRUE(Input::IsMouseCaptured() == (m == Input::MouseCaptureMode::Hidden));
     }
+}
+
+// A window nobody can see never takes the cursor. Capture runs (--golden, the
+// harness) boot games with a hidden window, and a game with mouse look asked
+// for Hidden capture there, which confined the real cursor to that invisible
+// rectangle while the person at the machine was using another program. Only
+// the Hidden path is checked: exercising the edge wrap would move the real
+// cursor, which is the thing this guards against.
+ENJIN_TEST(CursorModes, test_cursor_hidden_window_never_disables_cursor) {
+    // Arrange
+    WindowDesc desc;
+    desc.width = 320;
+    desc.height = 200;
+    desc.title = "TestCursorModes";
+    desc.visible = false;
+    Window* window = CreateWindow(desc);
+    if (!window || !window->GetNativeHandle()) {
+        if (window) DestroyWindow(window);
+        ENJIN_SKIP("no GLFW window available (no desktop session)");
+    }
+    Input::Initialize(window);
+    ModeScope scope;
+
+    // Act
+    Input::SetMouseCaptureMode(Input::MouseCaptureMode::Hidden);
+
+    // Assert: the game still sees captured, the OS cursor is untouched
+    auto* handle = static_cast<GLFWwindow*>(window->GetNativeHandle());
+    ENJIN_EXPECT_TRUE(Input::IsMouseCaptured());
+    ENJIN_EXPECT_TRUE(glfwGetInputMode(handle, GLFW_CURSOR) != GLFW_CURSOR_DISABLED);
+
+    Input::SetMouseCaptureMode(Input::MouseCaptureMode::Free);
+    DestroyWindow(window);
 }
 
 ENJIN_TEST_MAIN()
