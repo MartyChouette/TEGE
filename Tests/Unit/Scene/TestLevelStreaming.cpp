@@ -388,6 +388,46 @@ ENJIN_TEST(ChunkLoad, AbsolutePathIsRejected) {
     std::filesystem::remove_all(root, ec);
 }
 
+ENJIN_TEST(ChunkLoad, test_streaming_main_thread_reads_spread_read_and_integrate_over_frames) {
+    // Arrange: the web mode (no worker). Two chunks come into range at once.
+    // Reads used to run inline and integrate in the same Update, so that one
+    // frame paid for both reads and an integration.
+    auto root = MakeChunkRoot("mainthread");
+    ECS::World world;
+    StreamingManager sm;
+    sm.SetWorld(&world);
+    sm.SetSceneRoot(root.string());
+    sm.SetThreadedReads(false);
+    for (const char* id : {"a", "b"}) {
+        StreamingChunk c;
+        c.chunkId = id;
+        c.scenePath = "scenes/chunk_a.enjin";
+        sm.AddChunk(c);
+    }
+    const usize before = world.GetAllEntities().size();
+
+    // Act + Assert, frame by frame
+    sm.Update(Vector3(0.0f), 0.016f);   // both claimed, one read, no integration
+    ENJIN_EXPECT_EQ(sm.GetPendingReadCount(), 1u);
+    ENJIN_EXPECT_EQ(world.GetAllEntities().size(), before);
+
+    sm.Update(Vector3(0.0f), 0.016f);   // integrates a; the read waits
+    ENJIN_EXPECT_TRUE(sm.GetChunkState("a") == ChunkState::Loaded);
+    ENJIN_EXPECT_EQ(sm.GetPendingReadCount(), 1u);
+    ENJIN_EXPECT_EQ(world.GetAllEntities().size(), before + 1);
+
+    sm.Update(Vector3(0.0f), 0.016f);   // reads b
+    ENJIN_EXPECT_EQ(sm.GetPendingReadCount(), 0u);
+    ENJIN_EXPECT_TRUE(sm.GetChunkState("b") == ChunkState::Loading);
+
+    sm.Update(Vector3(0.0f), 0.016f);   // integrates b
+    ENJIN_EXPECT_TRUE(sm.GetChunkState("b") == ChunkState::Loaded);
+    ENJIN_EXPECT_EQ(world.GetAllEntities().size(), before + 2);
+
+    std::error_code ec;
+    std::filesystem::remove_all(root, ec);
+}
+
 // ===========================================================================
 // Memory budget + LRU eviction
 // ===========================================================================

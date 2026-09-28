@@ -91,6 +91,7 @@ void StreamingManager::ClearChunks()
         }
     }
     m_Chunks.clear();
+    m_PendingReads.clear();
     m_LoadQueue.clear();
     m_UnloadQueue.clear();
     m_LoadQueueSet.clear();
@@ -217,7 +218,11 @@ void StreamingManager::Update(const Math::Vector3& cameraPosition, f32 deltaTime
     }
 
     ProcessLoadQueue();
-    ProcessStagedIntegration(); // Time-sliced: create entities within 2ms budget
+    // Time-sliced: create entities within 2ms budget
+    const bool integrated = ProcessStagedIntegration();
+    // A main-thread read gets a frame of its own: never the frame a chunk was
+    // integrated in, and what it stages integrates on a later frame.
+    if (!integrated) ProcessPendingRead();
     ProcessUnloadQueue();
     EnforceMemoryBudget(cameraPosition);
 }
@@ -329,19 +334,18 @@ void StreamingManager::LoadChunkAsync(StreamingChunk& chunk)
     // integrated: nothing re-reads the path later.
     std::string chunkId = chunk.chunkId;
     std::string scenePath = chunk.scenePath;
-    auto readAndStage = [this, chunkId, scenePath]() {
-        StagedChunkData staged;
-        staged.chunkId = chunkId;
-        staged.jsonReady = ReadChunkSource(scenePath, staged.sceneJson);
-        std::lock_guard<std::mutex> lock(m_StagedMutex);
-        m_StagedChunks.push(std::move(staged));
-    };
 
-#if defined(__EMSCRIPTEN__) && !defined(__EMSCRIPTEN_PTHREADS__)
-    // Web builds link without pthreads: std::thread construction throws. Read
-    // inline (pak reads are in-memory) and stage through the same path.
-    readAndStage();
-#else
+    if (!m_ThreadedReads) {
+        // No worker (web links without pthreads). The read used to run right
+        // here, inline, and its chunk integrated later in the same Update, so
+        // the frame a chunk came into range paid for every concurrent read plus
+        // an integration. It is queued now and ProcessPendingRead gives it a
+        // frame of its own.
+        m_PendingReads.push_back({chunkId, scenePath});
+        return;
+    }
+
+#if !(defined(__EMSCRIPTEN__) && !defined(__EMSCRIPTEN_PTHREADS__))
     // Tracked, not detached. The worker touches m_StagedMutex and
     // m_StagedChunks, so the object has to be able to outlive it -- see
     // WaitForPendingLoads and the m_LoadTasks comment in the header.
@@ -357,12 +361,31 @@ void StreamingManager::LoadChunkAsync(StreamingChunk& chunk)
             }),
         m_LoadTasks.end());
 
-    m_LoadTasks.emplace_back(std::async(std::launch::async, readAndStage));
+    m_LoadTasks.emplace_back(std::async(std::launch::async,
+        [this, chunkId, scenePath]() { ReadAndStage(chunkId, scenePath); }));
 #endif
 }
 
-void StreamingManager::ProcessStagedIntegration()
+void StreamingManager::ReadAndStage(const std::string& chunkId, const std::string& scenePath)
 {
+    StagedChunkData staged;
+    staged.chunkId = chunkId;
+    staged.jsonReady = ReadChunkSource(scenePath, staged.sceneJson);
+    std::lock_guard<std::mutex> lock(m_StagedMutex);
+    m_StagedChunks.push(std::move(staged));
+}
+
+void StreamingManager::ProcessPendingRead()
+{
+    if (m_PendingReads.empty()) return;
+    PendingRead read = std::move(m_PendingReads.front());
+    m_PendingReads.pop_front();
+    ReadAndStage(read.chunkId, read.scenePath);
+}
+
+bool StreamingManager::ProcessStagedIntegration()
+{
+    bool integrated = false;
     auto frameStart = std::chrono::high_resolution_clock::now();
     u32 budgetUs = m_IntegrationBudgetUs;
 
@@ -404,6 +427,7 @@ void StreamingManager::ProcessStagedIntegration()
         // For now, the full integration happens here. A further optimization would
         // split the entity creation loop itself and resume across frames.
         IntegrateLoadedChunk(*chunk, staged.sceneJson);
+        integrated = true;
 
         // Check time budget
         auto now = std::chrono::high_resolution_clock::now();
@@ -415,6 +439,7 @@ void StreamingManager::ProcessStagedIntegration()
             break;
         }
     }
+    return integrated;
 }
 
 void StreamingManager::IntegrateLoadedChunk(StreamingChunk& chunk, const std::string& sceneJson)

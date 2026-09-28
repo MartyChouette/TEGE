@@ -15,6 +15,7 @@
 #include <atomic>
 #include <chrono>
 #include <queue>
+#include <deque>
 
 namespace Enjin {
 namespace Build { class AssetReader; }
@@ -138,6 +139,17 @@ public:
     void SetIntegrationBudgetUs(u32 budgetUs) { m_IntegrationBudgetUs = budgetUs; }
     u32 GetIntegrationBudgetUs() const { return m_IntegrationBudgetUs; }
 
+    // Where chunk reads run. Threaded (desktop default): on a worker, so the
+    // main thread only integrates. Not threaded (web, which links without
+    // pthreads, and can be chosen anywhere for testing): on the main thread, one
+    // read per frame and never in a frame that integrated a chunk, so reading
+    // and integrating are spread over separate frames instead of landing in the
+    // one frame the chunk came into range. Asking for threads where there are
+    // none leaves it off.
+    void SetThreadedReads(bool threaded) { m_ThreadedReads = threaded && kThreadsAvailable; }
+    bool IsThreadedReads() const { return m_ThreadedReads; }
+    u32 GetPendingReadCount() const { return static_cast<u32>(m_PendingReads.size()); }
+
     // Stats
     // Locked: a worker pushes into m_StagedChunks concurrently, so reading
     // size() unsynchronised was a race with whatever the debug overlay drew.
@@ -169,8 +181,12 @@ private:
     void WaitForPendingLoads();
     void EnforceMemoryBudget(const Math::Vector3& cameraPosition);
 
-    // Time-sliced integration: process staged chunks within budget
-    void ProcessStagedIntegration();
+    // Time-sliced integration: process staged chunks within budget.
+    // Returns whether a chunk was integrated this call.
+    bool ProcessStagedIntegration();
+    // Non-threaded reads: read and stage the oldest pending chunk, if any
+    void ProcessPendingRead();
+    void ReadAndStage(const std::string& chunkId, const std::string& scenePath);
 
     // Staged chunk data — scene JSON parsed on worker thread, entities created on main thread
     struct StagedChunkData {
@@ -192,6 +208,19 @@ private:
     // Staged chunks waiting for time-sliced integration on main thread
     std::queue<StagedChunkData> m_StagedChunks;
     mutable std::mutex m_StagedMutex;
+
+#if defined(__EMSCRIPTEN__) && !defined(__EMSCRIPTEN_PTHREADS__)
+    static constexpr bool kThreadsAvailable = false;
+#else
+    static constexpr bool kThreadsAvailable = true;
+#endif
+    bool m_ThreadedReads = kThreadsAvailable;
+    // Chunks claimed for loading whose read has not run yet (non-threaded only)
+    struct PendingRead {
+        std::string chunkId;
+        std::string scenePath;
+    };
+    std::deque<PendingRead> m_PendingReads;
 
     u32 m_MaxConcurrentLoads = 2;
     u64 m_MemoryBudgetBytes = 0;      // 0 = unlimited
