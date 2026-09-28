@@ -266,6 +266,38 @@ bool BuildPipeline::ScanProject(const std::string& projectPath) {
             return false;
         }
 
+        // Only the build list ships (Marty, 2026-09-28): a scene unticked in
+        // Build Scenes (buildIndex -1) used to be packed anyway. The start
+        // scene always ships. A project with nothing ticked at all is an old
+        // or hand-written one, and packs everything as before, with a warning.
+        {
+            usize inBuild = 0;
+            for (const auto& sc : m_Scenes) if (sc.buildIndex >= 0) ++inBuild;
+            if (inBuild == 0) {
+                AddMessage(MessageSeverity::Warning,
+                           "No scene is ticked in Build Scenes, so every scene is packed. "
+                           "Tick the ones the game uses.");
+            } else {
+                std::vector<SceneInfo> kept;
+                m_ExcludedSceneNames.clear();
+                m_ExcludedScenePaths.clear();
+                for (auto& sc : m_Scenes) {
+                    if (sc.buildIndex >= 0 || sc.isStartScene) {
+                        kept.push_back(std::move(sc));
+                    } else {
+                        m_ExcludedSceneNames.push_back(sc.name);
+                        m_ExcludedScenePaths.push_back(fs::path(sc.relativePath).generic_string());
+                    }
+                }
+                m_Scenes = std::move(kept);
+                for (const auto& name : m_ExcludedSceneNames) {
+                    AddMessage(MessageSeverity::Info,
+                               "Not in the build, so not packed: '" + name +
+                               "'. A script that loads it by name will get an error.");
+                }
+            }
+        }
+
         if (!hasStartScene) {
             // In-memory only — the .enjinproject is never rewritten here. Matches
             // SceneManager::NormalizeSceneList's election (lowest build index wins),
@@ -311,6 +343,20 @@ bool BuildPipeline::ScanProject(const std::string& projectPath) {
         // manifest verbatim, so the player runs it. Absent = the classic default.
         if (root.contains("startupFlow") && root["startupFlow"].is_array()) {
             m_StartupFlowJson = root["startupFlow"].dump();
+            // A flow step on a scene that is not in the build fails at boot
+            // every time, so it fails the build here instead
+            for (const auto& step : root["startupFlow"]) {
+                if (!step.is_object() || !step.contains("scene") || !step["scene"].is_string()) continue;
+                const std::string flowScene = fs::path(step["scene"].get<std::string>()).generic_string();
+                for (const auto& excluded : m_ExcludedScenePaths) {
+                    if (excluded == flowScene) {
+                        AddMessage(MessageSeverity::Error,
+                                   "The startup flow uses '" + flowScene + "', which is not in the build. "
+                                   "Tick it under Project Settings > Build Scenes.");
+                        return false;
+                    }
+                }
+            }
         }
 
         // Carry the project's input settings (custom actions + touch layout) so

@@ -1243,6 +1243,79 @@ ENJIN_TEST(BuildValidation, test_build_warns_about_missing_cubemap_and_cookie) {
     fs::remove_all(root, ec);
 }
 
+// Only the build list ships (Marty, 2026-09-28): an unticked scene was packed
+// anyway. The start scene and every ticked scene are packed; the rest are not.
+ENJIN_TEST(BuildValidation, test_build_packs_only_scenes_in_the_build) {
+    // Arrange
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    fs::path root = fs::temp_directory_path() / "enjin_build_list_test";
+    fs::remove_all(root, ec);
+    fs::create_directories(root / "scenes", ec);
+    {
+        std::ofstream proj(root / "List.enjinproject");
+        proj << R"({"name":"List","version":"1.0","scenes":[)"
+                R"({"name":"Main","path":"scenes/Main.enjin","buildIndex":0,"isStartScene":true},)"
+                R"({"name":"Scratch","path":"scenes/Scratch.enjin","buildIndex":-1,"isStartScene":false}]})";
+    }
+    { std::ofstream f(root / "scenes" / "Main.enjin"); f << R"({"version":"1.0","entities":[]})"; }
+    { std::ofstream f(root / "scenes" / "Scratch.enjin"); f << R"({"version":"1.0","entities":[]})"; }
+    BuildConfig cfg;
+    cfg.projectPath   = (root / "List.enjinproject").string();
+    cfg.outputDir     = (root / "Out").string();
+    cfg.target        = BuildTargetPlatform::Web;
+    cfg.packagingMode = PackagingMode::PackedOpen;
+    cfg.assetsOnly    = true;
+
+    // Act
+    BuildPipeline pipeline;
+    pipeline.Execute(cfg);
+
+    // Assert
+    AssetReader reader;
+    ENJIN_ASSERT_TRUE(reader.Open((root / "Out" / "game.enjpak").string(), ""));
+    ENJIN_EXPECT_TRUE(reader.HasFile("scenes/Main.enjin"));
+    ENJIN_EXPECT_FALSE(reader.HasFile("scenes/Scratch.enjin"));
+    reader.Close();
+    fs::remove_all(root, ec);
+}
+
+ENJIN_TEST(BuildValidation, test_build_fails_when_the_startup_flow_uses_an_unbuilt_scene) {
+    // Arrange: the flow boots into a scene that is not ticked
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    fs::path root = fs::temp_directory_path() / "enjin_build_flow_list_test";
+    fs::remove_all(root, ec);
+    fs::create_directories(root / "scenes", ec);
+    {
+        std::ofstream proj(root / "Flow.enjinproject");
+        proj << R"({"name":"Flow","version":"1.0","scenes":[)"
+                R"({"name":"Main","path":"scenes/Main.enjin","buildIndex":0,"isStartScene":true},)"
+                R"({"name":"Intro","path":"scenes/Intro.enjin","buildIndex":-1,"isStartScene":false}],)"
+                R"("startupFlow":[{"type":"scene","scene":"scenes/Intro.enjin","advance":"timer","duration":2.0}]})";
+    }
+    { std::ofstream f(root / "scenes" / "Main.enjin"); f << R"({"version":"1.0","entities":[]})"; }
+    { std::ofstream f(root / "scenes" / "Intro.enjin"); f << R"({"version":"1.0","entities":[]})"; }
+    BuildConfig cfg;
+    cfg.projectPath   = (root / "Flow.enjinproject").string();
+    cfg.outputDir     = (root / "Out").string();
+    cfg.target        = BuildTargetPlatform::Web;
+    cfg.packagingMode = PackagingMode::PackedOpen;
+    cfg.assetsOnly    = true;
+
+    // Act
+    BuildPipeline pipeline;
+    const BuildResult result = pipeline.Execute(cfg);
+
+    // Assert
+    ENJIN_EXPECT_FALSE(result.success);
+    bool said = false;
+    for (const auto& m : result.messages)
+        if (m.text.find("startup flow uses") != std::string::npos) said = true;
+    ENJIN_EXPECT_TRUE(said);
+    fs::remove_all(root, ec);
+}
+
 // EP-17: a pack built with a custom key could not be opened by either
 // player, which only try the default key. The key now travels in the header.
 ENJIN_TEST(AssetPackRoundTrip, ACustomKeyPackOpensWithoutTheKey) {

@@ -105,6 +105,8 @@ private:
         bool isStartScene = false;
     };
     std::vector<SceneInfo> m_Scenes;
+    std::vector<std::string> m_ExcludedSceneNames;   // unticked in Build Scenes
+    std::vector<std::string> m_ExcludedScenePaths;   // their project-relative paths
     std::set<std::string> m_TexturePaths;   // absolute paths on disk
     std::set<std::string> m_ModelPaths;
     std::set<std::string> m_ScriptPaths;    // .as AngelScript files

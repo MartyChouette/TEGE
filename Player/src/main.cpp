@@ -1399,6 +1399,13 @@ public:
                 RestartGameSession();
             } else if (req == Enjin::Scene::SceneManager::SceneRequest::Load) {
                 const auto* entry = m_SceneManager.GetSceneByName(reqScene);
+                // Listed in the project but not shipped: only the build list
+                // is packed. Said here, by name, rather than as a failed read.
+                if (entry && !m_LooseFilesMode && !m_AssetReader.HasFile(entry->path)) {
+                    ENJIN_LOG_ERROR(Player, "Scene '%s' is not in this build. Tick it under Project Settings > Build Scenes to ship it.", reqScene.c_str());
+                    entry = nullptr;
+                    reqScene.clear();
+                }
                 if (entry) {
                     m_PendingFlowScene = entry->path;   // rides the GPU-safe transition
                     // The flow transition loads the scene without going through
@@ -1407,7 +1414,7 @@ public:
                     // Scene_LoadScene and then Scene_GetCurrentScene got "".
                     m_SceneManager.NoteSceneBecameCurrent(entry->name);
                     DoFlowTransition();
-                } else {
+                } else if (!reqScene.empty()) {
                     ENJIN_LOG_WARN(Player, "Scene request '%s' not in scene list", reqScene.c_str());
                 }
             }

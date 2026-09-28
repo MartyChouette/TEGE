@@ -1934,8 +1934,14 @@ public:
                 else ENJIN_LOG_WARN(Player, "Scene_Restart: no current scene to restart");
             } else if (req == Enjin::Scene::SceneManager::SceneRequest::Load) {
                 const auto* entry = m_SceneManager.GetSceneByName(reqScene);
-                if (entry) DoWebSceneTransition(entry->path);
-                else ENJIN_LOG_WARN(Player, "Scene request '%s' not in scene list", reqScene.c_str());
+                if (entry && m_HasPack && !m_AssetReader.HasFile(entry->path)) {
+                    // Listed but not shipped: only the build list is packed
+                    ENJIN_LOG_ERROR(Player, "Scene '%s' is not in this build. Tick it under Project Settings > Build Scenes to ship it.", reqScene.c_str());
+                } else if (entry) {
+                    DoWebSceneTransition(entry->path);
+                } else {
+                    ENJIN_LOG_WARN(Player, "Scene request '%s' not in scene list", reqScene.c_str());
+                }
             }
         }
 
