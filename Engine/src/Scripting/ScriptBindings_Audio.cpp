@@ -46,28 +46,10 @@ static void Audio_Play(u64 entityId) {
     auto* asc = s_BindingsWorld->GetComponent<AudioSourceComponent>(entity);
     if (!asc) return;
 
-    // Load clip if not already loaded
-    Audio::AudioClipHandle clip = s_BindingsAudio->LoadClip(asc->clipPath);
-    if (clip == Audio::INVALID_AUDIO_CLIP) {
-        asc->isPlaying = false;
-        asc->soundHandle = 0;
-        return;
-    }
-
-    auto ch = static_cast<Audio::AudioChannel>(static_cast<u8>(asc->channel));
-    // Music and UI channels force non-diegetic (2D) playback
-    bool diegetic3D = asc->is3D &&
-        ch != Audio::AudioChannel::Music && ch != Audio::AudioChannel::UI;
-
-    if (diegetic3D) {
-        auto* tc = s_BindingsWorld->GetComponent<TransformComponent>(entity);
-        Vector3 pos = tc ? tc->position : Vector3();
-        asc->soundHandle = s_BindingsAudio->Play3D(clip, pos, asc->volume, asc->minDistance, asc->maxDistance, ch);
-        s_BindingsAudio->SetRolloff(asc->soundHandle, static_cast<u8>(asc->rolloff));
-    } else {
-        asc->soundHandle = s_BindingsAudio->Play(clip, asc->volume, asc->pitch, asc->loop, ch);
-    }
-    asc->isPlaying = true;
+    // The same play as play-on-awake: variations, caption, voice priority
+    auto* tc = s_BindingsWorld->GetComponent<TransformComponent>(entity);
+    asc->soundHandle = s_BindingsAudio->PlaySource(*asc, tc ? tc->position : Vector3());
+    asc->isPlaying = asc->soundHandle != Audio::INVALID_SOUND;
 }
 
 static void Audio_PlayAtPosition(const std::string& path, const Vector3& pos) {

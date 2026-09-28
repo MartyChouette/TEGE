@@ -257,7 +257,7 @@ ENJIN_TEST(AudioSource, SpatialAndPriority) {
     AudioSourceComponent src;
     ENJIN_EXPECT_FLOAT_EQ(src.spatialBlend, 1.0f);
     ENJIN_EXPECT_EQ((int)src.rolloff, (int)AudioSourceComponent::Rolloff::Logarithmic);
-    ENJIN_EXPECT_EQ(src.priority, 128);
+    ENJIN_EXPECT_EQ(src.voicePriority, -1);   // the channel's
 }
 
 // ===========================================================================

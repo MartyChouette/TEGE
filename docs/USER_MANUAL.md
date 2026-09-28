@@ -891,7 +891,7 @@ Plays audio clips with 3D spatialization support.
 | `is3D` | bool | true | Enable 3D spatial audio. |
 | `spatialBlend` | f32 | 1.0 | Blend between 2D (0) and 3D (1) spatialization. |
 | `rolloff` | enum | Logarithmic | Volume falloff curve: `Logarithmic`, `Linear`, or `Custom`. |
-| `priority` | i32 | 128 | Playback priority (lower = higher priority when too many sounds are playing). |
+| `voicePriority` | i32 | -1 | Which sounds give way when too many play at once; lower is more important. -1 uses the channel's: Voice 32, UI 64, SFX 128. Up to 64 sounds play at once (SFX 48, Music 4, UI 16, Voice 8). When a limit is full the quietest sound that is not looping, not Music and not more important is stopped; if there is none, the new sound does not play. |
 | `channel` | enum | SFX | `SFX`, `Music`, `UI` or `Voice`. Music and UI are always 2D. |
 | `pitchMin` / `pitchMax` | f32 | 1.0 | Random pitch range per play. Both at 1.0 = no variation. |
 | `volumeMin` / `volumeMax` | f32 | 1.0 | Random volume range per play, multiplying `volume`. |

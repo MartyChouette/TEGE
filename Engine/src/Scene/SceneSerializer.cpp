@@ -3739,7 +3739,7 @@ json SerializeAudioSourceComponent(const ECS::AudioSourceComponent& audio) {
     j["spatialBlend"] = RF(audio.spatialBlend);
     j["rolloff"] = static_cast<u8>(audio.rolloff);
     j["channel"] = static_cast<u8>(audio.channel);
-    j["priority"] = audio.priority;
+    j["voicePriority"] = audio.voicePriority;
     j["pitchMin"] = RF(audio.pitchMin);
     j["pitchMax"] = RF(audio.pitchMax);
     j["volumeMin"] = RF(audio.volumeMin);
@@ -3763,7 +3763,9 @@ ECS::AudioSourceComponent DeserializeAudioSourceComponent(const json& j) {
     if (j.contains("spatialBlend")) audio.spatialBlend = j["spatialBlend"].get<f32>();
     if (j.contains("rolloff")) { u8 v = j["rolloff"].get<u8>(); if (v <= 2) audio.rolloff = static_cast<ECS::AudioSourceComponent::Rolloff>(v); }
     if (j.contains("channel")) { u8 v = j["channel"].get<u8>(); if (v < static_cast<u8>(ECS::AudioChannel::Count)) audio.channel = static_cast<ECS::AudioChannel>(v); }
-    if (j.contains("priority")) audio.priority = j["priority"].get<i32>();
+    // "priority" (the old field) was saved and read by nothing, so every scene
+    // carries 128 there; honouring it now would demote every voice and UI sound.
+    if (j.contains("voicePriority")) audio.voicePriority = j["voicePriority"].get<i32>();
     if (j.contains("pitchMin")) audio.pitchMin = j["pitchMin"].get<f32>();
     if (j.contains("pitchMax")) audio.pitchMax = j["pitchMax"].get<f32>();
     if (j.contains("volumeMin")) audio.volumeMin = j["volumeMin"].get<f32>();

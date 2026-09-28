@@ -305,8 +305,12 @@ struct AudioSourceComponent {
     u32 soundHandle = 0;        // Handle from AudioEngine (0 = invalid)
     bool awakeTriggered = false; // Whether playOnAwake has fired
 
-    // Priority (lower = higher priority when too many sounds)
-    i32 priority = 128;
+    // Voice priority when the voice budget is full: lower = more important.
+    // -1 = the channel's (VoiceBudget.h: Voice 32, UI 64, SFX 128). A full
+    // budget steals the quietest voice that is not more important than the new
+    // sound. This replaced a `priority` field that was saved and read by
+    // nothing; its old "priority" key is ignored on load.
+    i32 voicePriority = -1;
 
     // Sound randomization — per-play variation for natural-sounding effects
     f32 pitchMin = 1.0f;               // Random pitch range minimum

@@ -279,7 +279,14 @@ void EditorLayer::DrawAudioSourceComponent(ECS::Entity entity) {
             }
         }
 
-        InspectorUndo::DragInt(m_UndoRedo, "Priority", &audio->priority, 1, 0, 255);
+        {
+            // -1 = the channel's priority. Lower is more important: a full voice
+            // budget steals the quietest sound that is not more important.
+            InspectorUndo::DragInt(m_UndoRedo, "Voice Priority", &audio->voicePriority, 1, -1, 255,
+                                   audio->voicePriority < 0 ? "Channel default" : "%d");
+            ImGui::SetItemTooltip("Which sounds give way when too many play at once. Lower is more important.\n"
+                                  "Channel default: Voice 32, UI 64, SFX 128. Music and looping sounds are never cut.");
+        }
 
         // Sound randomization. Every field in here was authored, saved and then
         // ignored at play time until 2026-09-10 -- AudioEngine::ChooseVariation

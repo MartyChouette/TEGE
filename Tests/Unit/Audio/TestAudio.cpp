@@ -86,6 +86,57 @@ ENJIN_TEST(MIDI, EventDefaults) {
     ENJIN_EXPECT_EQ(evt.data2, 0u);
 }
 
+// ===========================================================================
+// Voice budget: which playing sound gives way to a new one
+// ===========================================================================
+
+ENJIN_TEST(VoiceBudget, test_voice_budget_full_steals_quietest_eligible) {
+    // Arrange: SFX 0.8, SFX 0.2, a quiet looping SFX, quiet Music
+    std::vector<VoiceCandidate> voices = {
+        {0, 128, false, 0.8f},
+        {0, 128, false, 0.2f},
+        {0, 128, true, 0.05f},    // looping: never stolen
+        {1, 0, false, 0.01f},     // Music: never stolen
+    };
+
+    // Act
+    const i32 pick = ChooseVoiceToSteal(voices, 128, 0, false);
+
+    // Assert
+    ENJIN_EXPECT_EQ(pick, 1);
+}
+
+ENJIN_TEST(VoiceBudget, test_voice_budget_more_important_voices_refuse_new_sound) {
+    // Arrange: only dialogue playing (priority 32); a footstep (128) asks for a voice
+    std::vector<VoiceCandidate> voices = {{3, 32, false, 0.1f}, {3, 32, false, 0.3f}};
+
+    // Act
+    const i32 forFootstep = ChooseVoiceToSteal(voices, 128, 0, false);
+    const i32 forDialogue = ChooseVoiceToSteal(voices, 32, 3, false);
+
+    // Assert: the footstep is refused; an equal-priority line takes the quieter voice
+    ENJIN_EXPECT_EQ(forFootstep, -1);
+    ENJIN_EXPECT_EQ(forDialogue, 0);
+}
+
+ENJIN_TEST(VoiceBudget, test_voice_budget_channel_cap_steals_within_channel) {
+    // Arrange: a quiet UI click and a louder SFX; the Voice channel is full
+    std::vector<VoiceCandidate> voices = {{2, 64, false, 0.05f}, {3, 32, false, 0.5f}};
+
+    // Act
+    const i32 pick = ChooseVoiceToSteal(voices, 32, 3, /*sameChannelOnly=*/true);
+
+    // Assert: only a Voice-channel sound can make room under the Voice cap
+    ENJIN_EXPECT_EQ(pick, 1);
+}
+
+ENJIN_TEST(VoiceBudget, test_voice_budget_priority_channel_default_and_override) {
+    // Arrange / Act / Assert
+    ENJIN_EXPECT_EQ(ResolveVoicePriority(kUseChannelPriority, 3), 32);   // Voice
+    ENJIN_EXPECT_EQ(ResolveVoicePriority(kUseChannelPriority, 0), 128);  // SFX
+    ENJIN_EXPECT_EQ(ResolveVoicePriority(10, 0), 10);                    // authored
+}
+
 ENJIN_TEST(MIDI, test_midi_inject_message_readable_after_update) {
     // Arrange: every backend (winmm, Web MIDI) feeds raw messages through
     // InjectMessage, so this is the path a browser's note takes

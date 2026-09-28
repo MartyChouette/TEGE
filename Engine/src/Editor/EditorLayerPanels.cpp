@@ -7596,6 +7596,21 @@ void EditorLayer::DrawAudioMixer() {
     // ================================================================
     // Bus strips — horizontal mixer board layout
     // ================================================================
+    // Live voice budget. A stolen or refused sound is otherwise indistinguishable
+    // from a broken one; each is also logged with the clip it cut.
+    if (audio) {
+        ImGui::Text("Voices: %u / %u", audio->GetActiveVoiceCount(), audio->GetVoiceBudget());
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("SFX %u/%u   Music %u/%u   UI %u/%u   Voice %u/%u",
+                audio->GetChannelVoiceCount(Audio::AudioChannel::SFX), audio->GetChannelVoiceCap(Audio::AudioChannel::SFX),
+                audio->GetChannelVoiceCount(Audio::AudioChannel::Music), audio->GetChannelVoiceCap(Audio::AudioChannel::Music),
+                audio->GetChannelVoiceCount(Audio::AudioChannel::UI), audio->GetChannelVoiceCap(Audio::AudioChannel::UI),
+                audio->GetChannelVoiceCount(Audio::AudioChannel::Voice), audio->GetChannelVoiceCap(Audio::AudioChannel::Voice));
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("  cut %u   not played %u", audio->GetVoiceStealCount(), audio->GetVoiceRefusedCount());
+    }
+
     ImGui::TextColored(Editor::Theme::HeadingV, "Bus Mixer");
     ImGui::Separator();
 

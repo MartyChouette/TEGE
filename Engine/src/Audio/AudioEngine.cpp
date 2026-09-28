@@ -1087,10 +1087,10 @@ SoundHandle AudioEngine::Play(AudioClipHandle clip, f32 volume, f32 pitch, bool 
         return INVALID_SOUND;
     }
 
-    // Cap active sound count to prevent unbounded growth
-    static constexpr usize MAX_ACTIVE_SOUNDS = 256;
-    if (m_Sounds.size() >= MAX_ACTIVE_SOUNDS) {
-        ENJIN_LOG_WARN(Audio, "Max active sounds reached (%zu), cannot play", MAX_ACTIVE_SOUNDS);
+    const i32 priority = ResolveVoicePriority(m_NextPriority, static_cast<u8>(channel));
+    m_NextPriority = kUseChannelPriority;
+    if (!MakeRoomForVoice(channel, priority, clipIt->second.filepath)) {
+        m_NextCaption.clear();
         return INVALID_SOUND;
     }
 
@@ -1108,6 +1108,7 @@ SoundHandle AudioEngine::Play(AudioClipHandle clip, f32 volume, f32 pitch, bool 
     sound.loop = loop;
     sound.is3D = false;
     sound.channel = channel;
+    sound.priority = priority;
     sound.isPlaying = true;
 
     // Create miniaudio sound from file
@@ -1151,16 +1152,16 @@ SoundHandle AudioEngine::Play(AudioClipHandle clip, f32 volume, f32 pitch, bool 
 
 SoundHandle AudioEngine::Play3D(AudioClipHandle clip, const Math::Vector3& position,
                                  f32 volume, f32 minDist, f32 maxDist,
-                                 AudioChannel channel) {
+                                 AudioChannel channel, bool loop, f32 pitch) {
     auto clipIt = m_Clips.find(clip);
     if (clipIt == m_Clips.end()) {
         return INVALID_SOUND;
     }
 
-    // Cap active sound count
-    static constexpr usize MAX_ACTIVE_SOUNDS = 256;
-    if (m_Sounds.size() >= MAX_ACTIVE_SOUNDS) {
-        ENJIN_LOG_WARN(Audio, "Max active sounds reached (%zu), cannot play 3D sound", MAX_ACTIVE_SOUNDS);
+    const i32 priority = ResolveVoicePriority(m_NextPriority, static_cast<u8>(channel));
+    m_NextPriority = kUseChannelPriority;
+    if (!MakeRoomForVoice(channel, priority, clipIt->second.filepath)) {
+        m_NextCaption.clear();
         return INVALID_SOUND;
     }
 
@@ -1172,11 +1173,18 @@ SoundHandle AudioEngine::Play3D(AudioClipHandle clip, const Math::Vector3& posit
     f32 clampedMinDist = std::max(minDist, 0.01f);
     f32 clampedMaxDist = std::max(maxDist, clampedMinDist + 0.01f);
 
+    // A 3D source's Loop and pitch never reached it: Play3D took neither, so a
+    // looping ambience placed in the world played once and stopped.
+    const f32 clampedPitch = Math::Clamp(pitch, 0.1f, 3.0f);
+
     SoundInstance sound;
     sound.clip = clip;
     sound.volume = clampedVolume;
+    sound.pitch = clampedPitch;
+    sound.loop = loop;
     sound.is3D = true;
     sound.channel = channel;
+    sound.priority = priority;
     sound.position = position;
     sound.minDistance = clampedMinDist;
     sound.maxDistance = clampedMaxDist;
@@ -1199,6 +1207,8 @@ SoundHandle AudioEngine::Play3D(AudioClipHandle clip, const Math::Vector3& posit
             ma_sound_set_min_distance(maS, clampedMinDist);
             ma_sound_set_max_distance(maS, clampedMaxDist);
             ma_sound_set_attenuation_model(maS, ma_attenuation_model_inverse);
+            ma_sound_set_pitch(maS, clampedPitch);
+            ma_sound_set_looping(maS, loop ? MA_TRUE : MA_FALSE);
             // World sounds take on the environment: route through the reverb
             // bus (2D/UI/music stay attached to the endpoint = dry).
             if (m_Impl->reverbReady) {
@@ -1286,6 +1296,100 @@ void AudioEngine::PlayOneShot(AudioClipHandle clip, f32 volume, AudioChannel cha
 
 void AudioEngine::PlayOneShot3D(AudioClipHandle clip, const Math::Vector3& position, f32 volume) {
     Play3D(clip, position, volume);
+}
+
+SoundHandle AudioEngine::PlaySource(ECS::AudioSourceComponent& src, const Math::Vector3& position) {
+    if (src.clipPath.empty()) return INVALID_SOUND;
+    PlayVariation v = ChooseVariation(src);
+    AudioClipHandle clip = LoadClip(v.clipPath);
+    if (clip == INVALID_AUDIO_CLIP) return INVALID_SOUND;
+    // Map ECS::AudioChannel to Audio::AudioChannel (same enum values)
+    auto ch = static_cast<AudioChannel>(static_cast<u8>(src.channel));
+    // Music and UI channels force non-diegetic (2D) playback
+    const bool diegetic3D = src.is3D && ch != AudioChannel::Music && ch != AudioChannel::UI;
+    // The caption the accessibility indicator shows for this one sound: its
+    // authored description (SD-23). Both are consumed by the Play below.
+    m_NextCaption = src.audioDescription;
+    m_NextPriority = src.voicePriority;
+    SoundHandle snd;
+    if (diegetic3D) {
+        snd = Play3D(clip, position, v.volume, src.minDistance, src.maxDistance, ch, src.loop, v.pitch);
+        // The source's Rolloff, saved and never applied before (SD-27)
+        SetRolloff(snd, static_cast<u8>(src.rolloff));
+    } else {
+        snd = Play(clip, v.volume, v.pitch, src.loop, ch);
+    }
+    // A play that bailed before consuming them must not reach the next sound
+    m_NextCaption.clear();
+    m_NextPriority = kUseChannelPriority;
+    return snd;
+}
+
+void AudioEngine::SetChannelVoiceCap(AudioChannel channel, u32 voices) {
+    const auto i = static_cast<usize>(channel);
+    if (i < 4) m_ChannelVoiceCaps[i] = voices > 0 ? voices : 1;
+}
+
+u32 AudioEngine::GetChannelVoiceCap(AudioChannel channel) const {
+    const auto i = static_cast<usize>(channel);
+    return i < 4 ? m_ChannelVoiceCaps[i] : m_VoiceBudget;
+}
+
+u32 AudioEngine::GetChannelVoiceCount(AudioChannel channel) const {
+    u32 n = 0;
+    for (const auto& [h, sound] : m_Sounds)
+        if (sound.channel == channel) ++n;
+    return n;
+}
+
+bool AudioEngine::MakeRoomForVoice(AudioChannel channel, i32 priority, const std::string& clipPath) {
+    static const char* kChannelNames[4] = {"SFX", "Music", "UI", "Voice"};
+    const auto ci = static_cast<usize>(channel);
+    if (ci < 4 && GetChannelVoiceCount(channel) >= m_ChannelVoiceCaps[ci]) {
+        if (!StealOne(channel, priority, /*sameChannelOnly=*/true, kChannelNames[ci],
+                      m_ChannelVoiceCaps[ci], clipPath))
+            return false;
+    }
+    if (m_Sounds.size() >= m_VoiceBudget) {
+        if (!StealOne(channel, priority, /*sameChannelOnly=*/false, "voice budget", m_VoiceBudget, clipPath))
+            return false;
+    }
+    return true;
+}
+
+bool AudioEngine::StealOne(AudioChannel channel, i32 priority, bool sameChannelOnly, const char* limitName,
+                           u32 limit, const std::string& clipPath) {
+    std::vector<VoiceCandidate> voices;
+    std::vector<SoundHandle> handles;
+    voices.reserve(m_Sounds.size());
+    handles.reserve(m_Sounds.size());
+    for (const auto& [h, sound] : m_Sounds) {
+        VoiceCandidate c;
+        c.channel = static_cast<u8>(sound.channel);
+        c.priority = sound.priority;
+        c.loop = sound.loop;
+        c.audibleVolume = EffectiveVolume(sound.volume, sound.channel) *
+            (sound.is3D ? Calculate3DVolume(sound.position, sound.minDistance, sound.maxDistance) : 1.0f);
+        voices.push_back(c);
+        handles.push_back(h);
+    }
+    const i32 pick = ChooseVoiceToSteal(voices, priority, static_cast<u8>(channel), sameChannelOnly);
+    if (pick < 0) {
+        ++m_VoicesRefused;
+        ENJIN_LOG_WARN(Audio, "Voices: %s full (%u), nothing can give way to '%s' (priority %d); not played",
+                       limitName, limit, clipPath.c_str(), priority);
+        return false;
+    }
+    const SoundHandle victim = handles[static_cast<usize>(pick)];
+    auto it = m_Sounds.find(victim);
+    const auto clipIt = m_Clips.find(it->second.clip);
+    ++m_VoiceSteals;
+    ENJIN_LOG_INFO(Audio, "Voices: %s full (%u), stopped '%s' (priority %d, volume %.2f) for '%s' (priority %d)",
+                   limitName, limit, clipIt != m_Clips.end() ? clipIt->second.filepath.c_str() : "?",
+                   it->second.priority, voices[static_cast<usize>(pick)].audibleVolume, clipPath.c_str(), priority);
+    CleanupSound(it->second);
+    m_Sounds.erase(it);
+    return true;
 }
 
 void AudioEngine::Stop(SoundHandle sound) {
@@ -1708,26 +1812,7 @@ void AudioEngine::UpdateAudioSources(f32 deltaTime) {
         }
         if (audio->playOnAwake && !audio->isPlaying && !audio->awakeTriggered) {
             if (!audio->clipPath.empty()) {
-                PlayVariation v = ChooseVariation(*audio);
-                AudioClipHandle clip = LoadClip(v.clipPath);
-                // Map ECS::AudioChannel to Audio::AudioChannel (same enum values)
-                auto ch = static_cast<AudioChannel>(static_cast<u8>(audio->channel));
-                // Music and UI channels force non-diegetic (2D) playback
-                bool diegetic3D = audio->is3D &&
-                    ch != AudioChannel::Music && ch != AudioChannel::UI;
-                SoundHandle snd;
-                // The caption the accessibility indicator shows for this one
-                // sound: its authored description (SD-23).
-                m_NextCaption = audio->audioDescription;
-                if (diegetic3D) {
-                    snd = Play3D(clip, position, v.volume, audio->minDistance, audio->maxDistance, ch);
-                    // The source's Rolloff, saved and never applied before (SD-27)
-                    SetRolloff(snd, static_cast<u8>(audio->rolloff));
-                } else {
-                    snd = Play(clip, v.volume, v.pitch, audio->loop, ch);
-                }
-                m_NextCaption.clear();   // a play that bailed early must not caption the next sound
-                audio->soundHandle = snd;
+                audio->soundHandle = PlaySource(*audio, position);
                 audio->isPlaying = true;
             }
             audio->awakeTriggered = true;

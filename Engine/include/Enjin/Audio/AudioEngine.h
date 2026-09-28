@@ -5,6 +5,7 @@
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/Audio/AudioBus.h"
+#include "Enjin/Audio/VoiceBudget.h"
 #include "Enjin/Acoustics/EarlyReflections.h"
 #include <string>
 #include <unordered_map>
@@ -42,6 +43,7 @@ struct SoundInstance {
     bool loop = false;
     bool is3D = false;
     AudioChannel channel = AudioChannel::SFX;
+    i32 priority = 128;    // resolved voice priority, lower = more important
     Math::Vector3 position;
     f32 minDistance = 1.0f;
     f32 maxDistance = 500.0f;
@@ -217,7 +219,25 @@ public:
     // Play 3D sound at position (diegetic — attenuates with distance)
     SoundHandle Play3D(AudioClipHandle clip, const Math::Vector3& position,
                        f32 volume = 1.0f, f32 minDist = 1.0f, f32 maxDist = 500.0f,
-                       AudioChannel channel = AudioChannel::SFX);
+                       AudioChannel channel = AudioChannel::SFX, bool loop = false, f32 pitch = 1.0f);
+
+    // Play an AudioSource the way it was authored: a clip variation, its pitch
+    // and volume ranges, 2D or 3D by channel, loop, rolloff, caption and voice
+    // priority. Play-on-awake and the script Audio_Play both come through here;
+    // they were two copies, and the script one skipped variations, captions,
+    // and pitch on a 3D sound.
+    SoundHandle PlaySource(ECS::AudioSourceComponent& src, const Math::Vector3& position);
+
+    // Voice budget (VoiceBudget.h). A Play over either limit steals the quietest
+    // voice that is not looping, not Music and not more important, or is refused.
+    void SetVoiceBudget(u32 voices) { m_VoiceBudget = voices > 0 ? voices : 1; }
+    u32 GetVoiceBudget() const { return m_VoiceBudget; }
+    void SetChannelVoiceCap(AudioChannel channel, u32 voices);
+    u32 GetChannelVoiceCap(AudioChannel channel) const;
+    u32 GetActiveVoiceCount() const { return static_cast<u32>(m_Sounds.size()); }
+    u32 GetChannelVoiceCount(AudioChannel channel) const;
+    u32 GetVoiceStealCount() const { return m_VoiceSteals; }
+    u32 GetVoiceRefusedCount() const { return m_VoicesRefused; }
 
     // Play one-shot (fire and forget)
     void PlayOneShot(AudioClipHandle clip, f32 volume = 1.0f, AudioChannel channel = AudioChannel::SFX);
@@ -323,6 +343,11 @@ private:
     f32 Calculate3DVolume(const Math::Vector3& soundPos, f32 minDist, f32 maxDist) const;
     f32 EffectiveVolume(f32 instanceVolume, AudioChannel channel) const;
     void CleanupSound(SoundInstance& sound);
+    // Frees a voice for a new sound if the budget or its channel is full.
+    // False = the new sound must be refused.
+    bool MakeRoomForVoice(AudioChannel channel, i32 priority, const std::string& clipPath);
+    bool StealOne(AudioChannel channel, i32 priority, bool sameChannelOnly, const char* limitName,
+                  u32 limit, const std::string& clipPath);
 
     // pImpl for miniaudio engine
     struct Impl;
@@ -382,6 +407,14 @@ private:
     // Description for the NEXT Play/Play3D only, set by the audio source path
     // right before it plays and consumed by that call.
     std::string m_NextCaption;
+    // Voice priority for the NEXT Play/Play3D only, set the same way
+    i32 m_NextPriority = kUseChannelPriority;
+
+    u32 m_VoiceBudget = kDefaultVoiceBudget;
+    u32 m_ChannelVoiceCaps[4] = {kDefaultChannelVoiceCaps[0], kDefaultChannelVoiceCaps[1],
+                                 kDefaultChannelVoiceCaps[2], kDefaultChannelVoiceCaps[3]};
+    u32 m_VoiceSteals = 0;
+    u32 m_VoicesRefused = 0;
 
 public:
     // Audio bus mixer (hierarchical volume routing)
