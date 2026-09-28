@@ -2176,6 +2176,8 @@ private:
     // tree or an install), and the first of those that exists ("" if none).
     static std::vector<std::string> DocSearchPaths(const char* fileName);
     static std::string FindDocFile(const char* fileName);
+    // Opens the project's symbol library on first use; false with no project
+    bool EnsureSymbolLibrary();
 
     // The Entity menu entries added by GR-17 (EditorLayerEntityMenu.cpp)
     ECS::Entity MakeMenuEntity(const char* name, const Math::Vector3& position);

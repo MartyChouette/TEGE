@@ -1,4 +1,5 @@
 #include "Enjin/Editor/VectorDrawingEditor.h"
+#include "Enjin/Platform/FileDialog.h"
 #include "Enjin/Editor/EditorTheme.h"
 #include <stb_image_write.h>
 #include "Enjin/Renderer/VectorRaster.h"
@@ -284,14 +285,19 @@ void VectorDrawingEditor::DrawToolbar() {
     ImGui::SameLine();
 
     // Export
-    if (ImGui::Button("Export SVG")) {
-        std::string path = "vector_export.svg";
-        ExportSVG(path);
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Save as Symbol")) {
-        if (!m_Document.symbolName.empty()) {
-            SaveAsSymbol(m_Document.symbolName, ".");
+    // A save dialog. This wrote a fixed vector_export.svg into the working
+    // directory, the exe folder. The "Save as Symbol" button that sat here
+    // wrote to the same place and only when the document already had a symbol
+    // name; saving a symbol is the named "Save as Flash Symbol" under the
+    // canvas, which files it in the project's symbol library (GR-8).
+    if (ImGui::Button("Export SVG...")) {
+        if (!FileDialog::IsAvailable()) {
+            ENJIN_LOG_WARN(Editor, "Vector Drawing: no file dialog available (install zenity, kdialog or yad)");
+        } else {
+            const std::string path = FileDialog::SaveFile("Export SVG",
+                {{ "SVG", "*.svg" }}, "", "drawing.svg");
+            if (!path.empty() && !ExportSVG(path))
+                ENJIN_LOG_ERROR(Editor, "Vector Drawing: could not write %s", path.c_str());
         }
     }
 

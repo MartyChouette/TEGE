@@ -130,6 +130,11 @@ public:
     bool Save(const std::string& path) const;
     bool Load(const std::string& path);
 
+    // Where the file dialogs open: the project folder, set by the editor.
+    // The graph used to save to and load from a fixed shader_graph.enjshader
+    // in the working directory, which is the exe folder (GR-8).
+    void SetDefaultDirectory(const std::string& dir) { m_DefaultDir = dir; }
+
     // Same JSON as Save/Load but in-memory — used to persist the editable graph
     // inside CustomShaderComponent so a scene reload restores the node layout,
     // not just the compiled GLSL.
@@ -157,6 +162,10 @@ private:
     std::function<i32(const std::string&)> m_TextureResolver;
     ShaderGraphData* m_Graph = nullptr;
     bool m_Open = false;
+    std::string m_FilePath;     // the file this graph was last saved to or loaded from
+    std::string m_DefaultDir;
+    void SaveAsDialog();
+    void LoadDialog();
     u32 m_SelectedNodeId = 0;
     Math::Vector2 m_ScrollOffset;
     f32 m_Zoom = 1.0f;

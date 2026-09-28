@@ -1,4 +1,5 @@
 #include "Enjin/Editor/ShaderGraph.h"
+#include "Enjin/Platform/FileDialog.h"
 #include "Enjin/Editor/EditorTheme.h"
 #include "Enjin/Logging/Log.h"
 #include <imgui.h>
@@ -331,12 +332,13 @@ void ShaderGraphEditor::Render() {
                 m_Graph->nextLinkId = 1;
                 m_SelectedNodeId = 0;
             }
-            if (ImGui::MenuItem("Save", "Ctrl+S")) {
-                Save("shader_graph.enjshader");
+            if (ImGui::MenuItem("Save")) {
+                if (m_FilePath.empty()) SaveAsDialog();
+                else Save(m_FilePath);
             }
-            if (ImGui::MenuItem("Load")) {
-                Load("shader_graph.enjshader");
-            }
+            if (!m_FilePath.empty()) ImGui::SetItemTooltip("%s", m_FilePath.c_str());
+            if (ImGui::MenuItem("Save As...")) SaveAsDialog();
+            if (ImGui::MenuItem("Open...")) LoadDialog();
             ImGui::EndMenu();
         }
         if (ImGui::BeginMenu("Edit")) {
@@ -1794,6 +1796,30 @@ std::string ShaderGraphEditor::ToJsonString() const {
     json += "  ]\n";
     json += "}\n";
     return json;
+}
+
+void ShaderGraphEditor::SaveAsDialog() {
+    if (!FileDialog::IsAvailable()) {
+        ENJIN_LOG_WARN(Editor, "Shader Graph: %s", "No file dialog available (install zenity, kdialog or yad)");
+        return;
+    }
+    const std::string path = FileDialog::SaveFile("Save Shader Graph",
+        {{ "Shader Graph", "*.enjshader" }}, m_DefaultDir, "shader.enjshader");
+    if (path.empty()) return;
+    if (Save(path)) m_FilePath = path;
+    else ENJIN_LOG_ERROR(Editor, "Shader Graph: could not write %s", path.c_str());
+}
+
+void ShaderGraphEditor::LoadDialog() {
+    if (!FileDialog::IsAvailable()) {
+        ENJIN_LOG_WARN(Editor, "Shader Graph: %s", "No file dialog available (install zenity, kdialog or yad)");
+        return;
+    }
+    const std::string path = FileDialog::OpenFile("Open Shader Graph",
+        {{ "Shader Graph", "*.enjshader" }}, m_DefaultDir);
+    if (path.empty()) return;
+    if (Load(path)) m_FilePath = path;
+    else ENJIN_LOG_ERROR(Editor, "Shader Graph: could not read %s", path.c_str());
 }
 
 bool ShaderGraphEditor::Save(const std::string& path) const {

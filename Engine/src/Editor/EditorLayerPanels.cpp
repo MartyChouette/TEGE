@@ -3570,27 +3570,20 @@ void EditorLayer::DrawSpriteSheetImporterPanel() {
     if (!panelOpen) { SetPanelVisibility(EditorPanel::SpriteSheetImport, false); ImGui::End(); return; }
 
     // Load button
+    // The file dialog, not a typed path (GR-8)
     if (ImGui::Button("Load Sprite Sheet...")) {
-        // Use native file dialog via nfd or fallback to text input
-        // For now, use a simple text input path
-        ImGui::OpenPopup("LoadSpriteSheetPath");
-    }
-
-    if (ImGui::BeginPopup("LoadSpriteSheetPath")) {
-        static char pathBuf[512] = "";
-        ImGui::Text("Image Path:");
-        ImGui::InputText("##ssipath", pathBuf, sizeof(pathBuf));
-        if (ImGui::Button("Load")) {
-            if (m_SpriteSheetImporter.LoadImage(pathBuf)) {
-                m_SpriteSheetResult = {};
+        if (!FileDialog::IsAvailable()) {
+            ShowNotification("No file dialog available (install zenity, kdialog or yad)", NotificationType::Warning);
+        } else {
+            const std::string projectDir = m_SceneManager.GetProjectPath().empty() ? std::string()
+                : std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path().string();
+            const std::string path = FileDialog::OpenFile("Load Sprite Sheet",
+                {{ "Images", "*.png;*.jpg;*.jpeg;*.bmp;*.tga" }}, projectDir);
+            if (!path.empty()) {
+                if (m_SpriteSheetImporter.LoadImage(path)) m_SpriteSheetResult = {};
+                else ShowNotification("Could not load " + path, NotificationType::Error);
             }
-            ImGui::CloseCurrentPopup();
         }
-        ImGui::SameLine();
-        if (ImGui::Button("Cancel")) {
-            ImGui::CloseCurrentPopup();
-        }
-        ImGui::EndPopup();
     }
 
     if (!m_SpriteSheetImporter.IsLoaded()) {
@@ -3667,9 +3660,9 @@ void EditorLayer::DrawSpriteSheetImporterPanel() {
         // Apply to entity
         if (m_PrimarySelected != ECS::INVALID_ENTITY && m_World) {
             ImGui::Separator();
+            // No animation name: the Animated Sprite 2D component holds one
+            // unnamed animation, so a name typed here went nowhere (GR-8)
             static f32 animFps = 12.0f;
-            static char animNameBuf[64] = "idle";
-            ImGui::InputText("Animation Name", animNameBuf, sizeof(animNameBuf));
             ImGui::DragFloat("FPS", &animFps, 0.5f, 1.0f, 60.0f);
 
             if (ImGui::Button("Apply to Selected Entity")) {
@@ -3693,8 +3686,8 @@ void EditorLayer::DrawSpriteSheetImporterPanel() {
                     animComp->frameTimer = 0.0f;
                     animComp->playing = true;
                     animComp->loop = true;
-                    ENJIN_LOG_INFO(Editor, "Applied animation '%s' with %zu frames to entity",
-                                   animNameBuf, animComp->frames.size());
+                    ENJIN_LOG_INFO(Editor, "Applied an animation of %zu frames to the entity",
+                                   animComp->frames.size());
                 }
 
                 // Also set Sprite2D texture path if the entity has one
@@ -6173,17 +6166,23 @@ void EditorLayer::DrawSymbolLibraryPanel() {
         return;
     }
 
-    if (!m_SymbolLibraryInitialized) {
-        const std::string dir =
-            (std::filesystem::path(projectPath).parent_path() / "symbols").string();
-        m_SymbolLibrary.Initialize(dir);
-        m_SymbolLibraryInitialized = true;
-        ENJIN_LOG_INFO(Editor, "Symbol Library: %s (%zu symbols)", dir.c_str(),
-                       m_SymbolLibrary.GetAllSymbols().size());
-    }
+    EnsureSymbolLibrary();
 
     m_SymbolLibrary.DrawBrowserPanel();
     ImGui::End();
+}
+
+bool EditorLayer::EnsureSymbolLibrary() {
+    if (m_SymbolLibraryInitialized) return true;
+    const std::string projectPath = m_SceneManager.GetProjectPath();
+    if (projectPath.empty()) return false;
+    const std::string dir =
+        (std::filesystem::path(projectPath).parent_path() / "symbols").string();
+    m_SymbolLibrary.Initialize(dir);
+    m_SymbolLibraryInitialized = true;
+    ENJIN_LOG_INFO(Editor, "Symbol Library: %s (%zu symbols)", dir.c_str(),
+                   m_SymbolLibrary.GetAllSymbols().size());
+    return true;
 }
 
 void EditorLayer::DrawFlashTimelinePanel() {
@@ -6460,9 +6459,30 @@ void EditorLayer::DrawVectorDrawingPanel() {
         ImGui::InputText("Symbol Name", symbolName, sizeof(symbolName));
         ImGui::SameLine();
         if (ImGui::Button("Save as Flash Symbol")) {
-            if (m_VectorDrawingEditor.SaveAsSymbol(symbolName, ".")) {
-                std::string svgPath = std::string(symbolName) + ".svg";
-                m_FlashTimelineData.symbolLibrary[symbolName] = svgPath;
+            // Into the project's symbol library (<project>/symbols), catalogued
+            // so the Symbol Library lists it. This wrote <name>.svg into the
+            // working directory, the exe folder, and recorded that bare name
+            // as the timeline's path (GR-8).
+            if (!EnsureSymbolLibrary()) {
+                ShowNotification("Open a project first: symbols are saved inside it",
+                                 NotificationType::Warning);
+            } else {
+                const std::string id = m_SymbolLibrary.CreateSymbolFromVector(
+                    m_VectorDrawingEditor, symbolName, "Drawings");
+                const SymbolEntry* sym = id.empty() ? nullptr : m_SymbolLibrary.FindSymbol(id);
+                if (sym) {
+                    const std::filesystem::path root =
+                        std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path();
+                    std::error_code ec;
+                    const auto rel = std::filesystem::relative(sym->assetPath, root, ec);
+                    m_FlashTimelineData.symbolLibrary[symbolName] =
+                        ec ? sym->assetPath : rel.generic_string();
+                    ShowNotification(std::string("Saved symbol '") + symbolName + "'",
+                                     NotificationType::Success);
+                } else {
+                    ShowNotification("Could not save the symbol (see the console)",
+                                     NotificationType::Error);
+                }
             }
         }
     }

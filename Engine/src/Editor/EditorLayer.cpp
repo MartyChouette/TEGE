@@ -5031,6 +5031,9 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         }
         ImGui::End();
 
+        if (!m_SceneManager.GetProjectPath().empty())
+            m_ShaderGraphEditor.SetDefaultDirectory(
+                std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path().string());
         m_ShaderGraphEditor.Render();
         // "Apply to Selected Entity": compile the graph and bind it as a live custom
         // shader on the current selection (RenderSystem shares the main pipeline layout).

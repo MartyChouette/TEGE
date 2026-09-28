@@ -1,4 +1,6 @@
 #include "Enjin/Editor/PixelEditor.h"
+#include "Enjin/Platform/FileDialog.h"
+#include <filesystem>
 #include "Enjin/Editor/EditorTheme.h"
 #include "Enjin/Assets/Prefab.h"
 #include "Enjin/ECS/World.h"
@@ -209,17 +211,15 @@ void PixelEditor::DrawToolbar() {
     }
 
     ImGui::SameLine();
-    if (ImGui::Button("Load")) {
-        ImGui::OpenPopup("LoadImagePopup");
-    }
-    if (ImGui::BeginPopup("LoadImagePopup")) {
-        static char pathBuf[512] = "";
-        ImGui::InputText("Path", pathBuf, sizeof(pathBuf));
-        if (ImGui::Button("Load")) {
-            LoadImage(pathBuf);
-            ImGui::CloseCurrentPopup();
+    // The file dialogs, not typed paths (GR-8)
+    if (ImGui::Button("Load...")) {
+        if (!FileDialog::IsAvailable()) {
+            ENJIN_LOG_WARN(Editor, "Pixel Editor: no file dialog available (install zenity, kdialog or yad)");
+        } else {
+            const std::string path = FileDialog::OpenFile("Load Image",
+                {{ "Images", "*.png;*.jpg;*.jpeg;*.bmp;*.tga" }});
+            if (!path.empty()) LoadImage(path);
         }
-        ImGui::EndPopup();
     }
 
     // Save goes back over the file this canvas came from - the whole reason a
@@ -242,27 +242,17 @@ void PixelEditor::DrawToolbar() {
     }
 
     ImGui::SameLine();
-    if (ImGui::Button("Export")) {
-        ImGui::OpenPopup("ExportPopup");
-    }
-    if (ImGui::BeginPopup("ExportPopup")) {
-        static char exportBuf[512] = "sprite.png";
-        // Seed the field with the current file the first time the popup opens,
-        // so "save a copy next to it" is an edit, not a retype.
-        if (ImGui::IsWindowAppearing() && !m_SourcePath.empty()) {
-#ifdef _MSC_VER
-            strncpy_s(exportBuf, sizeof(exportBuf), m_SourcePath.c_str(), _TRUNCATE);
-#else
-            std::strncpy(exportBuf, m_SourcePath.c_str(), sizeof(exportBuf) - 1);
-            exportBuf[sizeof(exportBuf) - 1] = '\0';
-#endif
+    if (ImGui::Button("Export...")) {
+        if (!FileDialog::IsAvailable()) {
+            ENJIN_LOG_WARN(Editor, "Pixel Editor: no file dialog available (install zenity, kdialog or yad)");
+        } else {
+            // Opens beside the current file, so "save a copy next to it" is one click
+            const std::filesystem::path src(m_SourcePath);
+            const std::string path = FileDialog::SaveFile("Export PNG", {{ "PNG", "*.png" }},
+                m_SourcePath.empty() ? std::string() : src.parent_path().string(),
+                m_SourcePath.empty() ? std::string("sprite.png") : src.filename().string());
+            if (!path.empty()) ExportPNG(path);
         }
-        ImGui::InputText("Path", exportBuf, sizeof(exportBuf));
-        if (ImGui::Button("Save PNG")) {
-            ExportPNG(exportBuf);
-            ImGui::CloseCurrentPopup();
-        }
-        ImGui::EndPopup();
     }
 
     ImGui::SameLine();
