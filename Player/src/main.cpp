@@ -2647,6 +2647,15 @@ public:
                 }
             }
 
+            // Storm lightning, over the game and under every menu (EP-6)
+            if (!m_ShowingSplash && m_StormLightning && m_WeatherSystem.IsLightningActive()) {
+                const Enjin::f32 alpha = Enjin::Effects::WeatherSystem::LightningOverlayAlpha(
+                    m_WeatherSystem.GetLightningIntensity(), m_AccessibilitySettings.disableFlashingLights);
+                ImGui::GetBackgroundDrawList()->AddRectFilled(ImVec2(0.0f, 0.0f),
+                    ImVec2(static_cast<float>(extent.width), static_cast<float>(extent.height)),
+                    IM_COL32(255, 255, 255, static_cast<int>(alpha * 255.0f)));
+            }
+
             // Accessibility overlays
             if (!m_ShowingSplash) {
                 // Content warning overlay blocks game rendering (Task #39)
@@ -3042,6 +3051,7 @@ private:
         Math::Vector3 camPos = m_Camera->GetPosition();
 
         ECS::WeatherZoneComponent* activeWeatherZone = nullptr;
+        m_StormLightning = false;   // set below when the zone is a storm with lightning on
         i32 bestWeatherPriority = INT_MIN;
         for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::WeatherZoneComponent>()) {
             auto* zone = m_World->GetComponent<ECS::WeatherZoneComponent>(entity);
@@ -3152,6 +3162,7 @@ private:
             m_WeatherSystem.SetRainTextureIndex(activeWeatherZone->cachedRainTexIndex);
             m_WeatherSystem.SetSnowTextureIndex(activeWeatherZone->cachedSnowTexIndex);
 
+            m_StormLightning = activeWeatherZone->weatherType == 6 && activeWeatherZone->lightningEnabled;
             if (activeWeatherZone->lightningEnabled) {
                 m_WeatherSystem.SetLightningInterval(
                     activeWeatherZone->lightningMinInterval,
@@ -4469,7 +4480,8 @@ private:
     bool m_ApplySavedSettingsPending = false;
     std::function<void(const Enjin::GUI::GraphicsSettings&, const Enjin::GUI::AudioSettings&)> m_ApplyGameSettings;
     Enjin::f32 m_PendingFOV = 0.0f;  // 0 = use camera component's FOV
-    Enjin::f32 m_FovShownInMenu = -1.0f;   // what Options opened with; -1 = not from the menu
+    Enjin::f32 m_FovShownInMenu = -1.0f;
+    bool m_StormLightning = false;   // the active weather zone is a storm with lightning on   // what Options opened with; -1 = not from the menu
     std::vector<Enjin::ECS::Entity> m_DeferredDestroys;
 
     // Tilde console

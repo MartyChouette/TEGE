@@ -218,6 +218,23 @@ ENJIN_TEST(WeatherEnum, AllTypes) {
     ENJIN_EXPECT_EQ((int)WeatherType::Storm, 6);
 }
 
+// With flashing lights off, a storm's flash is a faint glow at most, never a
+// strobe, whatever the bolt's intensity (EP-6, decided 2026-09-27)
+ENJIN_TEST(Weather, test_weather_lightning_overlay_softened_when_flashing_lights_off) {
+    // Arrange
+    const Enjin::f32 bolts[] = { 0.0f, 0.5f, 1.0f, 3.0f };
+
+    // Act + Assert
+    for (Enjin::f32 b : bolts) {
+        const Enjin::f32 soft = Enjin::Effects::WeatherSystem::LightningOverlayAlpha(b, true);
+        const Enjin::f32 full = Enjin::Effects::WeatherSystem::LightningOverlayAlpha(b, false);
+        ENJIN_EXPECT_TRUE(soft <= 0.12f + 1e-6f);
+        ENJIN_EXPECT_TRUE(full <= 0.78f + 1e-6f);
+        ENJIN_EXPECT_TRUE(soft <= full);
+    }
+    ENJIN_EXPECT_TRUE(Enjin::Effects::WeatherSystem::LightningOverlayAlpha(1.0f, false) > 0.5f);
+}
+
 ENJIN_TEST_MAIN()
 
 // ===========================================================================

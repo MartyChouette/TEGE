@@ -756,10 +756,10 @@ void EditorLayer::DrawGameViewPanel() {
             // Lightning flash overlay (ImGui, not Vulkan)
             if (activeWeatherZone && activeWeatherZone->weatherType == 6 &&
                 activeWeatherZone->lightningEnabled && m_WeatherSystem.IsLightningActive()) {
-                f32 intensity = m_WeatherSystem.GetLightningIntensity();
-                u8 flashAlpha = static_cast<u8>(intensity * 200.0f);
-                ImU32 flashColor = IM_COL32(255, 255, 255, flashAlpha);
-                drawList->AddRectFilled(p0, p1, flashColor);
+                // The game's flashing-lights setting, as the players read it
+                const f32 alpha = Effects::WeatherSystem::LightningOverlayAlpha(
+                    m_WeatherSystem.GetLightningIntensity(), m_RuntimeAccessibility.disableFlashingLights);
+                drawList->AddRectFilled(p0, p1, IM_COL32(255, 255, 255, static_cast<int>(alpha * 255.0f)));
             }
 
             // Water is now rendered as a 3D mesh in RenderToTarget (no ImGui overlay needed)

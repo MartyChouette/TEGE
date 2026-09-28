@@ -2719,6 +2719,14 @@ public:
         // Once: this block was pasted twice, so every frame drew the overlay
         // and the controls hint on top of themselves (IN-30).
         RenderTouchOverlay();
+        // Storm lightning, over the game and under the menus (EP-6)
+        if (m_StormLightning && m_WeatherSystem.IsLightningActive() && !WebEngineSplashActive()) {
+            const ImVec2 ds = ImGui::GetIO().DisplaySize;
+            const Enjin::f32 alpha = Enjin::Effects::WeatherSystem::LightningOverlayAlpha(
+                m_WeatherSystem.GetLightningIntensity(), m_AccessibilitySettings.disableFlashingLights);
+            ImGui::GetBackgroundDrawList()->AddRectFilled(ImVec2(0.0f, 0.0f), ds,
+                IM_COL32(255, 255, 255, static_cast<int>(alpha * 255.0f)));
+        }
         // The engine card last, over everything; the pause button and the
         // controls hint stand down while it plays
         DrawWebEngineSplash();
@@ -2910,6 +2918,7 @@ private:
         Math::Vector3 camPos = m_Camera->GetPosition();
 
         ECS::WeatherZoneComponent* activeWeatherZone = nullptr;
+        m_StormLightning = false;
         i32 bestWeatherPriority = INT_MIN;
         for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::WeatherZoneComponent>()) {
             auto* zone = m_World->GetComponent<ECS::WeatherZoneComponent>(entity);
@@ -2982,6 +2991,14 @@ private:
             m_WindSystem.SetZoneOverride(activeWeatherZone->windDirection, activeWeatherZone->windStrength);
             m_WeatherSystem.SetWindDirection(activeWeatherZone->windDirection);
             m_WeatherSystem.SetWindStrength(activeWeatherZone->windStrength);
+            // Lightning: the zone's own interval, and the flash (EP-6). Web
+            // never read either, so a storm ran on the default interval and
+            // showed nothing.
+            m_StormLightning = activeWeatherZone->weatherType == 6 && activeWeatherZone->lightningEnabled;
+            if (activeWeatherZone->lightningEnabled) {
+                m_WeatherSystem.SetLightningInterval(activeWeatherZone->lightningMinInterval,
+                                                     activeWeatherZone->lightningMaxInterval);
+            }
 
             m_RenderSystem->SetFogParams(activeWeatherZone->fogDensity,
                                          activeWeatherZone->fogStart, activeWeatherZone->fogEnd, 0.1f);
@@ -3650,6 +3667,7 @@ private:
     Enjin::GUI::ControlsScreen m_ControlsScreen;
     // Set during the UI walk, consumed at the end of the ImGui frame.
     bool m_UICanvasTookPointer = false;
+    bool m_StormLightning = false;         // active weather zone is a storm with lightning on
     bool m_AtMainMenu = false;             // Authored "MainMenu" canvas showing at boot
     bool m_WebImGuiInit = false;
     Enjin::f32 m_LastDeltaTime = 1.0f / 60.0f;

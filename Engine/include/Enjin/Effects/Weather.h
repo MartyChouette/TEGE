@@ -143,6 +143,16 @@ public:
     bool IsLightningActive() const { return m_LightningActive; }
     f32 GetLightningIntensity() const { return m_LightningIntensity; }
 
+    // The storm flash as a full-screen white overlay, 0..1 alpha, the one rule
+    // all three runtimes draw by. Only the editor drew a flash at all (EP-6).
+    // With flashing lights turned off it is a brief dim glow rather than a
+    // strobe: never above a faint wash, whatever the bolt's intensity (decided
+    // 2026-09-27).
+    static f32 LightningOverlayAlpha(f32 intensity, bool flashingLightsOff) {
+        const f32 i = intensity < 0.0f ? 0.0f : (intensity > 1.0f ? 1.0f : intensity);
+        return flashingLightsOff ? i * 0.12f : i * 0.78f;
+    }
+
     // Lightning frequency control
     void SetLightningInterval(f32 minSeconds, f32 maxSeconds) {
         m_LightningMinInterval = Math::Max(0.1f, minSeconds);
