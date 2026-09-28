@@ -1037,8 +1037,9 @@ void EditorLayer::DrawSettingsSection_Accessibility() {
         // -- Command Palette --
         if (ImGui::TreeNode("Command Palette")) {
             ImGui::Text("Press Ctrl+P to open the command palette.");
-            ImGui::TextDisabled("Provides keyboard-driven access to all editor commands\n"
-                                "with fuzzy search. Useful for screen reader workflows.");
+            ImGui::TextDisabled("Every tool in the Tools menu, every Entity creation entry and\n"
+                                "the common scene, view and play commands, with fuzzy search.\n"
+                                "Useful for screen reader workflows.");
             if (ImGui::Button("Open Command Palette")) {
                 m_CommandPalette.Open();
             }

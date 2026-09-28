@@ -2391,7 +2391,10 @@ void EditorLayer::Update(f32 deltaTime) {
 
         // Creative mode (Ctrl+B) -- one key to the build surface and one key
         // back, so trying it never costs a trip through a menu.
-        if (Input::IsKeyDown(KeyCode::LeftControl) && Input::IsKeyPressed(KeyCode::B)) {
+        // Through the shortcut table, whose modifiers must match exactly: this
+        // read Ctrl and ignored Shift, so Ctrl+Shift+B (Report Bug) switched
+        // mode as well (GR-16).
+        if (ShortcutPressed(ShortcutAction::CreativeMode)) {
             SetEditorMode(ModeUsesBuildSurface(m_EditorMode) ? EditorMode::Developer
                                                               : EditorMode::Creative);
         }
@@ -2532,8 +2535,7 @@ void EditorLayer::Update(f32 deltaTime) {
         }
 
         // Discord bug report (Ctrl+Shift+B)
-        if (Input::IsKeyDown(KeyCode::LeftControl) && Input::IsKeyDown(KeyCode::LeftShift) &&
-            Input::IsKeyPressed(KeyCode::B)) {
+        if (ShortcutPressed(ShortcutAction::ReportBug)) {
             m_ShowDiscordBugDialog = true;
             m_DiscordSendState = DiscordSendState::Idle;
         }

@@ -6,6 +6,7 @@
 #include "Enjin/Editor/ScenePicker.h"
 #include "Enjin/Core/Version.h"
 #include "Enjin/Platform/Paths.h"
+#include "Enjin/Editor/EditorShortcuts.h"
 #include "Enjin/Editor/ScriptErrorLocation.h"
 #include <GLFW/glfw3.h>
 #include <chrono>
@@ -5860,7 +5861,7 @@ void EditorLayer::RegisterPaletteCommands() {
 
     // Entity commands
     m_CommandPalette.RegisterCommand({
-        "Create Empty Entity", "Entity", "Ctrl+Shift+N",
+        "Create Empty Entity", "Entity", "",
         "Create a new empty entity in the scene",
         [this]() {
             if (!m_World) return;
@@ -5871,22 +5872,22 @@ void EditorLayer::RegisterPaletteCommands() {
         }
     });
     m_CommandPalette.RegisterCommand({
-        "Delete Selected", "Entity", "Delete",
+        "Delete Selected", "Entity", ShortcutChord(ShortcutAction::DeleteSelected),
         "Delete all selected entities",
         [this]() { DeleteSelectedEntities(); }
     });
     m_CommandPalette.RegisterCommand({
-        "Duplicate Selected", "Entity", "Ctrl+D",
+        "Duplicate Selected", "Entity", ShortcutChord(ShortcutAction::Duplicate),
         "Duplicate the selected entity",
         [this]() { DuplicateSelectedEntities(); }
     });
     m_CommandPalette.RegisterCommand({
-        "Focus Selection", "Entity", "F",
+        "Focus Selection", "Entity", ShortcutChord(ShortcutAction::FocusSelected),
         "Focus the camera on the selected entity",
         [this]() { if (!m_SelectedEntities.empty()) FocusOnSelection(); }
     });
     m_CommandPalette.RegisterCommand({
-        "Select All", "Entity", "Ctrl+A",
+        "Select All", "Entity", "",
         "Select all entities in the scene",
         [this]() {
             if (!m_World) return;
@@ -5902,7 +5903,7 @@ void EditorLayer::RegisterPaletteCommands() {
 
     // Scene commands
     m_CommandPalette.RegisterCommand({
-        "Save Scene", "Scene", "Ctrl+S",
+        "Save Scene", "Scene", ShortcutChord(ShortcutAction::SaveScene),
         "Save the current scene",
         [this]() {
             // A never-saved scene asks where, like the menu (this did nothing).
@@ -5910,12 +5911,12 @@ void EditorLayer::RegisterPaletteCommands() {
         }
     });
     m_CommandPalette.RegisterCommand({
-        "Save Scene As...", "Scene", "Ctrl+Shift+S",
+        "Save Scene As...", "Scene", ShortcutChord(ShortcutAction::SaveSceneAs),
         "Save the current scene to a new file",
         [this]() { SaveSceneAsDialog(); }
     });
     m_CommandPalette.RegisterCommand({
-        "Open Scene...", "Scene", "Ctrl+O",
+        "Open Scene...", "Scene", ShortcutChord(ShortcutAction::OpenScene),
         "Open an existing scene file",
         [this]() {
             std::vector<FileFilter> filters = {{ "Enjin Scene", "*.enjin" }};
@@ -5924,7 +5925,7 @@ void EditorLayer::RegisterPaletteCommands() {
         }
     });
     m_CommandPalette.RegisterCommand({
-        "New Scene", "Scene", "Ctrl+N",
+        "New Scene", "Scene", ShortcutChord(ShortcutAction::NewScene),
         "Create a new empty scene in this project",
         [this]() {
             // Same as File > New Scene, unsaved-changes prompt included: this
@@ -5942,22 +5943,22 @@ void EditorLayer::RegisterPaletteCommands() {
 
     // View commands
     m_CommandPalette.RegisterCommand({
-        "Toggle Hierarchy Panel", "View", "Ctrl+1",
+        "Toggle Hierarchy Panel", "View", "",
         "Show or hide the hierarchy panel",
         [this]() { SetPanelVisibility(EditorPanel::Hierarchy, !IsPanelVisible(EditorPanel::Hierarchy)); }
     });
     m_CommandPalette.RegisterCommand({
-        "Toggle Inspector Panel", "View", "Ctrl+2",
+        "Toggle Inspector Panel", "View", "",
         "Show or hide the inspector panel",
         [this]() { SetPanelVisibility(EditorPanel::Inspector, !IsPanelVisible(EditorPanel::Inspector)); }
     });
     m_CommandPalette.RegisterCommand({
-        "Toggle Console", "View", "Ctrl+4",
+        "Toggle Console", "View", "",
         "Show or hide the console panel",
         [this]() { SetPanelVisibility(EditorPanel::Console, !IsPanelVisible(EditorPanel::Console)); }
     });
     m_CommandPalette.RegisterCommand({
-        "Toggle Asset Browser", "View", "Ctrl+5",
+        "Toggle Asset Browser", "View", "",
         "Show or hide the asset browser",
         [this]() { SetPanelVisibility(EditorPanel::AssetBrowser, !IsPanelVisible(EditorPanel::AssetBrowser)); }
     });
@@ -5991,24 +5992,24 @@ void EditorLayer::RegisterPaletteCommands() {
 
     // Gizmo commands
     m_CommandPalette.RegisterCommand({
-        "Translate Mode", "Gizmo", "1",
+        "Translate Mode", "Gizmo", ShortcutChord(ShortcutAction::GizmoTranslate),
         "Switch gizmo to translate mode",
         [this]() { m_GizmoOperation = GizmoOperation::Translate; }
     });
     m_CommandPalette.RegisterCommand({
-        "Rotate Mode", "Gizmo", "2",
+        "Rotate Mode", "Gizmo", ShortcutChord(ShortcutAction::GizmoRotate),
         "Switch gizmo to rotate mode",
         [this]() { m_GizmoOperation = GizmoOperation::Rotate; }
     });
     m_CommandPalette.RegisterCommand({
-        "Scale Mode", "Gizmo", "3",
+        "Scale Mode", "Gizmo", ShortcutChord(ShortcutAction::GizmoScale),
         "Switch gizmo to scale mode",
         [this]() { m_GizmoOperation = GizmoOperation::Scale; }
     });
 
     // Play mode commands
     m_CommandPalette.RegisterCommand({
-        "Play", "PlayMode", "F5",
+        "Play", "PlayMode", "",
         "Start play mode",
         [this]() {
             if (!m_PlayMode.IsPlaying()) {
@@ -6022,7 +6023,7 @@ void EditorLayer::RegisterPaletteCommands() {
         [this]() { RequestPlayFromStart(); }
     });
     m_CommandPalette.RegisterCommand({
-        "Stop", "PlayMode", "Escape",
+        "Stop", "PlayMode", "",
         "Stop play mode",
         [this]() {
             if (m_PlayMode.IsPlaying() || m_PlayMode.IsPaused()) {
@@ -6031,6 +6032,22 @@ void EditorLayer::RegisterPaletteCommands() {
             }
         }
     });
+
+    // Shortcut hints come from the shortcut table (EditorShortcuts), and a
+    // command no key triggers shows none. These were typed here and five were
+    // wrong: Play as F5 (F5 files a bug report), Ctrl+1-5 as panel toggles
+    // (they move keyboard focus), and Ctrl+A and Ctrl+Shift+N, which nothing
+    // handles (GR-16).
+
+    // Every Entity-menu creation entry, from the table the menu draws
+    for (EntityMenuEntry& entry : BuildEntityMenuTable()) {
+        std::string description = entry.tooltip ? entry.tooltip : std::string("Entity menu");
+        for (char& c : description) if (c == '\n') c = ' ';
+        auto create = std::move(entry.create);
+        m_CommandPalette.RegisterCommand({ std::string("Create ") + entry.label, "Entity", "",
+                                           description,
+                                           [this, create]() { if (m_World) create(EntitySpawnPosition()); } });
+    }
 
     // Every tool in the Tools menu, from the same table the menu draws (GR-17)
     for (EditorToolEntry& tool : BuildToolTable()) {
@@ -6058,7 +6075,7 @@ void EditorLayer::RegisterPaletteCommands() {
 
     // Accessibility commands
     m_CommandPalette.RegisterCommand({
-        "Toggle Command Palette", "Accessibility", "Ctrl+P",
+        "Toggle Command Palette", "Accessibility", ShortcutChord(ShortcutAction::CommandPalette),
         "Open or close the command palette",
         [this]() { m_CommandPalette.Close(); }
     });
@@ -6075,19 +6092,19 @@ void EditorLayer::RegisterPaletteCommands() {
 
     // Tools
     m_CommandPalette.RegisterCommand({
-        "Undo", "Edit", "Ctrl+Z",
+        "Undo", "Edit", ShortcutChord(ShortcutAction::Undo),
         "Undo the last action",
         [this]() { m_UndoRedo.Undo(); }
     });
     m_CommandPalette.RegisterCommand({
-        "Redo", "Edit", "Ctrl+Y",
+        "Redo", "Edit", ShortcutChord(ShortcutAction::Redo),
         "Redo the last undone action",
         [this]() { m_UndoRedo.Redo(); }
     });
 
     // Feedback / Bug Reporting
     m_CommandPalette.RegisterCommand({
-        "Report Bug", "Help", "Ctrl+Shift+B",
+        "Report Bug", "Help", ShortcutChord(ShortcutAction::ReportBug),
         "Open the Discord bug report dialog",
         [this]() {
             m_ShowDiscordBugDialog = true;

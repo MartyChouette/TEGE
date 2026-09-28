@@ -2180,6 +2180,16 @@ private:
     // The Entity menu entries added by GR-17 (EditorLayerEntityMenu.cpp)
     ECS::Entity MakeMenuEntity(const char* name, const Math::Vector3& position);
     void FinishMenuEntity(ECS::Entity e);
+    Math::Vector3 EntitySpawnPosition() const;
+    // One table, drawn by the Entity menu and registered with the palette
+    struct EntityMenuEntry {
+        const char* group;     // submenu, or "" for the Entity menu itself
+        const char* label;
+        const char* tooltip;
+        std::function<void(const Math::Vector3&)> create;
+    };
+    std::vector<EntityMenuEntry> BuildEntityMenuTable();
+    void DrawEntityMenuGroup(const char* group);
     void DrawEntityMenuCommon(const Math::Vector3& spawn);
     void DrawEntityMenuGameplay(const Math::Vector3& spawn);
 

@@ -19,6 +19,7 @@
 // There is one table now, and the window, the menu and the handler all read it.
 #include "EnjinTest.h"
 #include "Enjin/Editor/EditorShortcuts.h"
+#include "Enjin/Platform/Input.h"
 #include <cstring>
 #include <string>
 #include <set>
@@ -129,6 +130,32 @@ ENJIN_TEST(EditorShortcuts, GarbageDoesNotParse) {
     ENJIN_EXPECT_FALSE(ShortcutChordParses("Ctrl+"));
     // And an empty chord is a true statement, not a failure to parse.
     ENJIN_EXPECT_TRUE(ShortcutChordParses(""));
+}
+
+// Ctrl+Shift+B is Report Bug and Ctrl+B is Creative mode. The editor checked
+// Ctrl+B by hand, ignoring Shift, so the one chord did both (GR-16). Both now go
+// through ShortcutPressed; this pins that the table keeps them apart.
+ENJIN_TEST(EditorShortcuts, test_shortcuts_ctrl_shift_b_is_report_bug_only) {
+    // Arrange: Ctrl+Shift+B pressed this frame
+    bool keys[512] = {};
+    bool mouse[8] = {};
+    keys[static_cast<int>(KeyCode::LeftControl)] = true;
+    keys[static_cast<int>(KeyCode::LeftShift)] = true;
+    Input::SetReplayInjection(true);
+    Input::InjectFrameState(keys, mouse, Math::Vector2(0.0f, 0.0f));
+    Input::Update();
+    keys[static_cast<int>(KeyCode::B)] = true;
+    Input::InjectFrameState(keys, mouse, Math::Vector2(0.0f, 0.0f));
+    Input::Update();
+
+    // Act
+    const bool report = ShortcutPressed(ShortcutAction::ReportBug);
+    const bool creative = ShortcutPressed(ShortcutAction::CreativeMode);
+    Input::SetReplayInjection(false);
+
+    // Assert
+    ENJIN_EXPECT_TRUE(report);
+    ENJIN_EXPECT_FALSE(creative);
 }
 
 ENJIN_TEST_MAIN()

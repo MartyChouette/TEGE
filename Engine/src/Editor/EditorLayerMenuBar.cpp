@@ -349,6 +349,11 @@ void EditorLayer::DrawMenuBar() {
             }
             // Settings live here now. View keeps only panels and modes (GR-17).
             ImGui::Separator();
+            // The palette had no menu entry, only its chord (GR-16)
+            if (ImGui::MenuItem("Command Palette...", ShortcutChord(ShortcutAction::CommandPalette))) {
+                m_CommandPalette.Open();
+            }
+            ImGui::Separator();
             if (ImGui::MenuItem("System Settings")) OpenSettings(0);
             if (ImGui::MenuItem("Project Settings")) OpenSettings(1);
             if (ImGui::MenuItem("Scene Settings")) OpenSettings(2);
