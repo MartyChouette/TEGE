@@ -1,4 +1,5 @@
 #include "Enjin/Accessibility/Announcer.h"
+#include "Enjin/GUI/GameTextFont.h"
 #include "Enjin/Logging/Log.h"
 
 #include <imgui.h>
@@ -147,6 +148,7 @@ void AccessibilityAnnouncer::Update(f32 dt) {
 }
 
 void AccessibilityAnnouncer::RenderStatusBar() {
+    GUI::ScopedGameTextFont gameTextFont;   // the dyslexia face when the option is on
     if (!enabled || m_Queue.empty()) return;
 
     const auto& current = m_Queue.front();

@@ -1,4 +1,5 @@
 #include "Enjin/Accessibility/SubtitleSystem.h"
+#include "Enjin/GUI/GameTextFont.h"
 #include "Enjin/GUI/TextSpacing.h"
 #include <imgui.h>
 #include <algorithm>
@@ -56,6 +57,7 @@ void SubtitleSystem::Update(f32 dt) {
 
 void SubtitleSystem::RenderOverlay(f32 originX, f32 originY,
                                    u32 viewportWidth, u32 viewportHeight) {
+    GUI::ScopedGameTextFont gameTextFont;   // the dyslexia face when the option is on
     if (m_Entries.empty()) return;
     if (!m_Config.enabled && !m_Config.captionsEnabled) return;
     // T-L8: Guard against zero viewport dimensions

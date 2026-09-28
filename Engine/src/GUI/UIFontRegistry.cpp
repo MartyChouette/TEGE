@@ -1,4 +1,5 @@
 #include "Enjin/GUI/UIFontRegistry.h"
+#include "Enjin/Accessibility/TextFont.h"
 #include "Enjin/Platform/Paths.h"
 #include "Enjin/Logging/Log.h"
 
@@ -70,6 +71,7 @@ void UIFontRegistry::SetLoaded(const std::string& relativePath, ImFont* font) {
 }
 
 void UIFontRegistry::OnAtlasCleared() {
+    m_DyslexiaFace = nullptr;
     m_Loaded.clear();
     // The requests survive; they are what the next build re-adds. If anything
     // was ever wanted, the next build has to happen.
@@ -81,6 +83,10 @@ void UIFontRegistry::Reset() {
     m_Requested.clear();
     m_Loaded.clear();
     m_NeedsRebuild = false;
+}
+
+ImFont* UIFontRegistry::DyslexiaOverride() const {
+    return Accessibility::IsDyslexiaFontEnabled() ? m_DyslexiaFace : nullptr;
 }
 
 } // namespace GUI

@@ -81,6 +81,8 @@
 #include "Enjin/Platform/WebLazyFS.h"
 #include "Enjin/Assets/MeshAssetCache.h"
 #include "Enjin/GUI/UIFontRegistry.h"
+#include "Enjin/Platform/AssetFS.h"
+#include "Enjin/Accessibility/OpenDyslexicFont.h"
 #include "Enjin/Scripting/ScriptEngine.h"
 #include "Enjin/Scripting/ScriptSystem.h"
 #include "Enjin/Scripting/ScriptBindings.h"
@@ -1395,6 +1397,30 @@ public:
         if (SceneWantsMouseCapture()) Enjin::Input::SetMouseCaptured(true);
     }
 
+    // The faces a scene's UI canvases name, added to the atlas as they are
+    // asked for. Desktop's ImGuiLayer does this; web had no atlas owner doing
+    // it, so every custom UI font fell back to the built-in face (EP-19).
+    // ImGui 1.92's atlas grows after init, so no clear and rebuild is needed.
+    void LoadRequestedUIFonts() {
+        auto& fonts = Enjin::GUI::UIFontRegistry::Get();
+        if (!fonts.NeedsRebuild()) return;
+        ImGuiIO& io = ImGui::GetIO();
+        for (const std::string& relative : fonts.RequestedPaths()) {
+            if (fonts.WasAttempted(relative)) continue;
+            ImFont* face = nullptr;
+            const std::string path = fonts.ResolvedPath(relative);
+            std::vector<Enjin::u8> bytes;
+            if (!path.empty() && Enjin::Platform::AssetFS::ReadBytes(path, bytes) && !bytes.empty()) {
+                void* data = IM_ALLOC(bytes.size());   // the atlas owns and frees it
+                std::memcpy(data, bytes.data(), bytes.size());
+                face = io.Fonts->AddFontFromMemoryTTF(data, static_cast<int>(bytes.size()), 48.0f);
+            }
+            if (!face) ENJIN_LOG_WARN(Player, "Failed to load UI font: %s", relative.c_str());
+            fonts.SetLoaded(relative, face);
+        }
+        fonts.MarkBuilt();
+    }
+
     void QueueWebSceneLoad(const std::string& path, bool startPlaying) {
         m_PendingWebScene = path;
         m_PendingStartPlaying = startPlaying;
@@ -2367,6 +2393,12 @@ public:
                 initIO.Fonts->AddFontFromMemoryTTF(
                     const_cast<unsigned char*>(Enjin::GUI::RobotoMediumTTF),
                     static_cast<int>(Enjin::GUI::RobotoMediumTTFSize), 18.0f, &cfg);
+                // The dyslexia-friendly face for the accessibility option, as
+                // desktop's ImGuiLayer adds it
+                ImFont* dys = initIO.Fonts->AddFontFromMemoryTTF(
+                    const_cast<unsigned char*>(Enjin::Accessibility::s_OpenDyslexicFontData),
+                    static_cast<int>(Enjin::Accessibility::s_OpenDyslexicFontDataSize), 18.0f, &cfg);
+                Enjin::GUI::UIFontRegistry::Get().SetDyslexiaFace(dys);
             }
 
             ImGui_ImplWGPU_InitInfo info;
@@ -2652,6 +2684,7 @@ public:
         io.MouseDown[0] = Enjin::Input::IsMouseButtonDown(Enjin::MouseButton::Left);
         io.MouseDown[1] = Enjin::Input::IsMouseButtonDown(Enjin::MouseButton::Right);
 
+        LoadRequestedUIFonts();
         ImGui_ImplWGPU_NewFrame();
         ImGui::NewFrame();
 

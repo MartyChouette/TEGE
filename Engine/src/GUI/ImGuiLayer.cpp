@@ -1,4 +1,5 @@
 #include "Enjin/GUI/ImGuiLayer.h"
+#include "Enjin/Accessibility/OpenDyslexicFont.h"
 #include "Enjin/Platform/AssetFS.h"
 #include <cstring>
 #include <cmath>
@@ -449,6 +450,11 @@ void ImGuiLayer::LoadFonts(const EditorFontConfig& fontConfig) {
             fonts.SetLoaded(relative, face);
         }
         fonts.MarkBuilt();
+        // The dyslexia-friendly face, for the accessibility option. Always in
+        // the atlas, so turning the option on needs no rebuild.
+        fonts.SetDyslexiaFace(AddEmbeddedFont(io, Accessibility::s_OpenDyslexicFontData,
+                                              Accessibility::s_OpenDyslexicFontDataSize,
+                                              kGameFontAtlasSize));
     }
 
     // Atlas builds automatically on first ImGui_ImplVulkan_NewFrame() call

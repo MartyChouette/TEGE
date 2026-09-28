@@ -1,4 +1,5 @@
 #include "Enjin/Gameplay/InteractionSystem.h"
+#include "Enjin/GUI/GameTextFont.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/CameraZones.h"
 #include "Enjin/ECS/EntityEventBus.h"
@@ -160,6 +161,7 @@ void InteractionSystem::Reset() {
 }
 
 void InteractionSystem::RenderOverlay(f32 originX, f32 originY, u32 viewportWidth, u32 viewportHeight) {
+    GUI::ScopedGameTextFont gameTextFont;   // the dyslexia face when the option is on
     if (m_Focused == ECS::INVALID_ENTITY || m_Prompt.empty()) return;
     if (viewportWidth == 0 || viewportHeight == 0) return;
 

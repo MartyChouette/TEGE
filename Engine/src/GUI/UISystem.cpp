@@ -1183,6 +1183,9 @@ void UISystem::RenderElementTree(const UIElement& element, const UITheme& theme,
 ImFont* UISystem::ResolveFace(const UIElement& element, const UICanvasComponent& canvas) {
     // Element override first, then the canvas theme -- the same inheritance
     // style.fontSize already has.
+    // The dyslexia-friendly face overrides the authored one while the option
+    // is on: a player who needs it needs it on every label
+    if (ImFont* dys = UIFontRegistry::Get().DyslexiaOverride()) return dys;
     const std::string* wanted = nullptr;
     if (element.style.HasFontPath())        wanted = &element.style.fontPath;
     else if (!canvas.theme.fontPath.empty()) wanted = &canvas.theme.fontPath;

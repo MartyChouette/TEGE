@@ -76,6 +76,18 @@ public:
     // Forget everything, including requests. For tests and project close.
     void Reset();
 
+    // Whether a build has tried this path, loaded or failed. Lets an atlas
+    // that grows (the web player's) add only the new requests.
+    bool WasAttempted(const std::string& relativePath) const { return m_Loaded.count(relativePath) != 0; }
+
+    // The dyslexia-friendly face (OpenDyslexic, embedded), added to the atlas
+    // by its owner in every runtime, and cleared with the atlas.
+    void SetDyslexiaFace(ImFont* face) { m_DyslexiaFace = face; }
+    ImFont* DyslexiaFace() const { return m_DyslexiaFace; }
+    // That face while the accessibility option is on, else nullptr. Game text
+    // uses it over the authored face, as world text does (ResolveFontBytes).
+    ImFont* DyslexiaOverride() const;
+
 private:
     UIFontRegistry() = default;
 
@@ -83,6 +95,7 @@ private:
     std::vector<std::string> m_Requested;                  // request order, deduped
     std::unordered_map<std::string, ImFont*> m_Loaded;     // valid until OnAtlasCleared
     bool m_NeedsRebuild = false;
+    ImFont* m_DyslexiaFace = nullptr;
 };
 
 } // namespace GUI

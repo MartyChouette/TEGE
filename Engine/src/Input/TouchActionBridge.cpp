@@ -1,4 +1,5 @@
 #include <cmath>
+#include "Enjin/GUI/GameTextFont.h"
 #include <algorithm>
 #include "Enjin/Input/TouchActionBridge.h"
 #include "Enjin/Input/InputAction.h"
@@ -484,6 +485,7 @@ const char* ControlsHintLookKey(TouchPreset preset, bool mouseCaptured) {
 }
 
 void DrawControlsHint(f32 x0, f32 y0, f32 w, f32 h) {
+    GUI::ScopedGameTextFont gameTextFont;   // the dyslexia face when the option is on
     if (!s_ControlsHintEnabled) return;   // the game draws its own
     if (!s_TouchMap) return;
     if (Input::GetTouchOverlay().active) return;   // touch buttons carry their own labels
