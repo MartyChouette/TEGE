@@ -312,6 +312,9 @@ public:
     u32 GetWindowHeight() const { return m_WindowHeight; }
     void SetFullscreen(bool f) { m_Fullscreen = f; }
     bool GetFullscreen() const { return m_Fullscreen; }
+    // The "Made with TEGE" intro card in a build (buildConfig.engineSplash)
+    void SetEngineSplash(bool on) { m_EngineSplash = on; }
+    bool GetEngineSplash() const { return m_EngineSplash; }
 
     // --- Callbacks ---
     using SceneLoadedCallback = std::function<void(const std::string& sceneName)>;
@@ -374,6 +377,7 @@ private:
     u32 m_WindowWidth = 1280;
     u32 m_WindowHeight = 720;
     bool m_Fullscreen = false;
+    bool m_EngineSplash = true;
 
     // Runtime state
     std::string m_CurrentSceneName;

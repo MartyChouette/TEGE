@@ -336,6 +336,17 @@ void EditorLayer::OnAssetMoved(const std::string& from, const std::string& to) {
         const std::string rel = Platform::MakeRelativeToRoot(
             fs::weakly_canonical(root, ec).string(), moved.string());
         if (rel.empty()) continue;
+        // A scene still named after its file follows the file's new name. It
+        // kept the old one, so the Build Scenes list named a file that no
+        // longer existed (GR-13). A name chosen by hand is left alone.
+        const std::string oldStem = fs::path(e.path).stem().string();
+        const std::string newStem = fs::path(rel).stem().string();
+        if (e.name == oldStem && newStem != oldStem && !m_SceneManager.GetSceneByName(newStem)) {
+            ShowNotification("Scene '" + oldStem + "' is now '" + newStem +
+                             "'. Scripts that load it by name need the new name.",
+                             NotificationType::Info);
+            e.name = newStem;
+        }
         e.path = fs::path(rel).generic_string();
         changed = true;
     }

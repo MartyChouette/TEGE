@@ -1718,19 +1718,41 @@ void EditorLayer::DrawBuildDialog() {
     if (windowTitle[0] == '\0' && !m_BuildConfig.windowTitle.empty()) {
         std::strncpy(windowTitle, m_BuildConfig.windowTitle.c_str(), sizeof(windowTitle) - 1);
     }
-    ImGui::InputText("Window Title", windowTitle, sizeof(windowTitle));
+    // Title, size, fullscreen and the intro card are the project's, the same
+    // values Project Settings > Build Config edits. The dialog changed only
+    // this session's copy, so they reset every time the editor opened (GR-13).
+    bool projectChanged = false;
+    if (ImGui::InputText("Window Title", windowTitle, sizeof(windowTitle))) {
+        m_SceneManager.SetWindowTitle(windowTitle);
+        projectChanged = true;
+    }
     m_BuildConfig.windowTitle = windowTitle;
 
     // Resolution
     int w = static_cast<int>(m_BuildConfig.windowWidth);
     int h = static_cast<int>(m_BuildConfig.windowHeight);
-    ImGui::InputInt("Width", &w);
-    ImGui::InputInt("Height", &h);
-    if (w > 0) m_BuildConfig.windowWidth = static_cast<u32>(w);
-    if (h > 0) m_BuildConfig.windowHeight = static_cast<u32>(h);
+    if (ImGui::InputInt("Width", &w) && w > 0) {
+        m_BuildConfig.windowWidth = static_cast<u32>(w);
+        m_SceneManager.SetWindowWidth(m_BuildConfig.windowWidth);
+        projectChanged = true;
+    }
+    if (ImGui::InputInt("Height", &h) && h > 0) {
+        m_BuildConfig.windowHeight = static_cast<u32>(h);
+        m_SceneManager.SetWindowHeight(m_BuildConfig.windowHeight);
+        projectChanged = true;
+    }
 
-    ImGui::Checkbox("Fullscreen", &m_BuildConfig.fullscreen);
-    ImGui::Checkbox("\"Made with TEGE\" intro", &m_BuildConfig.engineSplash);
+    if (ImGui::Checkbox("Fullscreen", &m_BuildConfig.fullscreen)) {
+        m_SceneManager.SetFullscreen(m_BuildConfig.fullscreen);
+        projectChanged = true;
+    }
+    if (ImGui::Checkbox("\"Made with TEGE\" intro", &m_BuildConfig.engineSplash)) {
+        m_SceneManager.SetEngineSplash(m_BuildConfig.engineSplash);
+        projectChanged = true;
+    }
+    if (projectChanged && !m_SceneManager.GetProjectPath().empty() && !m_SceneManager.SaveProject()) {
+        ShowNotification("Failed to save project settings", NotificationType::Error);
+    }
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("Shows a short engine intro card when the game starts.\nSkippable with any key; fades out into your title screen.");
     }

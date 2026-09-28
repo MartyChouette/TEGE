@@ -49,6 +49,7 @@ void SceneManager::ResetProjectState() {
     m_WindowWidth = 1280;
     m_WindowHeight = 720;
     m_Fullscreen = false;
+    m_EngineSplash = true;
 }
 
 void SceneManager::NewProject(const std::string& projectName) {
@@ -257,6 +258,8 @@ bool SceneManager::LoadProject(const std::string& manifestPath) {
             if (bc.contains("windowWidth")) m_WindowWidth = bc["windowWidth"].get<u32>();
             if (bc.contains("windowHeight")) m_WindowHeight = bc["windowHeight"].get<u32>();
             if (bc.contains("fullscreen")) m_Fullscreen = bc["fullscreen"].get<bool>();
+            if (bc.contains("engineSplash") && bc["engineSplash"].is_boolean())
+                m_EngineSplash = bc["engineSplash"].get<bool>();
         }
 
         // Data assets come with the project, the same way the font root above
@@ -415,6 +418,7 @@ bool SceneManager::SaveProject(const std::string& manifestPath) {
         buildConfigJson["windowWidth"] = m_WindowWidth;
         buildConfigJson["windowHeight"] = m_WindowHeight;
         buildConfigJson["fullscreen"] = m_Fullscreen;
+        buildConfigJson["engineSplash"] = m_EngineSplash;
         root["buildConfig"] = buildConfigJson;
 
         // Atomic file save: write to temp file, then rename

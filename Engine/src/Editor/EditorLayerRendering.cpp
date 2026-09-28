@@ -1497,13 +1497,12 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
                 }
 
                 if (!m_PostProcessing->IsLUTLoaded()) {
-                    // Enabled with nothing to grade with. The setting is saved and
-                    // the image is not: lutEnabled, lutStrength and lutSize all
-                    // serialize, the LUT path does not. So a scene reopens with this
-                    // ticked and no LUT, and an exported build has no way to get one.
+                    // Enabled with nothing to grade with. The LUT's path is saved
+                    // with the scene's render settings now (renderSettings.lutPath),
+                    // so the old line saying it had to be reloaded every session
+                    // was no longer true (GR-13).
                     ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f),
-                        "No LUT loaded, so this does nothing. The LUT image is not saved "
-                        "with the scene and has to be loaded each session.");
+                        "No LUT loaded, so this does nothing. Load one; it is saved with the scene.");
                 }
 
                 ImGui::SameLine();
@@ -2356,9 +2355,6 @@ void EditorLayer::DrawSettingsSection_Skybox() {
                         c.bottomColor = Math::Vector3(r, g, b);
                         m_RenderSystem->SetSkybox(c);
                     });
-
-            ImGui::Separator();
-            changed |= ImGui::DragFloat3("Sun Direction", &config.sunDirection.x, 0.01f, -1.0f, 1.0f);
         }
 
         // Solid color controls
@@ -2399,6 +2395,12 @@ void EditorLayer::DrawSettingsSection_Skybox() {
             ImGui::Text("Atmosphere:");
             changed |= ImGui::SliderFloat("Sun Intensity", &config.sunIntensity, 0.0f, 3.0f);
             if (config.sunIntensity > 0.001f) {
+                // Every sky draws the sun, so every sky can aim it. It sat
+                // under the Procedural sky's gradient only (GR-13).
+                changed |= ImGui::DragFloat3("Sun Direction", &config.sunDirection.x, 0.01f, -1.0f, 1.0f);
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("Used when the scene has no directional light. With one,\n"
+                                      "the sun sits where that light shines from.");
                 changed |= ImGui::SliderFloat("Sun Size", &config.sunSize, 0.005f, 0.3f);
                 changed |= InspectorUndo::ColorEdit3(m_UndoRedo, "Sun Color", &config.sunColor.x,
                     [this](f32 r, f32 g, f32 b) {

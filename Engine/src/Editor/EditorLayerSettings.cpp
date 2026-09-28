@@ -1693,54 +1693,57 @@ void EditorLayer::DrawSettingsSection_FrameRate() {
 void EditorLayer::DrawSettingsSection_Audio() {
     if (UI::SectionHeader("Audio")) {
 #ifdef ENJIN_AUDIO_STEAM_AUDIO
+        // These are project settings and always editable. They were drawn only
+        // once Play had created the audio engine, so a new session showed a
+        // "start Play Mode" line instead of the toggles (GR-13). The engine,
+        // when it exists, takes the change at once; otherwise Play reads it.
         auto* audio = m_PlayMode.GetAudioEngine();
+        bool hrtfEnabled = m_SceneManager.GetEnableHRTF();
+        if (ImGui::Checkbox("HRTF Binaural Audio (Steam Audio)", &hrtfEnabled)) {
+            m_SceneManager.SetEnableHRTF(hrtfEnabled);
+            if (audio) audio->SetHRTFEnabled(hrtfEnabled);
+            m_SceneManager.SaveProject();
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip(
+                "Enables physics-based HRTF binaural rendering for 3D sounds.\n"
+                "Best experienced with headphones.");
+        }
         if (audio) {
-            bool hrtfEnabled = m_SceneManager.GetEnableHRTF();
-            if (ImGui::Checkbox("HRTF Binaural Audio (Steam Audio)", &hrtfEnabled)) {
-                m_SceneManager.SetEnableHRTF(hrtfEnabled);
-                audio->SetHRTFEnabled(hrtfEnabled);
-                m_SceneManager.SaveProject();
-            }
-            if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip(
-                    "Enables physics-based HRTF binaural rendering for 3D sounds.\n"
-                    "Best experienced with headphones.");
-            }
-
             if (audio->IsHRTFAvailable()) {
                 ImGui::TextColored(ImVec4(0.4f, 0.9f, 0.4f, 1.0f), "Status: Available");
             } else {
                 ImGui::TextColored(ImVec4(0.9f, 0.6f, 0.3f, 1.0f), "Status: Init failed");
             }
-
-            // Occlusion checkbox
-            bool occlusionEnabled = m_SceneManager.GetEnableOcclusion();
-            if (ImGui::Checkbox("Sound Occlusion", &occlusionEnabled)) {
-                m_SceneManager.SetEnableOcclusion(occlusionEnabled);
-                audio->SetOcclusionEnabled(occlusionEnabled);
-                m_SceneManager.SaveProject();
-            }
-            if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("Sounds are blocked/attenuated by collider geometry");
-            }
-
-            // Transmission checkbox (requires occlusion)
-            if (!occlusionEnabled) ImGui::BeginDisabled();
-            bool transmissionEnabled = m_SceneManager.GetEnableTransmission();
-            if (ImGui::Checkbox("Sound Transmission", &transmissionEnabled)) {
-                m_SceneManager.SetEnableTransmission(transmissionEnabled);
-                audio->SetTransmissionEnabled(transmissionEnabled);
-                m_SceneManager.SaveProject();
-            }
-            if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip(
-                    "Frequency-dependent sound passing through walls.\n"
-                    "Requires occlusion to be enabled.");
-            }
-            if (!occlusionEnabled) ImGui::EndDisabled();
         } else {
-            ImGui::TextDisabled("Steam Audio available (start Play Mode to configure)");
+            ImGui::TextDisabled("Status: checked when Play starts");
         }
+
+        // Occlusion checkbox
+        bool occlusionEnabled = m_SceneManager.GetEnableOcclusion();
+        if (ImGui::Checkbox("Sound Occlusion", &occlusionEnabled)) {
+            m_SceneManager.SetEnableOcclusion(occlusionEnabled);
+            if (audio) audio->SetOcclusionEnabled(occlusionEnabled);
+            m_SceneManager.SaveProject();
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Sounds are blocked/attenuated by collider geometry");
+        }
+
+        // Transmission checkbox (requires occlusion)
+        if (!occlusionEnabled) ImGui::BeginDisabled();
+        bool transmissionEnabled = m_SceneManager.GetEnableTransmission();
+        if (ImGui::Checkbox("Sound Transmission", &transmissionEnabled)) {
+            m_SceneManager.SetEnableTransmission(transmissionEnabled);
+            if (audio) audio->SetTransmissionEnabled(transmissionEnabled);
+            m_SceneManager.SaveProject();
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip(
+                "Frequency-dependent sound passing through walls.\n"
+                "Requires occlusion to be enabled.");
+        }
+        if (!occlusionEnabled) ImGui::EndDisabled();
 #else
         ImGui::TextDisabled("Steam Audio: Not compiled (ENJIN_AUDIO_STEAM_AUDIO=OFF)");
 #endif
@@ -1777,6 +1780,13 @@ void EditorLayer::DrawSettingsSection_CollisionGroups() {
                 ImGui::SetNextItemWidth(150.0f);
                 if (ImGui::InputText("##name", buf, sizeof(buf))) {
                     groupNames[i] = buf;
+                }
+                // Saved when the field is left, as every other project section
+                // saves. The edit only changed memory, so names were kept only
+                // if something else happened to save the project (GR-13).
+                if (ImGui::IsItemDeactivatedAfterEdit() && !m_SceneManager.GetProjectPath().empty() &&
+                    !m_SceneManager.SaveProject()) {
+                    ShowNotification("Failed to save project settings", NotificationType::Error);
                 }
             }
             ImGui::PopID();
@@ -2010,6 +2020,7 @@ void EditorLayer::MigrateEditorSettingsToProject() {
     m_BuildConfig.windowWidth = m_SceneManager.GetWindowWidth();
     m_BuildConfig.windowHeight = m_SceneManager.GetWindowHeight();
     m_BuildConfig.fullscreen = m_SceneManager.GetFullscreen();
+    m_BuildConfig.engineSplash = m_SceneManager.GetEngineSplash();
 
     m_NetworkConfig.LoadFromFile();
 }
@@ -2111,6 +2122,10 @@ void EditorLayer::DrawSettingsWindow() {
                         if (on) cwFlags |= cwEntries[cwI].bit;
                         else    cwFlags &= ~cwEntries[cwI].bit;
                         m_SceneContentFlags.flags = static_cast<Accessibility::ContentWarningType>(cwFlags);
+                        // Saved with the scene, so an edit is a scene change.
+                        // Nothing marked it, so the warning was lost unless
+                        // something else dirtied the scene first (GR-13).
+                        MarkDirty();
                     }
                 }
 
@@ -2121,11 +2136,13 @@ void EditorLayer::DrawSettingsWindow() {
                     ImGui::SetNextItemWidth(260.0f);
                     if (ImGui::InputText("##cwCustom", cwBuf, sizeof(cwBuf))) {
                         m_SceneContentFlags.customWarnings[cwI] = cwBuf;
+                        MarkDirty();
                     }
                     ImGui::SameLine();
                     if (ImGui::SmallButton("X")) {
                         m_SceneContentFlags.customWarnings.erase(
                             m_SceneContentFlags.customWarnings.begin() + static_cast<std::ptrdiff_t>(cwI));
+                        MarkDirty();
                         ImGui::PopID();
                         break;
                     }
@@ -2133,6 +2150,7 @@ void EditorLayer::DrawSettingsWindow() {
                 }
                 if (ImGui::SmallButton("+ Add Custom Warning")) {
                     m_SceneContentFlags.customWarnings.push_back("");
+                    MarkDirty();
                 }
             }
             ImGui::Separator();
@@ -2773,6 +2791,14 @@ void EditorLayer::DrawSettingsSection_InputTouch() {
         ImGui::TreePop();
     }
 
+    // ---- Controls hint -----------------------------------------------------
+    // Saved in the project and read by every runtime, with no way to change it
+    // here (GR-13)
+    ImGui::Spacing();
+    if (ImGui::Checkbox("Show the controls hint", &settings.showControlsHint)) changed = true;
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("The bottom-left list of what each key does in this scene.");
+
     // ---- Touch --------------------------------------------------------------
     ImGui::Spacing();
     ImGui::TextColored(ImVec4(0.6f, 0.85f, 1.0f, 1.0f), "Touch Controls");
@@ -3028,7 +3054,29 @@ void EditorLayer::DrawSettingsSection_BuildScenes() {
             !fs::exists(fs::path(projRoot) / scenes[i].path, missingEc);
         const bool autoListed = !missing &&
             fs::path(scenes[i].path).parent_path().generic_string() == "scenes";
-        ImGui::Text("%s", scenes[i].name.c_str());
+        // Editable (GR-13). The name is what Scene_LoadScene and the startup
+        // flow use, so an empty or duplicate name is refused.
+        {
+            char nameBuf[128];
+            std::snprintf(nameBuf, sizeof(nameBuf), "%s", scenes[i].name.c_str());
+            ImGui::SetNextItemWidth(160.0f);
+            ImGui::InputText("##sceneName", nameBuf, sizeof(nameBuf));
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("The name scripts use with Scene_LoadScene.\n"
+                                  "Renaming it here does not change the scripts.");
+            if (ImGui::IsItemDeactivatedAfterEdit()) {
+                const std::string wanted = nameBuf;
+                const auto* clash = m_SceneManager.GetSceneByName(wanted);
+                if (wanted.empty()) {
+                    ShowNotification("A scene needs a name", NotificationType::Warning);
+                } else if (clash && clash != &scenes[i]) {
+                    ShowNotification("Another scene is already called " + wanted, NotificationType::Warning);
+                } else if (wanted != scenes[i].name) {
+                    scenes[i].name = wanted;
+                    changed = true;
+                }
+            }
+        }
         ImGui::SameLine();
         ImGui::TextDisabled("(%s)", scenes[i].path.c_str());
         if (missing) {
