@@ -776,6 +776,14 @@ void SceneManager::LoadSceneWithTransition(const std::string& name, TransitionTy
         return;
     }
 
+    // Already fading out: take the newest destination and let the fade run
+    // on. Restarting it on every call meant a request made each frame (a
+    // script asking from OnUpdate) reset the fade forever and never loaded.
+    if (m_TransitionState == TransitionState::FadingOut) {
+        m_PendingSceneName = name;
+        return;
+    }
+
     m_PendingSceneName = name;
     m_TransitionType = type;
     m_TransitionDuration = duration;
