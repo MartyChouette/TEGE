@@ -1,6 +1,7 @@
 #include <vector>
 #include <unordered_set>
 #include "Enjin/Scene/SceneSerializer.h"
+#include "Enjin/ECS/Systems/ParallaxSystem.h"
 #include "Enjin/Physics/Polygon2D.h"
 #include "Enjin/AI/Navmesh.h"
 #include "Enjin/Effects/SplineIKDeformer.h"
@@ -11107,6 +11108,12 @@ void SceneSerializer::DeserializeEntities(const json& sceneJson, Deserialization
 
     // UI unification: convert legacy hudWidget components to UICanvases
     MigrateHUDWidgetsToCanvases(m_World);
+
+    // ParallaxMachine layers become ordinary parallax sprites (EP-6), in every
+    // runtime, and an editor save writes the sprites
+    if (const u32 layers = ECS::ParallaxSystem::ConvertMachinesToLayers(m_World)) {
+        ENJIN_LOG_INFO(Asset, "Scene: converted ParallaxMachine into %u parallax layer sprite(s)", layers);
+    }
 }
 
 DeserializationResult SceneSerializer::Load(const std::string& filepath, bool clearExisting) {

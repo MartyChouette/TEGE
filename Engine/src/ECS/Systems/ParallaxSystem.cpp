@@ -3,6 +3,8 @@
 #include "Enjin/ECS/Components/ParallaxLayer.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Camera.h"
+#include "Enjin/ECS/Components/Gameplay.h"
+#include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/Systems/RenderSystem.h"
 #include "Enjin/Renderer/Camera.h"
 #include "Enjin/Renderer/Texture.h"
@@ -29,6 +31,57 @@ void ParallaxSystem::Update(f32 deltaTime) {
 
     // Per-sprite parallax layers (see ApplyParallaxLayers).
     ApplyParallaxLayers(m_World, deltaTime);
+}
+
+u32 ParallaxSystem::ConvertMachinesToLayers(World* world) {
+    if (!world) return 0;
+    const std::vector<Entity> machines = world->GetEntitiesWithComponent<ParallaxMachineComponent>();
+    u32 made = 0;
+    for (Entity e : machines) {
+        const auto* pmPtr = world->GetComponent<ParallaxMachineComponent>(e);
+        if (!pmPtr) continue;
+        const ParallaxMachineComponent pm = *pmPtr;   // adding entities may move storage
+        Math::Vector3 base(0.0f);
+        if (const auto* t = world->GetComponent<TransformComponent>(e)) base = t->position;
+        std::string baseName = "Parallax";
+        if (const auto* n = world->GetComponent<NameComponent>(e)) baseName = n->name;
+
+        for (usize i = 0; i < pm.layers.size(); ++i) {
+            const ParallaxLayer& layer = pm.layers[i];
+            const Entity le = world->CreateEntity();
+            world->AddComponent<NameComponent>(le, NameComponent{baseName + " Layer " + std::to_string(i + 1)});
+            TransformComponent xf;
+            xf.position = Math::Vector3(base.x + layer.offset.x, base.y + layer.offset.y, base.z);
+            world->AddComponent<TransformComponent>(le, xf);
+
+            Sprite2DComponent sprite;
+            sprite.texturePath = layer.texturePath;
+            sprite.size = layer.scale;
+            sprite.tint = layer.tint;
+            sprite.alpha = layer.alpha;
+            sprite.visible = layer.visible && pm.enabled;
+            // Behind the scene's own sprites, in the machine's layer order
+            sprite.sortingLayer = -100;
+            sprite.orderInLayer = layer.sortOrder;
+            world->AddComponent<Sprite2DComponent>(le, sprite);
+
+            // The machine scrolled a layer at 1/distance of the camera, times
+            // its speed and the machine's; in ParallaxLayer terms that is the
+            // fraction of world motion, so distance 1 moves with the world and
+            // distance 10 at a tenth. Its auto-scroll offset was subtracted
+            // from the layer's position, hence the sign.
+            const f32 safeDistance = std::max(layer.distance, 0.01f);
+            const f32 factor = std::clamp((1.0f / safeDistance) * layer.speedMultiplier * pm.globalSpeed,
+                                          0.0f, 1.0f);
+            ParallaxLayerComponent pl;
+            pl.factor = Math::Vector2(factor, factor);
+            pl.autoScroll = Math::Vector2(-pm.autoScrollSpeed.x, -pm.autoScrollSpeed.y);
+            world->AddComponent<ParallaxLayerComponent>(le, pl);
+            ++made;
+        }
+        world->RemoveComponent<ParallaxMachineComponent>(e);
+    }
+    return made;
 }
 
 void ParallaxSystem::ApplyParallaxLayers(World* world, f32 deltaTime) {

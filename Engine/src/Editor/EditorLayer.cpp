@@ -4605,9 +4605,6 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                          io.DisplaySize);
         }
 
-        // Render parallax scrolling backgrounds (2D scenes)
-        m_ParallaxSystem.Render(io.DisplaySize.x, io.DisplaySize.y);
-
         ImGui::End();
 
         // Focus mode stretches the game image across the whole window, so

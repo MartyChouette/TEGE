@@ -39,6 +39,15 @@ public:
     // the player, with no dependence on the render camera's sync timing.
     static void ApplyParallaxLayers(World* world, f32 deltaTime);
 
+    // Turns every ParallaxMachineComponent into ordinary sprite entities, one
+    // per layer, each with a ParallaxLayerComponent, and removes the machine.
+    // The machine was drawn only by the editor, as an ImGui overlay on the
+    // background draw list with a fixed 20x12 world-to-screen guess, so it was
+    // behind the Game View image and never reached a built game (EP-6; decided
+    // 2026-09-27: convert to ParallaxLayer sprites). Run after a scene loads,
+    // and by the machine inspector's button. Returns how many layers it made.
+    static u32 ConvertMachinesToLayers(World* world);
+
     // Render all parallax layers (call during 2D render pass, before scene geometry)
     // Layers are sorted by sortOrder (lowest first = furthest back)
     void Render(f32 viewportWidth, f32 viewportHeight);

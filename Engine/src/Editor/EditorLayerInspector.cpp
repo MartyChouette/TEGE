@@ -3618,6 +3618,20 @@ void EditorLayer::DrawInspectorPanel() {
                 auto* pm = m_World->GetComponent<ECS::ParallaxMachineComponent>(m_PrimarySelected);
                 if (pm) {
                     DrawComponentHelp("parallaxMachine", m_World, m_PrimarySelected);
+                    // The machine is a way to lay out layers; what draws, here
+                    // and in a built game, is one parallax sprite per layer. It
+                    // becomes those when the scene loads, or now (EP-6).
+                    ImGui::TextWrapped("Set up the layers below, then make them sprites. "
+                                       "Scenes convert on load too.");
+                    if (ImGui::Button("Make Layer Sprites##Parallax")) {
+                        const u32 made = ECS::ParallaxSystem::ConvertMachinesToLayers(m_World);
+                        MarkDirty();
+                        ShowNotification("Made " + std::to_string(made) + " parallax layer sprite(s)",
+                                         NotificationType::Success);
+                    }
+                    pm = m_World->GetComponent<ECS::ParallaxMachineComponent>(m_PrimarySelected);
+                }
+                if (pm) {
                     ImGui::Checkbox("Enabled##Parallax", &pm->enabled);
                     ImGui::DragFloat("Global Speed##Parallax", &pm->globalSpeed, 0.01f, 0.0f, 10.0f, "%.2f");
                     ImGui::DragFloat2("Origin##Parallax", &pm->origin.x, 0.1f);
