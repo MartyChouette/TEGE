@@ -102,7 +102,9 @@ ENJIN_TEST(RenderAA, FXAADefaults) {
 
 ENJIN_TEST(RenderAA, TAADefaults) {
     SceneRenderSettings s;
-    ENJIN_EXPECT_FLOAT_NEAR(s.taaSharpness, 0.1f, 0.01f);
+    // Off by default (Marty, 2026-09-26), the same as PostProcessing's own default.
+    // A new scene carried 0.1 here and applied it on load while PostProcessing said 0.
+    ENJIN_EXPECT_FLOAT_EQ(s.taaSharpness, 0.0f);
     ENJIN_EXPECT_FLOAT_EQ(s.taaJitterScale, 1.0f);
     ENJIN_EXPECT_FLOAT_NEAR(s.taaFeedbackMin, 0.88f, 0.01f);
     ENJIN_EXPECT_FLOAT_NEAR(s.taaFeedbackMax, 0.97f, 0.01f);

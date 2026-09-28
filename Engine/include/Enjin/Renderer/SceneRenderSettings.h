@@ -256,7 +256,7 @@ struct SceneRenderSettings {
     f32 fxaaReduceMul = 1.0f / 8.0f;
 
     // TAA (Temporal Anti-Aliasing)
-    f32 taaSharpness = 0.1f;       // Sharpening strength applied after TAA resolve (0 = off)
+    f32 taaSharpness = 0.0f;       // Sharpening after the TAA resolve (0 = off). Off by default, matching PostProcessing (Marty, 2026-09-26)
     f32 taaJitterScale = 1.0f;     // Jitter magnitude multiplier (1.0 = standard Halton)
     f32 taaFeedbackMin = 0.88f;    // Min history blend weight (low = more responsive, more flicker)
     f32 taaFeedbackMax = 0.97f;    // Max history blend weight (high = smoother, more ghosting)
