@@ -550,12 +550,8 @@ private:
     // mouse release is not guaranteed to arrive: see the definition.
     void CancelCreativeGesture();
 
-    // The Build Palette below (m_ShowCreativePalette, its own CreativeTool enum)
-    // is a DIFFERENT surface and a deliberate one: a quick-place window inside
-    // the full editor. This is the build rail. They overlap on what they can
-    // make, and the standing risk is that the two drift -- the density curves
-    // and drop offsets are currently the same because they were copied, not
-    // because they are shared.
+    // The build rail. The old quick-place Build window that duplicated it was
+    // removed (GR-17).
     CreativeMode m_Creative;
 
     // --- Editor mode -------------------------------------------------------
@@ -1983,14 +1979,12 @@ private:
     enum class CreativeTool { None,
         Lake, TreeGrove, GrassPatch, ShrubPatch,        // area (drag to size)
         Block, Ball, PointLight, PhysicsBox, Barrel, SpawnPoint };  // point (click to place)
-    bool m_ShowCreativePalette = false;
     CreativeTool m_CreativeTool = CreativeTool::None;
     bool m_CreativePlacing = false;         // mid drag-out
     ECS::Entity m_CreativePlaceEntity = 0;  // the object being dragged out (its own live preview)
     i32 m_BoundaryDragPoint = -1;           // index of the boundary-polygon handle being dragged, -1 = none
     Math::Vector3 m_CreativeDragStart;      // world point where the drag began (ground)
     Math::Vector3 m_CreativeDragEnd;        // current world point under the cursor
-    void DrawCreativePalette();
     void HandleCreativePlacement(f32 deltaTime);
 
     void HandleTerrainBrush(f32 deltaTime);
@@ -2165,6 +2159,29 @@ private:
     CommandPalette m_CommandPalette;
     bool m_CommandsRegistered = false;
     void RegisterPaletteCommands();
+
+    // Every tool the Tools menu offers, in one table that the menu and the
+    // command palette both read, so a tool added to one is in the other
+    // (GR-17). isOpen is empty for one-shot actions.
+    struct EditorToolEntry {
+        const char* group;
+        const char* name;
+        const char* tooltip;
+        std::function<bool()> isOpen;
+        std::function<void()> activate;
+    };
+    std::vector<EditorToolEntry> BuildToolTable();
+    void DrawToolsMenu();
+    // Where a file under docs/ can be, from the executable's folder (a build
+    // tree or an install), and the first of those that exists ("" if none).
+    static std::vector<std::string> DocSearchPaths(const char* fileName);
+    static std::string FindDocFile(const char* fileName);
+
+    // The Entity menu entries added by GR-17 (EditorLayerEntityMenu.cpp)
+    ECS::Entity MakeMenuEntity(const char* name, const Math::Vector3& position);
+    void FinishMenuEntity(ECS::Entity e);
+    void DrawEntityMenuCommon(const Math::Vector3& spawn);
+    void DrawEntityMenuGameplay(const Math::Vector3& spawn);
 
     // Alternative input devices
     Accessibility::AlternativeInputManager m_AlternativeInput;

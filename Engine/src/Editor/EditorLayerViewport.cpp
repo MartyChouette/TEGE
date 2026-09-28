@@ -2727,59 +2727,9 @@ void EditorLayer::HandleKeyboardGizmoNudge() {
 // Creative mode — SimCity / MS-Paint build palette + drag-to-place
 // ============================================================================
 
-void EditorLayer::DrawCreativePalette() {
-    if (!m_ShowCreativePalette) return;
-    ImGui::SetNextWindowSize(ImVec2(190.0f, 320.0f), ImGuiCond_FirstUseEver);
-    if (!ImGui::Begin("Build", &m_ShowCreativePalette)) { ImGui::End(); return; }
-
-    ImGui::TextWrapped("Pick a tool, then work in the viewport.");
-    ImGui::Spacing();
-
-    struct ToolDef { CreativeTool tool; const char* label; };
-    // A 2-column grid of tools, grouped. Area tools drag out a footprint; point tools
-    // click to drop one object.
-    auto toolGrid = [&](const char* header, std::initializer_list<ToolDef> defs) {
-        ImGui::Separator();
-        ImGui::TextDisabled("%s", header);
-        int col = 0;
-        const f32 w = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
-        for (const auto& td : defs) {
-            if (col == 1) ImGui::SameLine();
-            const bool sel = (m_CreativeTool == td.tool);
-            if (sel) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.50f, 0.80f, 1.0f));
-            if (ImGui::Button(td.label, ImVec2(w, 38.0f)))
-                m_CreativeTool = sel ? CreativeTool::None : td.tool;   // click again to deselect
-            if (sel) ImGui::PopStyleColor();
-            col = (col + 1) % 2;
-        }
-    };
-
-    toolGrid("Nature (drag to size)", {
-        { CreativeTool::Lake,       "~ Lake" },
-        { CreativeTool::TreeGrove,  "T Trees" },
-        { CreativeTool::GrassPatch, ", Grass" },
-        { CreativeTool::ShrubPatch, "* Shrubs" },
-    });
-    ImGui::Spacing();
-    toolGrid("Objects (click to place)", {
-        { CreativeTool::Block,      "# Block" },
-        { CreativeTool::Ball,       "o Ball" },
-        { CreativeTool::PointLight, "* Light" },
-        { CreativeTool::PhysicsBox, "= Physics Box" },
-        { CreativeTool::Barrel,     "B Barrel" },
-        { CreativeTool::SpawnPoint, "> Spawn Point" },
-    });
-
-    ImGui::Separator();
-    if (m_CreativeTool == CreativeTool::None)
-        ImGui::TextDisabled("No tool selected.");
-    else if (m_CreativeTool == CreativeTool::Lake || m_CreativeTool == CreativeTool::TreeGrove ||
-             m_CreativeTool == CreativeTool::GrassPatch || m_CreativeTool == CreativeTool::ShrubPatch)
-        ImGui::TextWrapped("Drag on the ground to size it. Lakes: then pull the shoreline handles.");
-    else
-        ImGui::TextWrapped("Click on the ground to drop one. Click the tool again to stop.");
-    ImGui::End();
-}
+// The Build window that lived here was removed (GR-17): Creative Mode's build
+// rail replaced it, and two build palettes with two tool vocabularies was worse
+// than either. Nothing sets m_CreativeTool now, so the placement below is idle.
 
 void EditorLayer::HandleCreativePlacement(f32 /*deltaTime*/) {
     if (!m_World || !m_Camera || m_CreativeTool == CreativeTool::None) return;

@@ -136,13 +136,22 @@ The Project Hub (shown at startup and via **File > Project Hub**) supports full 
 
 To set a custom window icon, place an `icon.png` file next to the editor executable. The engine will load it automatically on startup.
 
-You can also set a custom icon from within the editor via **View > Settings > Project Settings > Window Icon**. Browse for any PNG file, click **Apply**, and the window icon updates immediately. The path is saved in the project file (`.enjinproject`) and auto-applied on startup. Use **Clear** to revert to the OS default.
+You can also set a custom icon from within the editor via **Edit > Project Settings > Window Icon**. Browse for any PNG file, click **Apply**, and the window icon updates immediately. The path is saved in the project file (`.enjinproject`) and auto-applied on startup. Use **Clear** to revert to the OS default.
 
 ---
 
 ## 2. Editor Overview
 
-The Enjin editor is a panel-based workspace. All panels can be toggled from the **View** menu in the top menu bar. Panels are dockable and can be rearranged freely.
+The Enjin editor is a panel-based workspace. The menu bar reads **File, Edit, View, Entity, Tools, Help**:
+
+- **File**: scenes, projects, **Build Game...**, and **Project Hub...** to go back to the project list.
+- **Edit**: undo, redo, copy and paste, and the three settings windows (System, Project, Scene).
+- **View**: the editor mode (Developer, Creative, Tutorial), **View > Panels**, overlays such as colliders and stats, and the layout.
+- **Entity**: everything you can create in a scene.
+- **Tools**: every editor tool, grouped by job (below).
+- **Help**: this manual, keyboard shortcuts, Tutorial mode, and the written tutorials.
+
+Every tool and every panel toggle is also in the command palette (**Ctrl+P**). Panels are dockable and can be rearranged freely.
 
 ### Panels
 
@@ -152,7 +161,7 @@ The Enjin editor is a panel-based workspace. All panels can be toggled from the 
 | **Inspector** | Component editor for the selected entity. Displays and edits all attached components (170+ component types). Includes an "Add Component" button. |
 | **Console** | Log output for engine messages, warnings, and errors. |
 | **Asset Browser** | Browse and manage project files with grid/list view, thumbnails, search, and drag-and-drop. |
-| **Settings** | Unified settings window with 3 tabs: **System** (camera, performance, IDE, accessibility, fonts), **Project** (project mode, window icon, physics, frame rate, audio, collision groups, build config), **Scene** (skybox, shadows, lighting, cel shading, display, ray tracing, light probes, post processing, retro effects, environment). Opened via View > Settings. |
+| **Settings** | Unified settings window with 3 tabs: **System** (camera, performance, IDE, accessibility, fonts), **Project** (project mode, window icon, physics, frame rate, audio, collision groups, build config), **Scene** (skybox, shadows, lighting, cel shading, display, ray tracing, light probes, post processing, retro effects, environment). Opened from the Edit menu (System, Project or Scene Settings). |
 | **Game View** | Rendered game camera output with Play/Pause/Stop controls. Default 16:9 aspect ratio. |
 | **Scene List** | Multi-scene project management. Add, reorder, load scenes, and set the start scene. |
 | **Stats Overlay** | Real-time performance metrics: FPS, frame time, draw calls, and triangle count. |
@@ -161,6 +170,19 @@ The Enjin editor is a panel-based workspace. All panels can be toggled from the 
 | **Quest Flow** | Visual quest designer with objectives, branches, conditions, and rewards. |
 | **Pixel Editor** | Pixel art creation tool with layers, 8 drawing tools, undo/redo, and retro presets. |
 | **Sprite Sheet Importer** | Import and slice sprite sheets with grid or auto-detect modes. |
+
+### The Tools Menu
+
+| Group | Tools |
+|-------|-------|
+| **Scripting & Logic** | Visual Script, Behavior Tree, Quest Flow, Dialogue Editor, Caption Track, Import Captions (.srt), Export Script API (IntelliSense) |
+| **Art & Animation** | Pixel Editor, Sprite Sheet Importer, Vector Drawing, Symbol Library, Flash Timeline, Animation Graph, Particle Editor, Particle Graph, Shader Graph, Atlas Packer, UI Editor |
+| **Audio** | Audio Mixer, Audio Event Graph |
+| **Lighting** | Bake Lightmap, Bake Background Plate, Light Cookie Creator |
+| **World** | Procedural Generation, Procedural Graph, Template Creator |
+| **Data & Debug** | Profiler, Data Asset Editor, Save Debug, Plugin Browser, Git Integration, Collaborative Editing, Network Panel, Record Game View GIF, Generate Documentation |
+
+The **UI Editor** entry lists the scene's UI canvases to edit in the viewport, and can make a new one from a template (Main Menu, Pause Menu, Options Menu, Game Over Screen). **Record Game View GIF** writes to `<project>/captures/`; choose it again to stop, and pick the size and frame rate under GIF Fidelity in the same group.
 
 ### Entity and Component Icons
 
@@ -237,7 +259,7 @@ are not scene state and are not undoable at all.
 ### Creative Mode
 
 Creative Mode is a build surface for blocking out a level. Press `Ctrl` + `B`,
-pick **View > Creative Mode**, or launch the editor with `--creative`.
+pick **View > Mode > Creative** (Ctrl+B), or launch the editor with `--creative`.
 
 It is a mode rather than a panel. Turning it on hides the Hierarchy, Inspector,
 Console, Asset Browser, Scene List, Layers, History and Settings, puts a tool
@@ -322,14 +344,28 @@ When multiple entities are selected:
 
 Use the **Entity** menu in the top menu bar to create new entities:
 
-| Category | Options |
-|----------|---------|
-| **General** | Create Empty |
-| **3D Objects** | Cube, Sphere, Plane, Cylinder, Cone |
-| **2D Objects** | Sprite, Animated Sprite, Tilemap |
-| **Lights** | Directional Light, Point Light, Spot Light |
-| **Camera** | Camera |
-| **Environment** | Ground Plane |
+New entities land in front of the editor camera.
+
+| Entry | Options |
+|-------|---------|
+| **Create Empty** | An entity with only a transform |
+| **3D Object** | Cube, Sphere, Plane, Cylinder, Cone, Capsule, Pyramid |
+| **2D Object** | Triangle, Quad, Sprite, Circle, Capsule 2D, Ground Strip, Panel (UI) |
+| **Ground Plane** | A 50 x 50 floor with a collider |
+| **Light** | Directional Light (Sun), Point Light, Spot Light |
+| **Camera** | Perspective Camera, Orthographic Camera, Camera Trigger |
+| **Audio Source, Particle Emitter, Text, UI Canvas** | One each. UI Canvas opens in the UI editor |
+| **Effects** | Weather Zone, Water Volume, Water 3D, Fluid (Smoke, Steam, Gas, Water, Lava), Temperature Zone |
+| **Nature** | Grass Volume, Shrub Volume, Single Shrub, Tree Volume, Single Tree |
+| **Player Character** | First Person, Third Person, Top-Down 3D, Platformer 2D, Top-Down 2D. Each comes with a mesh, a collider and a follow camera |
+| **Gameplay** | Trigger Zone, Spawn Point, Save Point, Door, Ladder, Rope, Boat, Gravity Zone |
+| **Rendering** | Reflection Probe, Post-Process Volume |
+| **Tilemap** | A 16 x 10 grid to paint tiles on |
+| **Prefab** | Every `.enjprefab` in the project |
+| **Terrain, 2D Terrain** | Sculptable ground |
+| **Examples** | NPC with Dialogue, Health Pickup, Coin Collectible, Damage Zone, Patrol Enemy, Interactable Chest |
+
+A **Door** is two entities: the Door entity is the hinge, and the panel is its child, offset half a door-width. Move the hinge to move the door.
 
 ### Adding Components
 
@@ -1786,7 +1822,7 @@ The engine provides a 20-slot tiered save system with 3 persistence tiers:
 
 **Cloud sync:** Pluggable backends via `ISaveBackend` interface. Built-in: `LocalSaveBackend` (filesystem), `SteamSaveBackend` (Steam Cloud via ISteamRemoteStorage, requires `ENJIN_STEAM` CMake flag).
 
-**Save Debug Panel:** Open from **View > Tools > Save Debug** to inspect all 20 save slots, view meta-progression key-value tables, configure auto-save, and trigger manual cloud sync.
+**Save Debug Panel:** Open from **Tools > Data & Debug > Save Debug** to inspect all 20 save slots, view meta-progression key-value tables, configure auto-save, and trigger manual cloud sync.
 
 #### QuestStateComponent
 
@@ -2445,7 +2481,7 @@ When you press **Stop**, the engine compares the scene state before and after pl
 
 ### Skybox
 
-Configure the skybox from the **Settings** window, **Scene** tab (View > Settings > Scene Settings).
+Configure the skybox from the **Settings** window, **Scene** tab (Edit > Scene Settings).
 
 #### Skybox Types
 
@@ -2500,7 +2536,7 @@ All skybox types support a **Y-axis rotation** slider (0-360 degrees) to orient 
 
 ### Weather
 
-Configure weather effects from the **Settings** window, **Scene** tab > Environment (View > Settings > Scene Settings).
+Configure weather effects from the **Settings** window, **Scene** tab > Environment (Edit > Scene Settings).
 
 | Effect | Description |
 |--------|-------------|
@@ -2785,7 +2821,7 @@ Materials carry the sound and particle they make when walked on or struck (inspi
 
 ## 9. Accessibility
 
-Enjin includes comprehensive accessibility features, configurable from the **Settings** window, **System** tab (View > Settings > System Settings). Settings are saved persistently to disk (JSON format in `%APPDATA%/enjin/` on Windows).
+Enjin includes comprehensive accessibility features, configurable from the **Settings** window, **System** tab (Edit > System Settings). Settings are saved persistently to disk (JSON format in `%APPDATA%/enjin/` on Windows).
 
 ### What every game gets without doing anything
 
@@ -3273,7 +3309,7 @@ The solver runs 8 iterations per frame (configurable) using sequential impulse w
 
 ### Built-in Profiler
 
-Open via **View > Profiler** in the editor menu.
+Open via **Tools > Data & Debug > Profiler** in the editor menu.
 
 The profiler displays:
 - **FPS** and average frame time
@@ -3336,7 +3372,7 @@ Create a `plugin.json` alongside the shared library:
 
 ### Editor Panel
 
-The Plugin Manager panel (**View > Plugins**) shows loaded plugins, their status, and provides load/unload controls.
+The Plugin Manager panel (**Tools > Data & Debug > Plugin Browser**) shows loaded plugins, their status, and provides load/unload controls.
 
 ---
 
@@ -3505,7 +3541,7 @@ The Quest Flow Editor is a visual node-graph tool for designing complex, branchi
 
 1. Select an entity and add the **Quest Flow** component from **Add Component > Gameplay > Quest Flow**.
 2. In the inspector, click **Open Editor** to open the Quest Flow panel.
-3. Alternatively, open it from **View > Tools > Quest Flow**.
+3. Alternatively, open it from **Tools > Scripting & Logic > Quest Flow**.
 
 The editor auto-targets the selected entity when it has a `QuestFlowComponent`.
 
@@ -3642,7 +3678,7 @@ Quest flow graphs are saved and loaded automatically with the scene. The seriali
 
 ## 22. Visual Scripting
 
-Enjin includes a full Blueprint-style visual scripting system for creating game logic without writing code. The visual script editor is accessible from **View > Tools > Visual Script** or by clicking **Open Editor** on a Visual Script component.
+Enjin includes a full Blueprint-style visual scripting system for creating game logic without writing code. The visual script editor is accessible from **Tools > Scripting & Logic > Visual Script** or by clicking **Open Editor** on a Visual Script component.
 
 ### Getting Started
 
@@ -3714,7 +3750,7 @@ The Behavior Tree (BT) editor provides a visual tool for designing AI logic as h
 ### Opening the Editor
 
 1. Select an entity and add the **Behavior Tree** component from **Add Component > AI > Behavior Tree**.
-2. Click **Open Editor** in the inspector, or open from **View > Tools > Behavior Tree**.
+2. Click **Open Editor** in the inspector, or open from **Tools > Scripting & Logic > Behavior Tree**.
 
 ### Node Types
 
@@ -3785,7 +3821,7 @@ The Pixel Editor is a built-in sprite creation tool for making pixel art directl
 
 ### Opening the Editor
 
-Open from **View > Tools > Pixel Editor**.
+Open from **Tools > Art & Animation > Pixel Editor**.
 
 ### Drawing Tools
 
@@ -3839,7 +3875,7 @@ The Sprite Sheet Importer slices existing sprite sheet images into individual fr
 
 ### Opening the Importer
 
-Open from **View > Tools > Sprite Sheet Importer**.
+Open from **Tools > Art & Animation > Sprite Sheet Importer**.
 
 ### Import Modes
 
@@ -4090,7 +4126,7 @@ Enjin includes a full Vulkan ray tracing pipeline for hybrid raster+RT rendering
 
 ### Editor Panel
 
-The Ray Tracing settings are located in the **Settings** window, **Scene** tab > Ray Tracing (View > Settings > Scene Settings):
+The Ray Tracing settings are located in the **Settings** window, **Scene** tab > Ray Tracing (Edit > Scene Settings):
 
 - **Supported indicator** — Green "Supported" or red "Not Supported" text based on GPU capabilities
 - **Enable toggle** — Master on/off for the RT pipeline
@@ -4312,7 +4348,7 @@ Reports are automatically saved to `%APPDATA%/enjin/feedback/feedback_data.json`
 
 ## 29. Vector Drawing Editor
 
-A built-in vector drawing editor for creating 2D art assets directly in the engine. Access via **Tools > Vector Drawing Editor**.
+A built-in vector drawing editor for creating 2D art assets directly in the engine. Access via **Tools > Art & Animation > Vector Drawing**.
 
 ### Shape Tools
 
@@ -4340,7 +4376,7 @@ A built-in vector drawing editor for creating 2D art assets directly in the engi
 
 ## 30. HTML5 Export
 
-Export your project as a web-ready HTML5 application. Access via **Build > Export HTML5**.
+Export your project for the browser from **File > Build Game...** with the platform set to **Web**. There is no separate HTML5 export dialog any more; the web build is one of the Build Game platforms. From a command line, `EnjinEditor --build-web <project.enjinproject> <outDir>` does the same without opening the editor.
 
 ### Generated Files
 
@@ -4349,13 +4385,11 @@ Export your project as a web-ready HTML5 application. Access via **Build > Expor
 | **index.html** | Main page with canvas element, Module config, fullscreen support |
 | **preloader.js** | Loading progress bar with click-to-play audio interstitial |
 | **style.css** | Responsive scaling, preloader styling, fullscreen layout |
+| **EnjinPlayer.js / EnjinPlayer.wasm** | The engine, compiled for the browser |
+| **game.enjpak** | Your project's scenes, scripts and assets |
+| **serve.py** | A local web server for trying the build |
 
-### Export Dialog
-
-Configure the export via a modal dialog:
-- Output directory selection
-- Window title and resolution
-- Embed code generation (iframe)
+A browser will not run the build from a `file://` address, because it refuses to load the engine from one. Run `python serve.py` in the output folder and open the address it prints.
 
 ---
 

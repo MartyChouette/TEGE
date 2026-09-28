@@ -237,7 +237,7 @@ Enjin uses a physically-based rendering (PBR) pipeline. Each `MaterialComponent`
 
 ### Shadow Setup
 
-1. Go to **View > Rendering > Rendering** panel.
+1. Go to **Edit > Scene Settings**.
 2. Under **Shadows**, enable shadow mapping.
 3. Adjust **Shadow Bias** if you see shadow acne.
 4. The engine uses 4-cascade CSM (Cascaded Shadow Maps) for directional lights.
@@ -344,7 +344,7 @@ Each imported model creates a `.enjinasset` sidecar file storing import settings
 ### Step 1: Project Mode
 
 When creating a new scene, choose the **Platformer** template, or set your project to 2D mode:
-1. Go to **View > Settings > Project Settings**
+1. Go to **Edit > Project Settings**
 2. Set **Project Mode** to `2D`
 3. The grid switches to the XY plane
 
@@ -690,7 +690,7 @@ void OnUpdate(float dt) {
 
 ### Procedural Terrain
 
-Use the **Procedural Generation** panel (View > Tools > Procedural) to generate terrain heightmaps:
+Use the **Procedural Generation** panel (Tools > World > Procedural Generation) to generate terrain heightmaps:
 - **Diamond-Square** — Natural-looking terrain
 - **fBm** — Fractional Brownian Motion with ridged multifractal option
 - **Hydraulic Erosion** — Realistic water erosion simulation
@@ -808,7 +808,7 @@ Projectile: categoryBits = 0x04, collisionMask = 0x02  // Only hits enemies
 Pickup:     categoryBits = 0x08, collisionMask = 0x01  // Only player can pick up
 ```
 
-Name your collision groups in **View > Settings > Project Settings > Collision Groups**.
+Name your collision groups in **Edit > Project Settings > Collision Groups**.
 
 ---
 
@@ -902,7 +902,7 @@ If a script fails to compile when you press Play, an error toast shows the compi
 ### Opening the Visual Script Editor
 
 1. Add a `VisualScriptComponent` to an entity.
-2. Open **View > Tools > Visual Script** panel.
+2. Open **Tools > Scripting & Logic > Visual Script** panel.
 3. The node graph editor appears.
 
 ### Node Types (126+)
@@ -1186,7 +1186,7 @@ Add `SaveLoadMenuComponent` to an entity for a built-in save/load grid overlay:
 ### Creating a Dialogue
 
 1. Create an entity and add `DialogueComponent`.
-2. Open the **Dialogue Editor** (View > Tools > Dialogue Editor).
+2. Open the **Dialogue Editor** (Tools > Scripting & Logic > Dialogue Editor).
 3. Build your dialogue tree with nodes:
 
 ### Dialogue Node Types
@@ -1235,7 +1235,7 @@ Loc_SetLocale("fr");  // Switch to French
 
 ### Quest Setup
 
-Open the **Quest Flow Editor** (View > Tools > Quest Flow).
+Open the **Quest Flow Editor** (Tools > Scripting & Logic > Quest Flow).
 
 ### Quest Structure
 
@@ -1468,7 +1468,7 @@ int state = AI_GetState(entity);         // query current state (an AIState ordi
 ### Opening the BT Editor
 
 1. Add a `BehaviorTreeComponent` to an entity.
-2. Open **View > Tools > Behavior Tree** panel.
+2. Open **Tools > Scripting & Logic > Behavior Tree** panel.
 3. Build the tree top-down from the root.
 
 ### Node Types (20)
@@ -1687,7 +1687,7 @@ The `WorldTimeComponent` provides a day/night cycle:
 
 ### Post-Processing Stack
 
-Open **View > Rendering > Post Processing** to configure:
+Open **Edit > Scene Settings**, Post Processing section, to configure:
 
 | Effect | Description |
 |--------|-------------|
@@ -1701,7 +1701,7 @@ Open **View > Rendering > Post Processing** to configure:
 
 ### Retro Effects
 
-Open **View > Rendering > Retro Effects** for classic aesthetics:
+Open **Edit > Scene Settings**, Retro Effects section, for classic aesthetics:
 
 | Effect | Description |
 |--------|-------------|
@@ -1759,7 +1759,7 @@ When both a `FluidSimulation` and `TerrainComponent` exist, enable `FluidTerrain
 
 ### Enabling RT
 
-1. Open **View > Rendering > Rendering** panel.
+1. Open **Edit > Scene Settings**.
 2. Under **Ray Tracing**, check "Supported" to verify GPU capability.
 3. Enable **Ray Tracing** toggle.
 4. Select **Mode**: Hybrid (raster + RT effects) or Path Trace (full path tracing).
@@ -1861,7 +1861,7 @@ Create a dedicated entity with a non-3D AudioSource for background music. Set `i
 
 ### Opening the Audio Graph
 
-Go to **View > Tools > Audio Event Graph**. The node-based editor lets you create audio logic.
+Go to **Tools > Audio > Audio Event Graph**. The node-based editor lets you create audio logic.
 
 ### Key Concepts
 
@@ -1890,7 +1890,7 @@ Audio event packages save as `.enjaudiopkg` files.
 
 ### Using the Procedural Panel
 
-1. Open **View > Tools > Procedural Generation**.
+1. Open **Tools > World > Procedural Generation**.
 2. Select an algorithm.
 3. Configure parameters.
 4. Click **Generate** to preview.
@@ -2175,7 +2175,7 @@ Place "food" locations that attract agents, creating networks that connect food 
 
 ### Opening the Timeline
 
-The **Timeline Editor** is a Flash-style keyframe animation tool. Open via **View > Tools > Timeline**.
+The **Timeline Editor** is a Flash-style keyframe animation tool. Open via **Tools > Art & Animation > Flash Timeline**.
 
 ### Concepts
 
@@ -2307,7 +2307,7 @@ Enjin uses a **host-authoritative UDP** model:
 
 ### Setting Up
 
-1. Open **View > Tools > Network** panel.
+1. Open **Tools > Data & Debug > Network Panel**.
 2. Choose **Host** or **Join**.
 3. For hosting: set port (default 7777).
 4. For joining: enter host IP address.
@@ -2346,7 +2346,7 @@ The system syncs at 20Hz with interpolation buffer, providing smooth movement ev
 
 ### Build Pipeline
 
-1. Go to **View > Settings > Project Settings > Build Config**.
+1. Go to **Edit > Project Settings > Build Config**.
 2. Configure:
    - **Project Path** — Root of your project
    - **Output Directory** — Where to export
@@ -2459,7 +2459,7 @@ float scale = Accessibility_GetFontScale();
 
 ### Opening Shader Graph
 
-Go to **View > Tools > Shader Graph**.
+Go to **Tools > Art & Animation > Shader Graph**.
 
 ### Node Types (54)
 

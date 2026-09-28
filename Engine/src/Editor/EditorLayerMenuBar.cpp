@@ -304,6 +304,19 @@ void EditorLayer::DrawMenuBar() {
             }
             // HTML5 export is now integrated into Build Game (Platform → Web).
             ImGui::Separator();
+            // The hub could not be reopened once a project was open (GR-18).
+            // It opens a project without the unsaved-changes prompt, so a
+            // scene with changes is saved or discarded first.
+            if (ImGui::MenuItem("Project Hub...")) {
+                if (m_SceneDirty) {
+                    ShowNotification("Save the scene first (File > Save Scene), then open the Project Hub",
+                                     NotificationType::Warning);
+                } else {
+                    m_HubPage = HubPage::Landing;
+                    m_ShowProjectHub = true;
+                }
+            }
+            ImGui::Separator();
             if (ImGui::MenuItem("Exit", "Alt+F4")) {
                 if (m_SceneDirty) {
                     m_UnsavedChangesAction = UnsavedAction::Quit;
@@ -334,6 +347,11 @@ void EditorLayer::DrawMenuBar() {
                                 !m_ClipboardEntityJson.empty())) {
                 DoPaste();
             }
+            // Settings live here now. View keeps only panels and modes (GR-17).
+            ImGui::Separator();
+            if (ImGui::MenuItem("System Settings")) OpenSettings(0);
+            if (ImGui::MenuItem("Project Settings")) OpenSettings(1);
+            if (ImGui::MenuItem("Scene Settings")) OpenSettings(2);
             ImGui::EndMenu();
         }
 
@@ -408,297 +426,6 @@ void EditorLayer::DrawMenuBar() {
                 ImGui::MenuItem("Debug Workstation", nullptr, &m_ShowDebugWorkstation);
                 ImGui::EndMenu();
             }
-            // Easy entry into WYSIWYG UI editing: pick any canvas (or create one
-            // from a template) and land straight in Edit-in-Viewport mode with
-            // drag handles, snap guides, and the inspector focused on it.
-            if (ImGui::BeginMenu("UI Editor")) {
-                bool anyCanvas = false;
-                if (m_World) {
-                    for (auto e : m_World->GetEntitiesWithComponent<GUI::UICanvasComponent>()) {
-                        auto* c = m_World->GetComponent<GUI::UICanvasComponent>(e);
-                        if (!c) continue;
-                        anyCanvas = true;
-                        std::string label = "Edit: " + c->canvasName + "##uied" +
-                                            std::to_string(static_cast<unsigned long long>(e));
-                        bool active = m_UIEditMode && m_UIEditCanvasEntity == e;
-                        if (ImGui::MenuItem(label.c_str(), nullptr, active)) {
-                            OpenUIEditor(e);
-                        }
-                    }
-                }
-                if (!anyCanvas) {
-                    ImGui::TextDisabled("No UI canvases in this scene");
-                }
-                ImGui::Separator();
-                if (ImGui::BeginMenu("New Canvas")) {
-                    auto createCanvas = [this](const char* name, GUI::UICanvasComponent&& canvas) {
-                        ECS::Entity e = m_World->CreateEntity();
-                        m_World->AddComponent<ECS::NameComponent>(e, name);
-                        m_World->AddComponent<GUI::UICanvasComponent>(e, std::move(canvas));
-                        MarkDirty();
-                        OpenUIEditor(e);
-                    };
-                    if (ImGui::MenuItem("Empty Canvas")) {
-                        createCanvas("UI Canvas", GUI::UICanvasComponent{});
-                    }
-                    if (ImGui::MenuItem("Main Menu")) {
-                        createCanvas("Main Menu UI", GUI::UITemplates::CreateMainMenu());
-                    }
-                    if (ImGui::MenuItem("Pause Menu")) {
-                        createCanvas("Pause Menu UI", GUI::UITemplates::CreatePauseMenu());
-                    }
-                    if (ImGui::MenuItem("Options Menu")) {
-                        createCanvas("Options Menu UI", GUI::UITemplates::CreateOptionsMenu());
-                    }
-                    if (ImGui::MenuItem("Game Over Screen")) {
-                        createCanvas("Game Over UI",
-                            GUI::UITemplates::CreateGameOverScreen(true, "You Win!"));
-                    }
-                    ImGui::EndMenu();
-                }
-                if (m_UIEditMode) {
-                    ImGui::Separator();
-                    if (ImGui::MenuItem("Exit UI Edit Mode")) {
-                        m_UIEditMode = false;
-                        m_UIEditCanvasEntity = ECS::INVALID_ENTITY;
-                        m_UIEditSelectedElementId = 0;
-                    }
-                }
-                ImGui::EndMenu();
-            }
-            if (ImGui::BeginMenu("Settings")) {
-                if (ImGui::MenuItem("System Settings")) {
-                    OpenSettings(0);
-                }
-                if (ImGui::MenuItem("Project Settings")) {
-                    OpenSettings(1);
-                }
-                if (ImGui::MenuItem("Scene Settings")) {
-                    OpenSettings(2);
-                }
-                ImGui::EndMenu();
-            }
-            // Tools menu organization (reorganized 2026-08-30, Marty's audit):
-            // themed submenus first (each tool lives with its discipline,
-            // exactly one home per tool), then the two direct ACTIONS at the
-            // bottom. Panel toggles show checkmarks; one-shot actions use
-            // plain items.
-            if (ImGui::BeginMenu("Tools")) {
-                // --- Capture ---
-                if (ImGui::BeginMenu("Capture")) {
-                    if (m_GifRecorder.IsRecording()) {
-                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.35f, 0.35f, 1.0f));
-                        bool stop = ImGui::MenuItem(("* Stop GIF Recording (" +
-                            std::to_string(m_GifRecorder.FrameCount()) + " frames)").c_str());
-                        ImGui::PopStyleColor();
-                        if (stop) ToggleGifRecording();
-                    } else {
-                        if (ImGui::MenuItem("Record Game View GIF")) ToggleGifRecording();
-                        if (ImGui::IsItemHovered())
-                            ImGui::SetTooltip("Records the game view to an animated GIF in\n"
-                                              "<project>/captures/. Pick the fidelity below.\n"
-                                              "Stop from this menu when done.");
-                    }
-                    ImGui::Separator();
-                    ImGui::TextDisabled("GIF Fidelity");
-                    ImGui::RadioButton("Full res, 20 fps (big files)", &m_GifFidelity, 0);
-                    ImGui::RadioButton("Half res, 15 fps", &m_GifFidelity, 1);
-                    ImGui::RadioButton("Quarter res, 10 fps (small)", &m_GifFidelity, 2);
-                    ImGui::EndMenu();
-                }
-                // --- Scripting & Logic ---
-                if (ImGui::BeginMenu("Scripting & Logic")) {
-                    bool visualScript = IsPanelVisible(EditorPanel::VisualScript);
-                    if (ImGui::MenuItem("Visual Script", nullptr, &visualScript)) {
-                        SetPanelVisibility(EditorPanel::VisualScript, visualScript);
-                    }
-                    bool behaviorTree = IsPanelVisible(EditorPanel::BehaviorTree);
-                    if (ImGui::MenuItem("Behavior Tree", nullptr, &behaviorTree)) {
-                        SetPanelVisibility(EditorPanel::BehaviorTree, behaviorTree);
-                    }
-                    bool questFlow = IsPanelVisible(EditorPanel::QuestFlow);
-                    if (ImGui::MenuItem("Quest Flow", nullptr, &questFlow)) {
-                        SetPanelVisibility(EditorPanel::QuestFlow, questFlow);
-                    }
-                    bool dialogue = IsPanelVisible(EditorPanel::Dialogue);
-                    if (ImGui::MenuItem("Dialogue Editor", nullptr, &dialogue)) {
-                        SetPanelVisibility(EditorPanel::Dialogue, dialogue);
-                    }
-                    bool captions = IsPanelVisible(EditorPanel::CaptionTrack);
-                    if (ImGui::MenuItem("Caption Track", nullptr, &captions)) {
-                        SetPanelVisibility(EditorPanel::CaptionTrack, captions);
-                    }
-                    if (ImGui::IsItemHovered()) {
-                        ImGui::SetTooltip("Timeline, coverage and lint for an imported\n"
-                                          ".srt caption track.");
-                    }
-                    ImGui::Separator();
-                    if (ImGui::MenuItem("Import Captions (.srt)...")) {
-                        const std::string picked = FileDialog::IsAvailable()
-                            ? FileDialog::OpenFile(
-                                  "Select a subtitle file",
-                                  {{ "Subtitle Files", "*.srt;*.vtt" }})
-                            : std::string();
-                        if (!picked.empty()) {
-                            ImportCaptionFile(picked);
-                        } else if (!FileDialog::IsAvailable()) {
-                            // An empty string from a dialog does NOT mean cancelled;
-                            // on Linux it also means no dialog helper is installed,
-                            // and silently doing nothing is indistinguishable from
-                            // the feature being broken.
-                            ShowNotification(
-                                "No file dialog available (install zenity, kdialog or yad), "
-                                "or drop the .srt on the window",
-                                NotificationType::Warning);
-                        }
-                    }
-                    if (ImGui::IsItemHovered()) {
-                        ImGui::SetTooltip("Turn a .srt into a CaptionTrack data asset\n"
-                                          "(cue_t / cue_end / cue_who / cue_line) that a\n"
-                                          "script reads with DataAsset_GetFloatAt.\n"
-                                          "Dropping the file on the window does the same.");
-                    }
-                    if (ImGui::MenuItem("Export Script API (IntelliSense)")) {
-                        ExportScriptApiStub();
-                    }
-                    if (ImGui::IsItemHovered()) {
-                        ImGui::SetTooltip("Write an AngelScript stub of the whole TEGE API\n"
-                                          "(.tege/tege_api.as + as.predefined) so your code\n"
-                                          "editor can autocomplete engine functions.");
-                    }
-                    ImGui::EndMenu();
-                }
-                // --- Art & Animation ---
-                if (ImGui::BeginMenu("Art & Animation")) {
-                    bool pixelEditor = IsPanelVisible(EditorPanel::PixelEditorPanel);
-                    if (ImGui::MenuItem("Pixel Editor", nullptr, &pixelEditor)) {
-                        SetPanelVisibility(EditorPanel::PixelEditorPanel, pixelEditor);
-                    }
-                    bool spriteImporter = IsPanelVisible(EditorPanel::SpriteSheetImport);
-                    if (ImGui::MenuItem("Sprite Sheet Importer", nullptr, &spriteImporter)) {
-                        SetPanelVisibility(EditorPanel::SpriteSheetImport, spriteImporter);
-                    }
-                    bool vectorPanel = IsPanelVisible(EditorPanel::VectorDrawing);
-                    if (ImGui::MenuItem("Vector Drawing", nullptr, &vectorPanel)) {
-                        SetPanelVisibility(EditorPanel::VectorDrawing, vectorPanel);
-                    }
-                    bool symbolLib = IsPanelVisible(EditorPanel::SymbolLibraryPanel);
-                    if (ImGui::MenuItem("Symbol Library", nullptr, &symbolLib)) {
-                        SetPanelVisibility(EditorPanel::SymbolLibraryPanel, symbolLib);
-                    }
-                    ImGui::SetItemTooltip("Reusable drawings and prefabs: browse them, drop them\n"
-                                          "into a scene, edit one and push the change to every\n"
-                                          "instance.");
-                    bool animGraph = IsPanelVisible(EditorPanel::AnimGraph);
-                    if (ImGui::MenuItem("Animation Graph", nullptr, &animGraph)) {
-                        SetPanelVisibility(EditorPanel::AnimGraph, animGraph);
-                    }
-                    bool particleEditor = IsPanelVisible(EditorPanel::ParticleEditor);
-                    if (ImGui::MenuItem("Particle Editor", nullptr, &particleEditor)) {
-                        SetPanelVisibility(EditorPanel::ParticleEditor, particleEditor);
-                    }
-                    {
-                        bool pgOpen = m_ParticleGraphEditor.IsOpen();
-                        if (ImGui::MenuItem("Particle Graph", nullptr, &pgOpen)) {
-                            m_ParticleGraphEditor.SetGraph(&m_ParticleGraphData);
-                            m_ParticleGraphEditor.SetOpen(pgOpen);
-                        }
-                    }
-                    ImGui::Separator();
-                    if (ImGui::MenuItem("Atlas Packer")) m_ShowAtlasPacker = true;
-                    if (ImGui::MenuItem("Light Cookie Creator")) m_ShowCookieCreator = true;
-                    if (ImGui::IsItemHovered()) {
-                        ImGui::SetTooltip("Build gobos for spot lights: window panes, blinds,\n"
-                                          "leaf dapple, cathedral glass.");
-                    }
-                    if (ImGui::MenuItem("Bake Background Plate")) m_ShowPlateBaker = true;
-                    if (ImGui::MenuItem("Bake Lightmap")) m_ShowLightmapBaker = true;
-                    if (ImGui::IsItemHovered()) {
-                        ImGui::SetTooltip("Baked light that still reacts to normal maps.\n"
-                                          "Shadows and bounced sky for three texture reads.");
-                    }
-                    if (ImGui::IsItemHovered()) {
-                        ImGui::SetTooltip("Render this shot once and keep the picture, with the depth\n"
-                                          "it was rendered at, so characters walk behind it.");
-                    }
-                    ImGui::EndMenu();
-                }
-                // --- Audio ---
-                if (ImGui::BeginMenu("Audio")) {
-                    if (ImGui::MenuItem("Audio Mixer", nullptr, &m_ShowAudioMixer)) {}
-                    {
-                        bool agOpen = m_AudioGraphEditor.IsOpen();
-                        if (ImGui::MenuItem("Audio Event Graph", nullptr, &agOpen)) {
-                            m_AudioGraphEditor.SetGraph(&m_AudioGraphData);
-                            m_AudioGraphEditor.SetOpen(agOpen);
-                        }
-                    }
-                    ImGui::EndMenu();
-                }
-                // --- Rendering ---
-                if (ImGui::BeginMenu("Rendering")) {
-                    {
-                        bool sgOpen = m_ShaderGraphEditor.IsOpen();
-                        if (ImGui::MenuItem("Shader Graph", nullptr, &sgOpen)) {
-                            m_ShaderGraphEditor.SetGraph(&m_ShaderGraphData);
-                            m_ShaderGraphEditor.SetOpen(sgOpen);
-                        }
-                    }
-                    ImGui::EndMenu();
-                }
-                // --- World Building ---
-                if (ImGui::BeginMenu("World Building")) {
-                    bool proceduralGen = IsPanelVisible(EditorPanel::ProceduralGen);
-                    if (ImGui::MenuItem("Procedural Generation", nullptr, &proceduralGen)) {
-                        SetPanelVisibility(EditorPanel::ProceduralGen, proceduralGen);
-                    }
-                    if (ImGui::MenuItem("Template Creator", nullptr, &m_ShowTemplateCreator)) {
-                        if (m_ShowTemplateCreator) m_TmplNeedsRescan = true;
-                    }
-                    ImGui::EndMenu();
-                }
-                // --- Collaboration & Version Control ---
-                if (ImGui::BeginMenu("Collaboration")) {
-                    bool gitIntegration = IsPanelVisible(EditorPanel::GitIntegration);
-                    if (ImGui::MenuItem("Git Integration", nullptr, &gitIntegration)) {
-                        SetPanelVisibility(EditorPanel::GitIntegration, gitIntegration);
-                    }
-                    bool collabPanel = IsPanelVisible(EditorPanel::Collaboration);
-                    if (ImGui::MenuItem("Collaborative Editing", nullptr, &collabPanel)) {
-                        SetPanelVisibility(EditorPanel::Collaboration, collabPanel);
-                    }
-                    bool networkPanel = IsPanelVisible(EditorPanel::NetworkPanel);
-                    if (ImGui::MenuItem("Network Panel", nullptr, &networkPanel)) {
-                        SetPanelVisibility(EditorPanel::NetworkPanel, networkPanel);
-                    }
-                    ImGui::EndMenu();
-                }
-                // --- Data & Debug ---
-                if (ImGui::BeginMenu("Data & Debug")) {
-                    bool profiler = IsPanelVisible(EditorPanel::Profiler);
-                    if (ImGui::MenuItem("Profiler", nullptr, &profiler)) {
-                        SetPanelVisibility(EditorPanel::Profiler, profiler);
-                    }
-                    bool dataAssets = IsPanelVisible(EditorPanel::DataAssets);
-                    if (ImGui::MenuItem("Data Asset Editor", nullptr, &dataAssets)) {
-                        SetPanelVisibility(EditorPanel::DataAssets, dataAssets);
-                    }
-                    bool pluginBrowser = IsPanelVisible(EditorPanel::PluginBrowser);
-                    if (ImGui::MenuItem("Plugin Browser", nullptr, &pluginBrowser)) {
-                        SetPanelVisibility(EditorPanel::PluginBrowser, pluginBrowser);
-                    }
-                    bool saveDebug = IsPanelVisible(EditorPanel::SaveDebug);
-                    if (ImGui::MenuItem("Save Debug", nullptr, &saveDebug)) {
-                        SetPanelVisibility(EditorPanel::SaveDebug, saveDebug);
-                    }
-                    ImGui::EndMenu();
-                }
-                ImGui::Separator();
-                if (ImGui::MenuItem("Generate Documentation...")) {
-                    GenerateProjectDocumentation();
-                }
-                ImGui::EndMenu();
-            }
             ImGui::Separator();
             bool gameView = IsPanelVisible(EditorPanel::GameView);
             if (ImGui::MenuItem("Game View", nullptr, &gameView)) {
@@ -719,8 +446,6 @@ void EditorLayer::DrawMenuBar() {
             ImGui::SetItemTooltip("Toggle Profiler, Rendering, PostProcessing, SaveDebug panels + colliders");
             ImGui::Separator();
             ImGui::MenuItem("UV Preview", nullptr, &m_ShowUVPreview);
-            ImGui::MenuItem("Build Palette (Creative)", nullptr, &m_ShowCreativePalette);
-            ImGui::SetItemTooltip("SimCity-style: pick a tool (lake/trees/grass/shrubs), drag on the ground to place it.");
             ImGui::MenuItem("Show Colliders", nullptr, &m_ShowColliderWireframes);
             ImGui::MenuItem("Gamepad Editor", nullptr, &m_GamepadEditorEnabled);
             ImGui::SetItemTooltip("RB=Tools, LB=File, Start=Play, Y=Create (radial menus)");
@@ -952,8 +677,20 @@ void EditorLayer::DrawMenuBar() {
                         SelectEntity(entity); RecordLayerCreate(entity);
                     }
                 }
+                ImGui::Separator();
+                if (ImGui::MenuItem("Camera Trigger")) {
+                    if (m_World) {
+                        ECS::Entity entity = m_World->CreateEntity();
+                        m_World->AddComponent<ECS::TransformComponent>(entity);
+                        m_World->AddComponent<ECS::CameraTriggerComponent>(entity);
+                        m_World->AddComponent<ECS::NameComponent>(entity, "Camera Trigger");
+                        SelectEntity(entity); RecordLayerCreate(entity);
+                    }
+                }
                 ImGui::EndMenu();
             }
+            DrawEntityMenuCommon(viewSpawnPos());
+            ImGui::Separator();
             if (ImGui::BeginMenu("Effects")) {
                 if (ImGui::MenuItem("Weather Zone")) {
                     if (m_World) {
@@ -1018,6 +755,20 @@ void EditorLayer::DrawMenuBar() {
                     }
                     ImGui::EndMenu();
                 }
+                if (ImGui::MenuItem("Temperature Zone")) {
+                    if (m_World) {
+                        ECS::Entity entity = m_World->CreateEntity();
+                        m_World->AddComponent<ECS::TransformComponent>(entity);
+                        m_World->AddComponent<ECS::TemperatureZoneComponent>(entity);
+                        m_World->AddComponent<ECS::NameComponent>(entity, "Temperature Zone");
+                        SelectEntity(entity); RecordLayerCreate(entity);
+                    }
+                }
+                ImGui::EndMenu();
+            }
+
+            // Foliage used to be filed under Effects (GR-17)
+            if (ImGui::BeginMenu("Nature")) {
                 if (ImGui::MenuItem("Grass Volume")) {
                     if (m_World) {
                         ECS::Entity entity = m_World->CreateEntity();
@@ -1083,27 +834,11 @@ void EditorLayer::DrawMenuBar() {
                         SelectEntity(entity); RecordLayerCreate(entity);
                     }
                 }
-                if (ImGui::MenuItem("Camera Trigger")) {
-                    if (m_World) {
-                        ECS::Entity entity = m_World->CreateEntity();
-                        m_World->AddComponent<ECS::TransformComponent>(entity);
-                        m_World->AddComponent<ECS::CameraTriggerComponent>(entity);
-                        m_World->AddComponent<ECS::NameComponent>(entity, "Camera Trigger");
-                        SelectEntity(entity); RecordLayerCreate(entity);
-                    }
-                }
-                if (ImGui::MenuItem("Temperature Zone")) {
-                    if (m_World) {
-                        ECS::Entity entity = m_World->CreateEntity();
-                        m_World->AddComponent<ECS::TransformComponent>(entity);
-                        m_World->AddComponent<ECS::TemperatureZoneComponent>(entity);
-                        m_World->AddComponent<ECS::NameComponent>(entity, "Temperature Zone");
-                        SelectEntity(entity); RecordLayerCreate(entity);
-                    }
-                }
                 ImGui::EndMenu();
             }
 
+            ImGui::Separator();
+            DrawEntityMenuGameplay(viewSpawnPos());
             ImGui::Separator();
 
             if (ImGui::MenuItem("Terrain")) {
@@ -1255,6 +990,8 @@ void EditorLayer::DrawMenuBar() {
             ImGui::EndMenu();
         }
 
+        DrawToolsMenu();
+
         if (ImGui::BeginMenu("Help")) {
             bool userManual = IsPanelVisible(EditorPanel::UserManual);
             if (ImGui::MenuItem("User Manual", nullptr, &userManual)) {
@@ -1262,6 +999,21 @@ void EditorLayer::DrawMenuBar() {
             }
             if (ImGui::MenuItem("Keyboard Shortcuts", ShortcutChord(ShortcutAction::ShortcutsHelp), &m_ShowShortcutsHelp)) {
             }
+            // Nothing linked either of these (GR-18)
+            if (ImGui::MenuItem("Tutorial Mode", nullptr, m_EditorMode == EditorMode::Tutorial)) {
+                SetEditorMode(EditorMode::Tutorial);
+            }
+            ImGui::SetItemTooltip("%s", EditorModeDescription(EditorMode::Tutorial));
+            if (ImGui::MenuItem("Written Tutorials")) {
+                const std::string path = FindDocFile("TUTORIALS.md");
+                if (path.empty()) {
+                    ShowNotification("TUTORIALS.md is not in a docs folder beside the editor",
+                                     NotificationType::Warning);
+                } else if (!Platform::OpenInDesktop(path)) {
+                    ShowNotification("Could not open " + path, NotificationType::Error);
+                }
+            }
+            ImGui::SetItemTooltip("Step-by-step tutorials, opened in your Markdown viewer.");
             if (ImGui::MenuItem("Copy Scene JSON Key List")) {
                 // Every component key the serializer recognizes — the scene-file
                 // schema's vocabulary. Anything else in a .enjin is ignored.
@@ -1961,6 +1713,204 @@ void EditorLayer::DrawPlaybackToolsPopup() {
         m_EditorSettings.Save();
     }
     ImGui::EndPopup();
+}
+
+// ============================================================================
+// Tools menu (GR-17)
+// ============================================================================
+//
+// A top-level menu, grouped by job, two levels deep. It used to live at
+// View > Tools > group > item, four deep, with the lighting bakers filed under
+// Art & Animation. Every entry comes from BuildToolTable, which the command
+// palette also registers, so no tool is reachable from one and not the other.
+
+std::vector<EditorLayer::EditorToolEntry> EditorLayer::BuildToolTable() {
+    std::vector<EditorToolEntry> t;
+    auto panel = [&](const char* group, const char* name, EditorPanel p, const char* tip = nullptr) {
+        t.push_back({ group, name, tip,
+                      [this, p]() { return IsPanelVisible(p); },
+                      [this, p]() { SetPanelVisibility(p, !IsPanelVisible(p)); } });
+    };
+    auto flag = [&](const char* group, const char* name, bool* f, const char* tip = nullptr) {
+        t.push_back({ group, name, tip, [f]() { return *f; }, [f]() { *f = !*f; } });
+    };
+    auto action = [&](const char* group, const char* name, std::function<void()> fn, const char* tip = nullptr) {
+        t.push_back({ group, name, tip, nullptr, std::move(fn) });
+    };
+
+    const char* kScript = "Scripting & Logic";
+    panel(kScript, "Visual Script", EditorPanel::VisualScript);
+    panel(kScript, "Behavior Tree", EditorPanel::BehaviorTree);
+    panel(kScript, "Quest Flow", EditorPanel::QuestFlow);
+    panel(kScript, "Dialogue Editor", EditorPanel::Dialogue);
+    panel(kScript, "Caption Track", EditorPanel::CaptionTrack,
+          "Timeline, coverage and lint for an imported\n.srt caption track.");
+    action(kScript, "Import Captions (.srt)...", [this]() {
+        const std::string picked = FileDialog::IsAvailable()
+            ? FileDialog::OpenFile("Select a subtitle file", {{ "Subtitle Files", "*.srt;*.vtt" }})
+            : std::string();
+        if (!picked.empty()) {
+            ImportCaptionFile(picked);
+        } else if (!FileDialog::IsAvailable()) {
+            // An empty string from a dialog does NOT mean cancelled; on Linux it
+            // also means no dialog helper is installed.
+            ShowNotification("No file dialog available (install zenity, kdialog or yad), "
+                             "or drop the .srt on the window", NotificationType::Warning);
+        }
+    }, "Turn a .srt into a CaptionTrack data asset\n(cue_t / cue_end / cue_who / cue_line) that a\n"
+       "script reads with DataAsset_GetFloatAt.\nDropping the file on the window does the same.");
+    action(kScript, "Export Script API (IntelliSense)", [this]() { ExportScriptApiStub(); },
+           "Write an AngelScript stub of the whole TEGE API\n(.tege/tege_api.as + as.predefined) so your code\n"
+           "editor can autocomplete engine functions.");
+
+    const char* kArt = "Art & Animation";
+    panel(kArt, "Pixel Editor", EditorPanel::PixelEditorPanel);
+    panel(kArt, "Sprite Sheet Importer", EditorPanel::SpriteSheetImport);
+    panel(kArt, "Vector Drawing", EditorPanel::VectorDrawing);
+    panel(kArt, "Symbol Library", EditorPanel::SymbolLibraryPanel,
+          "Reusable drawings and prefabs: browse them, drop them\ninto a scene, edit one and push the change to every\ninstance.");
+    panel(kArt, "Flash Timeline", EditorPanel::FlashTimeline,
+          "Keyframe the selected entity, with onion skins.");
+    panel(kArt, "Animation Graph", EditorPanel::AnimGraph);
+    panel(kArt, "Particle Editor", EditorPanel::ParticleEditor);
+    t.push_back({ kArt, "Particle Graph", nullptr,
+                  [this]() { return m_ParticleGraphEditor.IsOpen(); },
+                  [this]() { m_ParticleGraphEditor.SetGraph(&m_ParticleGraphData);
+                             m_ParticleGraphEditor.SetOpen(!m_ParticleGraphEditor.IsOpen()); } });
+    t.push_back({ kArt, "Shader Graph", nullptr,
+                  [this]() { return m_ShaderGraphEditor.IsOpen(); },
+                  [this]() { m_ShaderGraphEditor.SetGraph(&m_ShaderGraphData);
+                             m_ShaderGraphEditor.SetOpen(!m_ShaderGraphEditor.IsOpen()); } });
+    action(kArt, "Atlas Packer", [this]() { m_ShowAtlasPacker = true; });
+
+    const char* kAudio = "Audio";
+    flag(kAudio, "Audio Mixer", &m_ShowAudioMixer);
+    t.push_back({ kAudio, "Audio Event Graph", nullptr,
+                  [this]() { return m_AudioGraphEditor.IsOpen(); },
+                  [this]() { m_AudioGraphEditor.SetGraph(&m_AudioGraphData);
+                             m_AudioGraphEditor.SetOpen(!m_AudioGraphEditor.IsOpen()); } });
+
+    const char* kLight = "Lighting";
+    action(kLight, "Bake Lightmap", [this]() { m_ShowLightmapBaker = true; },
+           "Baked light that still reacts to normal maps.\nShadows and bounced sky for three texture reads.");
+    action(kLight, "Bake Background Plate", [this]() { m_ShowPlateBaker = true; },
+           "Render this shot once and keep the picture, with the depth\nit was rendered at, so characters walk behind it.");
+    action(kLight, "Light Cookie Creator", [this]() { m_ShowCookieCreator = true; },
+           "Build gobos for spot lights: window panes, blinds,\nleaf dapple, cathedral glass.");
+
+    const char* kWorld = "World";
+    panel(kWorld, "Procedural Generation", EditorPanel::ProceduralGen);
+    t.push_back({ kWorld, "Procedural Graph", nullptr,
+                  [this]() { return m_ProcGraphEditor.IsOpen(); },
+                  [this]() { m_ProcGraphEditor.SetGraph(&m_ProcGraphData);
+                             m_ProcGraphEditor.SetOpen(!m_ProcGraphEditor.IsOpen()); } });
+    t.push_back({ kWorld, "Template Creator", nullptr,
+                  [this]() { return m_ShowTemplateCreator; },
+                  [this]() { m_ShowTemplateCreator = !m_ShowTemplateCreator;
+                             if (m_ShowTemplateCreator) m_TmplNeedsRescan = true; } });
+
+    const char* kData = "Data & Debug";
+    panel(kData, "Profiler", EditorPanel::Profiler);
+    panel(kData, "Data Asset Editor", EditorPanel::DataAssets);
+    panel(kData, "Save Debug", EditorPanel::SaveDebug);
+    panel(kData, "Plugin Browser", EditorPanel::PluginBrowser);
+    panel(kData, "Git Integration", EditorPanel::GitIntegration);
+    panel(kData, "Collaborative Editing", EditorPanel::Collaboration);
+    panel(kData, "Network Panel", EditorPanel::NetworkPanel);
+    t.push_back({ kData, "Record Game View GIF", "Records the game view to an animated GIF in\n"
+                  "<project>/captures/. Pick the fidelity below.\nChoose it again to stop.",
+                  [this]() { return m_GifRecorder.IsRecording(); },
+                  [this]() { ToggleGifRecording(); } });
+    action(kData, "Generate Documentation...", [this]() { GenerateProjectDocumentation(); });
+    return t;
+}
+
+void EditorLayer::DrawToolsMenu() {
+    if (!ImGui::BeginMenu("Tools")) return;
+    static const char* kGroups[] = {
+        "Scripting & Logic", "Art & Animation", "Audio", "Lighting", "World", "Data & Debug",
+    };
+    const std::vector<EditorToolEntry> tools = BuildToolTable();
+    for (const char* group : kGroups) {
+        if (!ImGui::BeginMenu(group)) continue;
+        for (const EditorToolEntry& e : tools) {
+            if (std::strcmp(e.group, group) != 0) continue;
+            const bool on = e.isOpen ? e.isOpen() : false;
+            if (ImGui::MenuItem(e.name, nullptr, on)) e.activate();
+            if (e.tooltip) ImGui::SetItemTooltip("%s", e.tooltip);
+        }
+        // The two entries with more to them than open and close
+        if (std::strcmp(group, "Art & Animation") == 0) {
+            ImGui::Separator();
+        // Easy entry into WYSIWYG UI editing: pick any canvas (or create one
+        // from a template) and land straight in Edit-in-Viewport mode with
+        // drag handles, snap guides, and the inspector focused on it.
+        if (ImGui::BeginMenu("UI Editor")) {
+            bool anyCanvas = false;
+            if (m_World) {
+                for (auto e : m_World->GetEntitiesWithComponent<GUI::UICanvasComponent>()) {
+                    auto* c = m_World->GetComponent<GUI::UICanvasComponent>(e);
+                    if (!c) continue;
+                    anyCanvas = true;
+                    std::string label = "Edit: " + c->canvasName + "##uied" +
+                                        std::to_string(static_cast<unsigned long long>(e));
+                    bool active = m_UIEditMode && m_UIEditCanvasEntity == e;
+                    if (ImGui::MenuItem(label.c_str(), nullptr, active)) {
+                        OpenUIEditor(e);
+                    }
+                }
+            }
+            if (!anyCanvas) {
+                ImGui::TextDisabled("No UI canvases in this scene");
+            }
+            ImGui::Separator();
+            if (ImGui::BeginMenu("New Canvas")) {
+                auto createCanvas = [this](const char* name, GUI::UICanvasComponent&& canvas) {
+                    ECS::Entity e = m_World->CreateEntity();
+                    m_World->AddComponent<ECS::NameComponent>(e, name);
+                    m_World->AddComponent<GUI::UICanvasComponent>(e, std::move(canvas));
+                    MarkDirty();
+                    OpenUIEditor(e);
+                };
+                if (ImGui::MenuItem("Empty Canvas")) {
+                    createCanvas("UI Canvas", GUI::UICanvasComponent{});
+                }
+                if (ImGui::MenuItem("Main Menu")) {
+                    createCanvas("Main Menu UI", GUI::UITemplates::CreateMainMenu());
+                }
+                if (ImGui::MenuItem("Pause Menu")) {
+                    createCanvas("Pause Menu UI", GUI::UITemplates::CreatePauseMenu());
+                }
+                if (ImGui::MenuItem("Options Menu")) {
+                    createCanvas("Options Menu UI", GUI::UITemplates::CreateOptionsMenu());
+                }
+                if (ImGui::MenuItem("Game Over Screen")) {
+                    createCanvas("Game Over UI",
+                        GUI::UITemplates::CreateGameOverScreen(true, "You Win!"));
+                }
+                ImGui::EndMenu();
+            }
+            if (m_UIEditMode) {
+                ImGui::Separator();
+                if (ImGui::MenuItem("Exit UI Edit Mode")) {
+                    m_UIEditMode = false;
+                    m_UIEditCanvasEntity = ECS::INVALID_ENTITY;
+                    m_UIEditSelectedElementId = 0;
+                }
+            }
+            ImGui::EndMenu();
+        }
+        }
+        if (std::strcmp(group, "Data & Debug") == 0) {
+            ImGui::Separator();
+            ImGui::TextDisabled("GIF Fidelity");
+            ImGui::RadioButton("Full res, 20 fps (big files)", &m_GifFidelity, 0);
+            ImGui::RadioButton("Half res, 15 fps", &m_GifFidelity, 1);
+            ImGui::RadioButton("Quarter res, 10 fps (small)", &m_GifFidelity, 2);
+        }
+        ImGui::EndMenu();
+    }
+    ImGui::EndMenu();
 }
 
 } // namespace Editor

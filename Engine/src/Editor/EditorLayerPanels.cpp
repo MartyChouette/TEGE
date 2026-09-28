@@ -3782,17 +3782,35 @@ void EditorLayer::DrawQuestFlowPanel() {
 // ============================================================================
 
 
+// Where the manual can be, from the executable's own folder: a build tree
+// (build/bin/Release is three below the repo's docs/) or an install, which
+// puts docs in share/doc/enjin. These were relative to the working directory,
+// which is never reliable, so Help showed "Manual Not Found" whenever the
+// editor was started from anywhere else (GR-18).
+std::vector<std::string> EditorLayer::DocSearchPaths(const char* fileName) {
+    const std::filesystem::path exe(Platform::GetExecutableDirectory());
+    std::vector<std::string> out;
+    for (const char* rel : { "docs", "../docs", "../../docs", "../../../docs",
+                             "../share/doc/enjin", "share/doc/enjin" }) {
+        out.push_back((exe / rel / fileName).lexically_normal().string());
+    }
+    return out;
+}
+
+std::string EditorLayer::FindDocFile(const char* fileName) {
+    for (const std::string& path : DocSearchPaths(fileName)) {
+        std::error_code ec;
+        if (std::filesystem::is_regular_file(path, ec)) return path;
+    }
+    return std::string();
+}
+
 void EditorLayer::LoadUserManual() {
     m_ManualSections.clear();
     m_ManualLoaded = false;
 
     // Try to find USER_MANUAL.md relative to the executable or in docs/
-    std::vector<std::string> searchPaths = {
-        "docs/USER_MANUAL.md",
-        "../docs/USER_MANUAL.md",
-        "../../docs/USER_MANUAL.md",
-        "../../../docs/USER_MANUAL.md",
-    };
+    const std::vector<std::string> searchPaths = DocSearchPaths("USER_MANUAL.md");
 
     std::string content;
     for (const auto& path : searchPaths) {
@@ -3865,12 +3883,7 @@ void EditorLayer::LoadUserManual() {
 
 void EditorLayer::ExportManualAsHTML(const std::string& outputPath) {
     // Read the raw markdown file
-    std::vector<std::string> searchPaths = {
-        "docs/USER_MANUAL.md",
-        "../docs/USER_MANUAL.md",
-        "../../docs/USER_MANUAL.md",
-        "../../../docs/USER_MANUAL.md",
-    };
+    const std::vector<std::string> searchPaths = DocSearchPaths("USER_MANUAL.md");
 
     std::string markdown;
     for (const auto& path : searchPaths) {
@@ -6016,6 +6029,30 @@ void EditorLayer::RegisterPaletteCommands() {
                 m_PlayMode.Stop();
                 ClearSelection();
             }
+        }
+    });
+
+    // Every tool in the Tools menu, from the same table the menu draws (GR-17)
+    for (EditorToolEntry& tool : BuildToolTable()) {
+        std::string description = tool.tooltip ? tool.tooltip : std::string("Tools > ") + tool.group;
+        for (char& c : description) if (c == '\n') c = ' ';
+        m_CommandPalette.RegisterCommand({ tool.name, tool.group, "", description,
+                                           std::move(tool.activate) });
+    }
+    m_CommandPalette.RegisterCommand({
+        "UI Editor", "Art & Animation", "",
+        "Edit the first UI canvas in the scene in the viewport, or make an empty one",
+        [this]() {
+            if (!m_World) return;
+            for (auto e : m_World->GetEntitiesWithComponent<GUI::UICanvasComponent>()) {
+                OpenUIEditor(e);
+                return;
+            }
+            ECS::Entity e = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(e, "UI Canvas");
+            m_World->AddComponent<GUI::UICanvasComponent>(e, GUI::UICanvasComponent{});
+            MarkDirty();
+            OpenUIEditor(e);
         }
     });
 

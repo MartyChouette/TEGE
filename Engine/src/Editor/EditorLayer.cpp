@@ -4969,11 +4969,6 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
     // UV Preview panel (bool-toggled, not in EditorPanel bitfield)
     DrawUVPreviewPanel();
 
-    // Creative-mode build palette (SimCity-style drag-to-place)
-    // Not alongside the build surface: two build palettes on screen at once,
-    // with two different tool vocabularies, is worse than either alone.
-    if (!creativeOnly) DrawCreativePalette();
-
     if (m_ShowDebugOverlay) {
         DrawDebugOverlay();
     }

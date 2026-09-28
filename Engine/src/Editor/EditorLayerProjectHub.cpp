@@ -408,6 +408,14 @@ void EditorLayer::DrawProjectHubInner() {
             }
         }
 
+        // Reopened from File > Project Hub with a project already open: a way
+        // back to it without choosing anything
+        if (!m_SceneManager.GetProjectPath().empty()) {
+            const f32 w = 190.0f;
+            ImGui::SetCursorPos(ImVec2(area.x - w - 20.0f, 16.0f));
+            if (ImGui::Button("Back to the editor", ImVec2(w, 0.0f))) m_ShowProjectHub = false;
+        }
+
         // ===== Project context menu (shared popup for sidebar and landing page) =====
         if (m_HubOpenContextMenu) {
             ImGui::OpenPopup("##HubProjectContextMenu");
