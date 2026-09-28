@@ -1776,19 +1776,23 @@ void EditorLayer::DrawBuildDialog() {
         ImGui::Spacing();
         ImVec4 warnColor(1.0f, 0.85f, 0.3f, 1.0f);
         ImGui::PushStyleColor(ImGuiCol_Text, warnColor);
-        if (ImGui::TreeNodeEx("WebGPU Limitations", ImGuiTreeNodeFlags_DefaultOpen)) {
+        // Wording approved by Marty, 2026-09-28. The list it replaced said
+        // particles, terrain, water, UI, text, sprite textures, multi-material
+        // and LOD were missing on web, most of which had shipped.
+        if (ImGui::TreeNodeEx("WebGPU limits", ImGuiTreeNodeFlags_DefaultOpen)) {
             ImGui::PopStyleColor();
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.7f, 0.7f, 1.0f));
 
-            ImGui::BulletText("Shadows: 1 directional cascade (vs 4 on desktop)");
-            ImGui::BulletText("Lights: max 4 dir + 4 point + 4 spot (vs 64+32 desktop)");
-            ImGui::BulletText("Ray tracing: Not available");
-            ImGui::BulletText("DLSS / XeSS: Not available (FXAA + MSAA 4x only)");
-            ImGui::BulletText("Particles / Terrain / Water: Not yet implemented");
-            ImGui::BulletText("UI Canvas / TextComponent rendering: Not yet implemented");
-            ImGui::BulletText("2D sprite textures: Not yet supported (sprites render untextured)");
-            ImGui::BulletText("Multi-material (per-submesh): Not yet supported");
-            ImGui::BulletText("LOD / Instancing: Not yet supported");
+            ImGui::BulletText("Ray tracing, path tracing and DDGI: not available (bake radiosity lighting instead)");
+            ImGui::BulletText("Reflection probes and mirror floors: not available (sky, matcap and scrolling reflections work)");
+            ImGui::BulletText("Anti-aliasing: FXAA only (no TAA or MSAA)");
+            ImGui::BulletText("Upscaling: Render Scale with sharpening (no FSR, DLSS or XeSS)");
+            ImGui::BulletText("Lights: 4 directional, 16 point and 8 spot, nearest the camera first");
+            ImGui::BulletText("Morph targets, custom shader graphs and Gaussian splats: not available");
+            ImGui::BulletText("Networking: not available");
+            ImGui::BulletText("Memory: 512 MB at most");
+            ImGui::BulletText("Sound starts after the player's first click or key press");
+            ImGui::TextUnformatted("Full list: docs/WEB_TIER.md");
 
             ImGui::Spacing();
             ImGui::TextWrapped("Supported: PBR lighting, shadows (dir+spot+point), "
@@ -1796,7 +1800,7 @@ void EditorLayer::DrawBuildDialog() {
                 "full gameplay loop (pickups, hazards, health, trigger zones, win/lose), "
                 "built-in HTML game HUD (health bar, coin counter, victory/defeat screen), "
                 "AI / dialogue / cutscenes, save persistence (browser storage), "
-                "ACES tonemapping, bloom, MSAA 4x, FXAA, fog, procedural sky.");
+                "ACES tonemapping, bloom, FXAA, fog, procedural sky.");
 
             ImGui::PopStyleColor();
             ImGui::TreePop();
