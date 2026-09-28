@@ -1220,14 +1220,10 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
                 ImGui::SliderFloat("Feedback Max", &settings.taaFeedbackMax, 0.0f, 1.0f, "%.2f");
             }
 
-            // TAA needs a velocity buffer, and the editor's offscreen scene target
-            // does not have one, so it is skipped here. Say so rather than let the
-            // dropdown imply it is running.
-            if (settings.aaMode == 2) {
-                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f),
-                    "No effect in the editor: the offscreen scene target writes no "
-                    "velocity buffer. Applies to a standalone build.");
-            }
+            // (A line here said TAA had no effect in the editor because the
+            // offscreen scene target wrote no velocity. The target carries a
+            // velocity attachment and the game view resolves TAA with it now,
+            // so the line was false and is gone.)
 
             // MSAA info
             if (settings.aaMode >= 4 && settings.aaMode <= 6) {

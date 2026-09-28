@@ -625,6 +625,28 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
                 m_ShowSplash = false;
                 ENJIN_LOG_INFO(Editor, "Opened project from launch: %s", launchPath.c_str());
             } else if (fs::path(launchPath).extension() == ".enjin") {
+                // A scene opened on its own had no project, so every project-
+                // relative path in it (textures, scripts, audio) resolved
+                // nowhere and the project's settings were absent. Look up the
+                // folders for the .enjinproject it belongs to and open that
+                // first; the scene then replaces the project's start scene.
+                std::string owningProject;
+                std::error_code ec;
+                fs::path dir = fs::absolute(launchPath, ec).parent_path();
+                for (int up = 0; up < 5 && !dir.empty() && owningProject.empty(); ++up) {
+                    for (const auto& e : fs::directory_iterator(dir, ec)) {
+                        if (e.path().extension() == ".enjinproject") { owningProject = e.path().string(); break; }
+                    }
+                    if (dir == dir.parent_path()) break;
+                    dir = dir.parent_path();
+                }
+                if (!owningProject.empty()) {
+                    OpenProjectFromPath(owningProject);
+                    ENJIN_LOG_INFO(Editor, "Opened %s for the launched scene", owningProject.c_str());
+                } else {
+                    ShowNotification("This scene is not inside a project, so paths in it may not resolve",
+                                     NotificationType::Warning);
+                }
                 OpenScene(launchPath);
                 m_ShowProjectHub = false;
                 m_ShowSplash = false;
@@ -4248,8 +4270,10 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
                 m_SceneRenderTarget && m_SceneRenderTarget->HasVelocity()
                     ? m_SceneRenderTarget->GetVelocityImageView()
                     : VK_NULL_HANDLE);
+            // Only true for a target without a velocity attachment; the game
+            // view's has one, and the line used to print regardless
             static bool s_taaNoticeLogged = false;
-            if (!s_taaNoticeLogged) {
+            if (!s_taaNoticeLogged && !(m_SceneRenderTarget && m_SceneRenderTarget->HasVelocity())) {
                 s_taaNoticeLogged = true;
                 ENJIN_LOG_INFO(Editor, "TAA resolves from depth here: the offscreen scene "
                                "target writes no velocity buffer, so moving objects smear "
