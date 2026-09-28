@@ -4095,6 +4095,11 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
     // ordinary sorted way. A half-built OIT must never be the reason transparent
     // objects vanish.
     const bool useOIT = m_RenderSystem->RequestOITForTarget(sceneTarget);
+    // With OIT, particles draw AFTER the composite, or the resolved transparency
+    // covers any particle in front of glass or water: particles write no depth.
+    // Splitscreen has no OIT pass and keeps them in the scene pass.
+    const bool particlesAfterOIT = useOIT && sceneTarget->CanSuspend() &&
+                                   !(useSplitscreen && !splitViewports.empty());
 
     // Render scene + effects into the chosen target
     m_RenderSystem->ApplyCameraClearColor(sceneTarget);   // before Begin: Begin is the clear
@@ -4118,15 +4123,7 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
         m_RenderSystem->RenderToTarget(sceneTarget, &gameCamera, 1,
                                        useOIT ? ECS::RenderSystem::TargetPass::OpaqueOnly
                                               : ECS::RenderSystem::TargetPass::All);
-        // CPU particle emitters (e.g. a fountain) into the offscreen target — was
-        // never drawn in the offscreen path, only in the direct main pass.
-        m_RenderSystem->RenderParticles(rtWidth, rtHeight, /*useOffscreenSets*/ true, /*viewport*/ 1);
-        if (m_GameViewWeatherParticles) {
-            m_RenderSystem->RenderWeatherParticles(m_WeatherSystem, m_GameViewIsRain, rtWidth, rtHeight,
-                                                   /*useOffscreenSets*/ true, /*viewport*/ 1);
-        }
-        m_RenderSystem->RenderElementalParticles(m_ElementalSystem, rtWidth, rtHeight,
-                                                 /*useOffscreenSets*/ true, /*viewport*/ 1);
+        if (!particlesAfterOIT) DrawGameViewParticles(rtWidth, rtHeight);
     }
     sceneTarget->End(commandBuffer);
     // Back to view 0 so nothing later this frame draws against the game view's
@@ -4137,6 +4134,11 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
     // opaque pass just wrote, then resolve the pair back over it.
     if (useOIT) {
         m_RenderSystem->RenderOITForTarget(sceneTarget, &gameCamera, 1);
+    }
+    if (particlesAfterOIT) {
+        sceneTarget->ResumeAfterComposite(commandBuffer);
+        DrawGameViewParticles(rtWidth, rtHeight);
+        sceneTarget->End(commandBuffer);
     }
 
     // Apply post-processing: read from scene RT, write to game view RT
@@ -7157,6 +7159,21 @@ bool EditorLayer::CaptureGameViewToFile(const std::string& basePath) {
         Renderer::WriteCapture(basePath, pixels, w, h);
     }
     return !pixels.empty() && w != 0 && h != 0;
+}
+
+// The game view's particles into the offscreen scene target: CPU emitters,
+// weather and elemental. One place, because they draw either inside the scene
+// pass or after the OIT composite, and the two must not drift.
+void EditorLayer::DrawGameViewParticles(u32 rtWidth, u32 rtHeight) {
+    // CPU particle emitters (e.g. a fountain) into the offscreen target -- was
+    // never drawn in the offscreen path, only in the direct main pass.
+    m_RenderSystem->RenderParticles(rtWidth, rtHeight, /*useOffscreenSets*/ true, /*viewport*/ 1);
+    if (m_GameViewWeatherParticles) {
+        m_RenderSystem->RenderWeatherParticles(m_WeatherSystem, m_GameViewIsRain, rtWidth, rtHeight,
+                                               /*useOffscreenSets*/ true, /*viewport*/ 1);
+    }
+    m_RenderSystem->RenderElementalParticles(m_ElementalSystem, rtWidth, rtHeight,
+                                             /*useOffscreenSets*/ true, /*viewport*/ 1);
 }
 
 } // namespace Editor

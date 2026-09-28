@@ -72,6 +72,12 @@ public:
     void Suspend(VkCommandBuffer cmd);
     void Resume(VkCommandBuffer cmd);
     bool CanSuspend() const { return m_ResumeRenderPass != VK_NULL_HANDLE; }
+    // Reopen the scene pass after End() and an OIT composite, keeping everything
+    // drawn: colour back to an attachment, depth to the read-only layout Resume
+    // expects (the OIT pass leaves it DEPTH_STENCIL_ATTACHMENT_OPTIMAL). Close it
+    // with End() as usual. For what has to draw OVER resolved transparency
+    // (particles) and still be hidden by opaque geometry.
+    void ResumeAfterComposite(VkCommandBuffer cmd);
 
     // Capture color attachment pixels to CPU memory (RGBA8, blocking)
     // Returns empty vector on failure. Caller owns the data.

@@ -2178,6 +2178,7 @@ private:
     static std::string FindDocFile(const char* fileName);
     // Opens the project's symbol library on first use; false with no project
     bool EnsureSymbolLibrary();
+    void DrawGameViewParticles(u32 rtWidth, u32 rtHeight);
 
     // Asset Browser: what opening a file does, and create/rename/delete
     // (GR-9, EditorLayerAssetOps.cpp)

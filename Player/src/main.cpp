@@ -2475,8 +2475,24 @@ public:
                     // Frustum + occlusion phase 0, outside any render pass;
                     // RenderToTarget draws the result and runs phase 1.
                     m_RenderSystem->CullForTarget(m_Camera.get());
+                    // Order-independent transparency, as the editor's game view
+                    // runs it (EP-14). Asked before the opaque pass, which holds
+                    // the blended geometry back only when OIT is built and current
+                    // for this target; the build itself happens in the next
+                    // FlushPendingChanges, so the first frame stays sorted. OIT
+                    // had one caller, the editor, so a shipped game with it on
+                    // drew transparency sorted and ignored the setting.
+                    const bool useOIT = m_RenderSystem->RequestOITForTarget(m_ScenePPTarget.get());
+                    // With OIT, particles draw AFTER the composite. Drawn in the
+                    // opaque pass they write no depth, so the resolved
+                    // transparency composited over them and hid anything in
+                    // front of glass or water (the Playground's fire and drip
+                    // particles vanished in front of its waterfall).
+                    const bool particlesAfterOIT = useOIT && m_ScenePPTarget->CanSuspend();
                     m_ScenePPTarget->Begin(preCmd);
-                    m_RenderSystem->RenderToTarget(m_ScenePPTarget.get(), m_Camera.get(), 1);
+                    m_RenderSystem->RenderToTarget(m_ScenePPTarget.get(), m_Camera.get(), 1,
+                        useOIT ? Enjin::ECS::RenderSystem::TargetPass::OpaqueOnly
+                               : Enjin::ECS::RenderSystem::TargetPass::All);
                     // Particles into the SAME offscreen target, with the offscreen
                     // viewport-1 descriptor sets (RenderToTarget restored the main
                     // sets on return). Without the true,1 args these drew with the
@@ -2485,17 +2501,32 @@ public:
                     // the offscreen path at all. Matches the editor's RenderOffscreen.
                     auto ppW = m_ScenePPTarget->GetWidth();
                     auto ppH = m_ScenePPTarget->GetHeight();
-                    m_RenderSystem->RenderParticles(ppW, ppH, /*useOffscreenSets*/ true, /*viewport*/ 1);
-                    m_RenderSystem->RenderElementalParticles(m_ElementalSystem, ppW, ppH,
-                        /*useOffscreenSets*/ true, /*viewport*/ 1);
-                    // Weather particles (rain, snow) too: the main pass drew them
-                    // and this path is the one a built game takes (EP-14)
-                    if (auto* weather = m_RenderSystem->GetMainPassWeather()) {
-                        m_RenderSystem->RenderWeatherParticles(*weather,
-                            m_RenderSystem->GetMainPassWeatherIsRain(), ppW, ppH,
+                    auto drawParticles = [&]() {
+                        m_RenderSystem->RenderParticles(ppW, ppH, /*useOffscreenSets*/ true, /*viewport*/ 1);
+                        m_RenderSystem->RenderElementalParticles(m_ElementalSystem, ppW, ppH,
                             /*useOffscreenSets*/ true, /*viewport*/ 1);
-                    }
+                        // Weather particles (rain, snow) too: the main pass drew them
+                        // and this path is the one a built game takes (EP-14)
+                        if (auto* weather = m_RenderSystem->GetMainPassWeather()) {
+                            m_RenderSystem->RenderWeatherParticles(*weather,
+                                m_RenderSystem->GetMainPassWeatherIsRain(), ppW, ppH,
+                                /*useOffscreenSets*/ true, /*viewport*/ 1);
+                        }
+                    };
+                    if (!particlesAfterOIT) drawParticles();
                     m_ScenePPTarget->End(preCmd);
+
+                    // The transparent half: accumulate against the depth the
+                    // opaque pass just wrote, then resolve over it; then the
+                    // particles, over the resolved result and still behind walls
+                    if (useOIT) {
+                        m_RenderSystem->RenderOITForTarget(m_ScenePPTarget.get(), m_Camera.get(), 1);
+                    }
+                    if (particlesAfterOIT) {
+                        m_ScenePPTarget->ResumeAfterComposite(preCmd);
+                        drawParticles();
+                        m_ScenePPTarget->End(preCmd);
+                    }
 
                     // TAA resolve. It has to happen HERE, between the offscreen
                     // target closing and the swapchain pass opening: ApplyTAA is
