@@ -791,79 +791,8 @@ void EditorLayer::DrawGameViewPanel() {
                 drawList->AddText(dbgPos, Theme::DebugText, debugBuf);
             }
 
-            // Render flower particles as projected shapes in game view
-            // Liquid particles render as elongated streaks, burst particles as circles
-            if (m_PlayMode.IsPlaying() && gameCameraComp && gameCameraTransform) {
-                auto* flowerSys = m_PlayMode.GetFlowerSystem();
-                const auto& particles = flowerSys->GetParticles();
-                if (!particles.empty()) {
-                    // Clip all particle draws to the game view rectangle
-                    drawList->PushClipRect(p0, p1, true);
-                    // Build view-projection matrix from game camera
-                    Renderer::Camera projCam;
-                    f32 camAspect = gameCameraComp->GetAspectRatio(m_GameViewWidth, m_GameViewHeight);
-                    projCam.SetPerspective(gameCameraComp->fieldOfView, camAspect,
-                                           gameCameraComp->nearPlane, gameCameraComp->farPlane);
-                    projCam.SetPosition(gameCameraTransform->position);
-                    Math::Vector3 fwd = gameCameraTransform->rotation.Rotate(Math::Vector3(0, 0, -1));
-                    Math::Vector3 camUp = gameCameraTransform->rotation.Rotate(Math::Vector3(0, 1, 0));
-                    projCam.SetLookAt(gameCameraTransform->position,
-                                      gameCameraTransform->position + fwd, camUp);
-                    Math::Matrix4 vp = projCam.GetProjectionMatrix() * projCam.GetViewMatrix();
-
-                    f32 gvW = p1.x - p0.x;
-                    f32 gvH = p1.y - p0.y;
-                    for (const auto& fp : particles) {
-                        // Skip NaN particles
-                        if (std::isnan(fp.position.x) || std::isnan(fp.position.y) || std::isnan(fp.position.z)) continue;
-                        // Project 3D position to clip space
-                        Math::Vector4 clip = vp * Math::Vector4(fp.position.x, fp.position.y, fp.position.z, 1.0f);
-                        if (clip.w <= 0.01f) continue;
-                        f32 ndcX = clip.x / clip.w;
-                        f32 ndcY = clip.y / clip.w;
-                        if (ndcX < -1.5f || ndcX > 1.5f || ndcY < -1.5f || ndcY > 1.5f) continue;
-                        f32 sx = p0.x + (ndcX * 0.5f + 0.5f) * gvW;
-                        // Vulkan projection already flips Y — no extra inversion needed
-                        f32 sy = p0.y + (ndcY * 0.5f + 0.5f) * gvH;
-
-                        f32 t = fp.lifetime / fp.maxLifetime;
-                        f32 alpha = (1.0f - t * t) * 255.0f;
-                        f32 perspScale = 1.0f / (clip.w * 0.3f + 0.3f);
-                        f32 radius = fp.scale * 200.0f * perspScale;
-                        if (radius < 1.5f) radius = 1.5f;
-                        if (radius > 30.0f) radius = 30.0f;
-                        int r = static_cast<int>(fp.color.x * 255);
-                        int g = static_cast<int>(fp.color.y * 255);
-                        int b = static_cast<int>(fp.color.z * 255);
-                        int a = static_cast<int>(alpha);
-                        ImU32 col = IM_COL32(r, g, b, a);
-
-                        if (fp.isLiquid) {
-                            // Liquid streak: longer trail scaled by velocity for drippy look
-                            f32 velLen = fp.velocity.Length();
-                            f32 trailTime = 0.06f + velLen * 0.008f; // longer trail at high speed
-                            Math::Vector3 tailPos = fp.position - fp.velocity * trailTime;
-                            Math::Vector4 tailClip = vp * Math::Vector4(tailPos.x, tailPos.y, tailPos.z, 1.0f);
-                            f32 tx = sx, ty = sy;
-                            if (tailClip.w > 0.01f) {
-                                f32 tndcX = tailClip.x / tailClip.w;
-                                f32 tndcY = tailClip.y / tailClip.w;
-                                tx = p0.x + (tndcX * 0.5f + 0.5f) * gvW;
-                                ty = p0.y + (tndcY * 0.5f + 0.5f) * gvH;
-                            }
-                            // Thick at head, thin at tail (draw two lines for taper)
-                            f32 thickness = radius * 1.2f;
-                            if (thickness < 2.5f) thickness = 2.5f;
-                            drawList->AddLine(ImVec2(sx, sy), ImVec2(tx, ty), col, thickness);
-                            // Fat droplet head
-                            drawList->AddCircleFilled(ImVec2(sx, sy), radius * 0.9f, col);
-                        } else {
-                            drawList->AddCircleFilled(ImVec2(sx, sy), radius, col);
-                        }
-                    }
-                    drawList->PopClipRect();
-                }
-            }
+            // Flower particles are drawn by the particle system now, as they are
+            // in both players (FlowerSystem::PublishParticles, EP-6)
 
             // Flower Evaluate button overlay in game view
             if (m_PlayMode.IsPlaying() && m_World) {

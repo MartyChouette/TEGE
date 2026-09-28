@@ -46,6 +46,9 @@ public:
         m_GrabbedEntity = INVALID_ENTITY;
         m_GrabDepth = 0.0f;
         m_Particles.clear();
+        // The emitters were play-session entities; a new session makes its own
+        m_BurstEmitter = INVALID_ENTITY;
+        m_LiquidEmitter = INVALID_ENTITY;
         m_DripAccumulator = 0.0f;
         m_JointsInitialized = false;
     }
@@ -65,8 +68,12 @@ public:
     // Evaluate all flowers and update score displays
     void Evaluate();
 
-    // Access particles for rendering (EditorLayer projects these to screen)
+    // The simulated particles. They are drawn by the ordinary particle system:
+    // each Update copies them into two hidden emitters (PublishParticles).
     const std::vector<FlowerParticle>& GetParticles() const { return m_Particles; }
+
+    // Per-particle world size from a FlowerParticle's scale
+    static constexpr f32 kParticleWorldSize = 2.0f;
 
 private:
     void ProcessInput();
@@ -76,6 +83,12 @@ private:
     void UpdateJointTracking();
     void UpdateBrokenParts(f32 dt);
     void UpdateParticles(f32 dt);
+    // Hands m_Particles to the particle system's renderer through two hidden,
+    // non-emitting emitters: round bursts, and liquid drops drawn stretched
+    // along their velocity. Only the editor drew flower particles, as circles
+    // projected by hand in the Game View, so a built game showed none (EP-6;
+    // decided 2026-09-27: real particles through the particle system).
+    void PublishParticles();
     void CheckGroundImpact();
 
     void SpawnBreakParticles(const Math::Vector3& junctionPos, const Math::Vector3& petalPos,
@@ -106,6 +119,8 @@ private:
 
     // Current grab state
     Entity m_GrabbedEntity = INVALID_ENTITY;
+    Entity m_BurstEmitter = INVALID_ENTITY;
+    Entity m_LiquidEmitter = INVALID_ENTITY;
     f32 m_GrabDepth = 0.0f;  // Distance from camera at grab time
 
     // Lightweight particles (break bursts, ground splashes, tension drips)

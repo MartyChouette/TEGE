@@ -60,6 +60,60 @@ void FlowerSystem::Update(f32 deltaTime) {
     UpdateParticles(deltaTime);
     CheckGroundImpact();
     UpdateScoreDisplay();
+    PublishParticles();
+}
+
+void FlowerSystem::PublishParticles() {
+    if (!m_World) return;
+    constexpr u32 kMaxPublished = 2048;
+
+    auto ensureEmitter = [&](Entity& handle, const char* name, bool liquid) -> ParticleEmitterComponent* {
+        if (handle == INVALID_ENTITY || !m_World->IsValid(handle) ||
+            !m_World->HasComponent<ParticleEmitterComponent>(handle)) {
+            handle = m_World->CreateEntity();
+            m_World->AddComponent<NameComponent>(handle, NameComponent{name});
+            // Never saved: it only exists to carry this frame's particles
+            m_World->AddComponent<TransientComponent>(handle, TransientComponent{});
+            m_World->AddComponent<TransformComponent>(handle, TransformComponent{});
+            ParticleEmitterComponent e;
+            e.isPlaying = false;       // the particle system must not spawn or age these
+            e.playOnAwake = false;
+            e.emissionRate = 0.0f;
+            e.burstCount = 0;
+            e.maxParticles = kMaxPublished;
+            if (liquid) {
+                e.renderMode = ParticleEmitterComponent::RenderMode::VelocityStretch;
+                e.velocityStretchScale = 1.0f;
+            }
+            e.pool.maxParticles = kMaxPublished;
+            e.pool.particles.resize(kMaxPublished);
+            e.pool.initialized = true;
+            m_World->AddComponent<ParticleEmitterComponent>(handle, e);
+        }
+        return m_World->GetComponent<ParticleEmitterComponent>(handle);
+    };
+    auto* burst = ensureEmitter(m_BurstEmitter, "Flower Particles", false);
+    auto* liquid = ensureEmitter(m_LiquidEmitter, "Flower Drops", true);
+    if (!burst || !liquid) return;
+
+    burst->pool.activeCount = 0;
+    liquid->pool.activeCount = 0;
+    for (const FlowerParticle& fp : m_Particles) {
+        if (std::isnan(fp.position.x) || std::isnan(fp.position.y) || std::isnan(fp.position.z)) continue;
+        auto& pool = fp.isLiquid ? liquid->pool : burst->pool;
+        if (pool.activeCount >= pool.particles.size()) continue;
+        Particle& p = pool.particles[pool.activeCount++];
+        const f32 t = fp.maxLifetime > 0.0f ? fp.lifetime / fp.maxLifetime : 1.0f;
+        p.position = fp.position;
+        p.velocity = fp.velocity;
+        p.maxLifetime = fp.maxLifetime;
+        p.lifetime = std::max(fp.maxLifetime - fp.lifetime, 0.0f);   // the pool counts down
+        p.size = fp.scale * kParticleWorldSize;
+        p.alpha = std::clamp(1.0f - t * t, 0.0f, 1.0f);   // the fade the editor drew
+        p.color = fp.color;
+        p.rotation = 0.0f;
+        p.rotationSpeed = 0.0f;
+    }
 }
 
 // ---------------------------------------------------------------------------
