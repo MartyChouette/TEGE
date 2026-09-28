@@ -218,6 +218,15 @@ public:
         }
     }
 
+    void SetIconPixels(const unsigned char* rgba, int width, int height) override {
+        if (!m_Window || !rgba || width <= 0 || height <= 0) return;
+        GLFWimage icon;
+        icon.width = width;
+        icon.height = height;
+        icon.pixels = const_cast<unsigned char*>(rgba);
+        glfwSetWindowIcon(m_Window, 1, &icon);
+    }
+
     GLFWwindow* GetGLFWHandle() const { return m_Window; }
 
 private:

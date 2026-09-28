@@ -13,6 +13,7 @@
 #include "Enjin/Platform/Input.h"
 #include "Enjin/Platform/Paths.h"
 #include "Enjin/Platform/AssetFS.h"
+#include "stb_image.h"   // declarations only; the implementation lives in the engine
 #include "Enjin/Platform/Window.h"
 #include "Enjin/ECS/World.h"
 #include <atomic>
@@ -314,8 +315,23 @@ public:
             return;
         }
 
-        // Window title is set via WindowDesc at creation time in Application::Run()
-        // (no SetTitle method on Window — title comes from WindowDesc.title)
+        // The game's window icon. Application::Run only probes for a loose
+        // icon.png in the working directory, which a Packed build never has:
+        // the build packs the icon (the project's Window Icon setting, GR-12),
+        // so read it through AssetFS, which finds the pak's copy or the loose one.
+        if (GetWindow()) {
+            std::vector<Enjin::u8> iconBytes;
+            if (Enjin::Platform::AssetFS::ReadBytes((fs::path(exeDir) / "icon.png").string(), iconBytes) &&
+                !iconBytes.empty()) {
+                int iw = 0, ih = 0, ich = 0;
+                unsigned char* px = stbi_load_from_memory(iconBytes.data(), static_cast<int>(iconBytes.size()),
+                                                          &iw, &ih, &ich, 4);
+                if (px) {
+                    GetWindow()->SetIconPixels(px, iw, ih);
+                    stbi_image_free(px);
+                }
+            }
+        }
 
         // Initialize Vulkan renderer.
         //

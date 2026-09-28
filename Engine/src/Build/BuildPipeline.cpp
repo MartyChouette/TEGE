@@ -120,7 +120,7 @@ BuildResult BuildPipeline::Execute(const BuildConfig& requested) {
         // Generate HTML shell
         HTML5ExportConfig htmlConfig;
         htmlConfig.outputDir = config.outputDir;
-        htmlConfig.title = config.windowTitle.empty() ? "Enjin Game" : config.windowTitle;
+        htmlConfig.title = config.windowTitle.empty() ? m_ProjectName : config.windowTitle;
         htmlConfig.width = config.windowWidth;
         htmlConfig.height = config.windowHeight;
         auto htmlResult = HTML5Exporter::Export(htmlConfig, config);
@@ -215,7 +215,12 @@ bool BuildPipeline::ScanProject(const std::string& projectPath) {
         file >> root;
         file.close();
 
-        m_ProjectName = root.value("projectName", "Untitled");
+        // "name" too: projects written by hand or by script use it, and the
+        // game's title screen and window read this when the build sets no
+        // title. Playground's said "Untitled" on both runtimes.
+        m_ProjectName = root.value("projectName", root.value("name", std::string()));
+        if (m_ProjectName.empty()) m_ProjectName = std::filesystem::path(projectPath).stem().string();
+        m_WindowIconPath = root.value("windowIconPath", std::string());
 
         if (!root.contains("scenes") || !root["scenes"].is_array()) {
             AddMessage(MessageSeverity::Error, "Project has no scenes array", projectPath);
@@ -674,10 +679,11 @@ bool BuildPipeline::PackAssets(const std::string& outputDir, const std::string& 
         }
     }
 
-    // Pack window icon if present in project directory
-    // Check for icon.png next to the project file (standard convention)
-    std::string iconPath = (fs::path(m_ProjectDir) / "icon.png").string();
-    if (fs::exists(iconPath)) {
+    // The window icon, packed as icon.png whatever its name: the project's
+    // Window Icon setting, else an icon.png beside the project file. The
+    // setting was ignored and only the hand-placed file shipped (GR-12).
+    std::string iconPath = ProjectIconSource();
+    if (!iconPath.empty()) {
         if (!packer.AddFile("icon.png", iconPath)) {
             AddMessage(MessageSeverity::Warning, "Failed to pack window icon: " + iconPath);
         }
@@ -1038,6 +1044,21 @@ void BuildPipeline::MarkOutputDirectory(const std::string& outputDir) {
         << " project scan skips it instead of copying it into itself.\n";
 }
 
+std::string BuildPipeline::ProjectIconSource() {
+    std::error_code ec;
+    if (!m_WindowIconPath.empty()) {
+        fs::path p(m_WindowIconPath);
+        if (p.is_relative()) p = fs::path(m_ProjectDir) / p;
+        if (fs::is_regular_file(p, ec)) return p.string();
+        // Named but missing: say so rather than shipping the fallback silently
+        AddMessage(MessageSeverity::Warning,
+            "Window icon not found: " + m_WindowIconPath);
+    }
+    const fs::path fallback = fs::path(m_ProjectDir) / "icon.png";
+    if (fs::is_regular_file(fallback, ec)) return fallback.string();
+    return {};
+}
+
 bool BuildPipeline::CopyLooseFiles(const std::string& outputDir) {
     // Create output directory
     try {
@@ -1108,9 +1129,10 @@ bool BuildPipeline::CopyLooseFiles(const std::string& outputDir) {
     copyAssetSet(m_DataAssetPaths, "data asset");
     copyAssetSet(m_ModelPaths, "model");
 
-    // Copy window icon if present
-    std::string iconPath = (fs::path(m_ProjectDir) / "icon.png").string();
-    if (fs::exists(iconPath)) {
+    // Copy the window icon (the project's setting, else icon.png, GR-12),
+    // as icon.png, which is the name the player looks for
+    const std::string iconPath = ProjectIconSource();
+    if (!iconPath.empty()) {
         copyFileRelative(iconPath, "icon.png");
     }
 

@@ -1,4 +1,5 @@
 #include "EnjinTest.h"
+#include <nlohmann/json.hpp>
 #include "Enjin/Platform/Types.h"
 #include "Enjin/Build/BuildPipeline.h"
 #include "Enjin/Build/AssetPacker.h"
@@ -1147,6 +1148,53 @@ ENJIN_TEST(BuildPackContents, RuntimeFilesArePackedAndToolFoldersAreNot) {
     ENJIN_EXPECT_TRUE(json);
     ENJIN_EXPECT_TRUE(font);
     ENJIN_EXPECT_FALSE(tege);
+    reader.Close();
+    fs::remove_all(root, ec);
+}
+
+// A project written by hand or script names itself under "name"; the build
+// read only "projectName", so the game's title screen and window said
+// "Untitled". And the project's Window Icon setting was ignored: only a
+// hand-placed icon.png shipped (GR-12).
+ENJIN_TEST(BuildPackContents, test_build_uses_project_name_and_window_icon_setting) {
+    // Arrange
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    fs::path root = fs::temp_directory_path() / "enjin_pack_name_icon_test";
+    fs::remove_all(root, ec);
+    fs::create_directories(root / "scenes", ec);
+    fs::create_directories(root / "art", ec);
+    {
+        std::ofstream proj(root / "Named.enjinproject");
+        proj << R"({"name":"Carnival Test","version":"1.0","windowIconPath":"art/myicon.png",)"
+                R"("scenes":[{"name":"Main","path":"scenes/Main.enjin",)"
+                R"("buildIndex":0,"isStartScene":true}]})";
+    }
+    { std::ofstream f(root / "scenes" / "Main.enjin"); f << R"({"version":"1.0","entities":[]})"; }
+    { std::ofstream f(root / "art" / "myicon.png", std::ios::binary); f << "PNGDATA"; }
+
+    BuildConfig cfg;
+    cfg.projectPath   = (root / "Named.enjinproject").string();
+    cfg.outputDir     = (root / "Out").string();
+    cfg.target        = BuildTargetPlatform::Web;
+    cfg.packagingMode = PackagingMode::PackedOpen;
+    cfg.assetsOnly    = true;
+
+    // Act
+    BuildPipeline pipeline;
+    pipeline.Execute(cfg);
+
+    // Assert
+    const fs::path pak = root / "Out" / "game.enjpak";
+    ENJIN_ASSERT_TRUE(fs::exists(pak));
+    AssetReader reader;
+    ENJIN_ASSERT_TRUE(reader.Open(pak.string(), ""));
+    ENJIN_ASSERT_TRUE(reader.HasFile("icon.png"));
+    const auto icon = reader.ReadFile("icon.png");
+    ENJIN_EXPECT_EQ(std::string(icon.begin(), icon.end()), std::string("PNGDATA"));
+    const auto manifestBytes = reader.ReadFile("_build/manifest.json");
+    const auto manifest = nlohmann::json::parse(std::string(manifestBytes.begin(), manifestBytes.end()));
+    ENJIN_EXPECT_EQ(manifest.value("windowTitle", std::string()), std::string("Carnival Test"));
     reader.Close();
     fs::remove_all(root, ec);
 }

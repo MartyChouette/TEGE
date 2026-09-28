@@ -110,7 +110,9 @@ bool SceneManager::LoadProject(const std::string& manifestPath) {
             if (!ec) Scripting::SetBindingsFileRoot(dir.string());
         }
         m_ProjectRoot = std::filesystem::path(manifestPath).parent_path().string();
-        m_ProjectName = root.value("projectName", "Untitled Project");
+        // "name" is what hand- and script-written projects use (Playground)
+        m_ProjectName = root.value("projectName", root.value("name", std::string()));
+        if (m_ProjectName.empty()) m_ProjectName = std::filesystem::path(manifestPath).stem().string();
 
         m_Scenes.clear();
         if (root.contains("scenes") && root["scenes"].is_array()) {

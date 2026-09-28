@@ -64,6 +64,12 @@ public:
 
     // Set window icon at runtime (PNG path)
     virtual void SetIcon(const char* iconPath) = 0;
+    // The icon from decoded RGBA pixels, for a runtime whose icon is not a
+    // loose file (a packed game's is in its pak). No-op where windows have
+    // no icon (web).
+    virtual void SetIconPixels(const unsigned char* rgba, int width, int height) {
+        (void)rgba; (void)width; (void)height;
+    }
 
     // Fullscreen toggle at runtime
     virtual void SetFullscreen(bool fullscreen) = 0;

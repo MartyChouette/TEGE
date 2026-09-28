@@ -144,6 +144,10 @@ private:
     // Accessibility settings the exported game starts with (empty = engine
     // defaults). Authored in the editor, shipped as accessibility.json.
     std::string m_AccessibilityDefaultsJson;
+    // The project's Window Icon setting (project-relative or absolute), and
+    // the file that ships as the game's icon.png
+    std::string m_WindowIconPath;
+    std::string ProjectIconSource();
     std::string m_LocalizationJson;
 
     ProgressCallback m_ProgressCallback;
