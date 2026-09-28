@@ -630,6 +630,12 @@ public:
     // Update
     void Update(f32 deltaTime);
 
+    // A clip a script asked for (Animator_Play) wins over the graph for one
+    // play-through, then the graph takes back over, cross-fading to its
+    // current state (Marty, 2026-09-28). With no states this is a plain play.
+    void PlayOverride(const std::string& clip);
+    bool IsOverriding() const { return m_OverrideActive; }
+
     // Get current state
     const std::string& GetCurrentState() const { return m_CurrentState; }
 
@@ -659,6 +665,10 @@ private:
     std::unordered_map<std::string, f32> m_FloatParams;
     std::unordered_map<std::string, i32> m_IntParams;
     std::unordered_map<std::string, bool> m_Triggers;
+
+    // Script override (PlayOverride)
+    bool m_OverrideActive = false;
+    f32 m_OverridePrevTime = 0.0f;
 };
 
 // ============================================================================

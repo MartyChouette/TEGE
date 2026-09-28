@@ -346,6 +346,7 @@ the tagged form, which is what the editor writes:
 - **Camera**: `Camera_SetFOV/GetFOV(uint64, float)`, `Camera_SetOrthoSize/GetOrthoSize(uint64, float)` — orthographic half-height (2D zoom), `Camera_SetProjectionType/GetProjectionType(uint64, int)` — 0=Perspective, 1=Orthographic, `Camera_SetNearFar(uint64, float near, float far)`
 - **AudioSource**: `AudioSource_Play/Stop/SetClip/SetVolume(uint64, ...)`
 - **Animator**: `Animator_Play(uint64, string)`, `Animator_CrossFade(uint64, string, float fadeTime)` — smooth blend to new animation, `Animator_SetSpeed(uint64, float)`, `Animator_Stop(uint64)`, `Animator_Pause(uint64)`, `Animator_Resume(uint64)`, `Animator_IsPlaying(uint64)`, `Animator_GetCurrentAnimation(uint64)`, `Animator_GetSpeed(uint64)`
+  - **Animation Graph**: `Animator_SetBool(uint64, string, bool)`, `Animator_SetFloat(uint64, string, float)` and `Animator_SetTrigger(uint64, string)` set the parameters the entity's Animation Graph transitions read. On an entity with a graph, `Animator_Play` plays that clip once and the graph then takes back over, blending to its current state.
 - **Controller**: `Controller_SetMoveSpeed/GetVelocity(uint64, ...)`, `Controller_SetEnabled(uint64, bool)` — suspend/resume player control (menus, cutscenes); works with all 5 controller types
 - **Viewmodel**: `Viewmodel_Set(uint64, bool)`, `Viewmodel_Get(uint64)` — first person viewmodel rendering (in front of world, no wall clipping, no shadows); typically on a weapon mesh parented to the camera
 - **Camera2D**: `Camera2D_Shake(uint64, float intensity, float duration)`, `Camera2D_GetZoom/SetZoom(uint64, float)`, `Camera2D_AddTarget/RemoveTarget(uint64 camera, uint64 target)`, `Camera2D_ClearTargets(uint64)`, `Camera2D_SetDeadZone(uint64, float w, float h)`, `Camera2D_SetLookAhead(uint64, float distance, float smoothing)`, `Camera2D_SetFollowTarget/GetFollowTarget(uint64, uint64)`
@@ -1273,6 +1274,9 @@ merely absent.
 - `void Animator_Pause(uint64)`
 - `void Animator_Play(uint64, const string &in)`
 - `void Animator_Resume(uint64)`
+- `void Animator_SetBool(uint64, const string &in, bool)`
+- `void Animator_SetFloat(uint64, const string &in, float)`
+- `void Animator_SetTrigger(uint64, const string &in)`
 - `void Animator_SetSpeed(uint64, float)`
 - `void Animator_Stop(uint64)`
 - `void AudioSource_Play(uint64)`

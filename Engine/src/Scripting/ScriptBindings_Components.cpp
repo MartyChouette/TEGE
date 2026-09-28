@@ -489,8 +489,28 @@ static void Animator_Play(u64 id, const std::string& animName) {
     if (!s_BindingsWorld) return;
     auto* ac = ENJIN_SCRIPT_COMPONENT(AnimatorComponent, id);
     if (ac) {
-        ac->animator.Play(animName);
+        // Through the state machine: with a graph, the script's clip plays
+        // once and the graph resumes; with none, a plain play as before.
+        ac->stateMachine.PlayOverride(animName);
     }
+}
+
+// The state machine's parameters, so a script can drive the graph the
+// Animation Graph editor authors. Its transitions read these and nothing at
+// runtime could set them.
+static void Animator_SetBool(u64 id, const std::string& name, bool value) {
+    if (!s_BindingsWorld) return;
+    if (auto* ac = ENJIN_SCRIPT_COMPONENT(AnimatorComponent, id)) ac->stateMachine.SetBool(name, value);
+}
+
+static void Animator_SetFloat(u64 id, const std::string& name, f32 value) {
+    if (!s_BindingsWorld) return;
+    if (auto* ac = ENJIN_SCRIPT_COMPONENT(AnimatorComponent, id)) ac->stateMachine.SetFloat(name, value);
+}
+
+static void Animator_SetTrigger(u64 id, const std::string& name) {
+    if (!s_BindingsWorld) return;
+    if (auto* ac = ENJIN_SCRIPT_COMPONENT(AnimatorComponent, id)) ac->stateMachine.SetTrigger(name);
 }
 
 static void Animator_SetSpeed(u64 id, f32 speed) {
@@ -2590,6 +2610,9 @@ void RegisterComponentBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction("void Animator_Stop(uint64)", ENJIN_AS_FN(Animator_Stop), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Animator_Pause(uint64)", ENJIN_AS_FN(Animator_Pause), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Animator_Resume(uint64)", ENJIN_AS_FN(Animator_Resume), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Animator_SetBool(uint64, const string &in, bool)", ENJIN_AS_FN(Animator_SetBool), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Animator_SetFloat(uint64, const string &in, float)", ENJIN_AS_FN(Animator_SetFloat), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Animator_SetTrigger(uint64, const string &in)", ENJIN_AS_FN(Animator_SetTrigger), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool Animator_IsPlaying(uint64)", ENJIN_AS_FN(Animator_IsPlaying), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("string Animator_GetCurrentAnimation(uint64)", ENJIN_AS_FN(Animator_GetCurrentAnimation), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("float Animator_GetSpeed(uint64)", ENJIN_AS_FN(Animator_GetSpeed), ENJIN_AS_CALL_CDECL));

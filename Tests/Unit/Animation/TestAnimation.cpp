@@ -373,6 +373,71 @@ ENJIN_TEST(StateMachine, AddStatesAndDefault) {
     ENJIN_EXPECT_EQ(sm.GetStates().size(), (size_t)1);
 }
 
+namespace {
+// A one-bone animator with idle, walk and wave clips, driven by a state machine
+// the way AnimatorComponent::Update drives it: the machine, then the animator.
+struct GraphRig {
+    SkeletalAnimator animator;
+    AnimationStateMachine sm;
+    GraphRig() {
+        auto skel = std::make_shared<Skeleton>();
+        Bone root; root.name = "root"; root.bindScale = Math::Vector3(1, 1, 1);
+        skel->bones.push_back(root);
+        animator.SetSkeleton(skel);
+        for (auto [name, len] : { std::pair<const char*, f32>{"idle", 1.0f}, {"walk", 1.0f}, {"wave", 0.5f} }) {
+            SkeletalAnimation a; a.name = name; a.duration = len; animator.AddAnimation(a);
+        }
+        sm.SetAnimator(&animator);
+        AnimationState idle; idle.name = "Idle"; idle.animationName = "idle"; sm.AddState(idle);
+        AnimationState walk; walk.name = "Walk"; walk.animationName = "walk"; sm.AddState(walk);
+        sm.SetDefaultState("Idle");
+        AnimationTransition t; t.fromState = "Idle"; t.toState = "Walk";
+        TransitionCondition c; c.type = TransitionCondition::Type::Bool;
+        c.parameterName = "moving"; c.comparison = TransitionCondition::Comparison::Equal;
+        c.value.boolValue = true;
+        t.conditions.push_back(c);
+        sm.AddTransition(t);
+    }
+    void Run(int frames) {
+        for (int i = 0; i < frames; ++i) { sm.Update(1.0f / 60.0f); animator.Update(1.0f / 60.0f); }
+    }
+};
+}  // namespace
+
+// Marty, 2026-09-28: a script's Animator_Play wins for that clip, then the
+// graph resumes. The graph's parameters could not be set from a script at all.
+ENJIN_TEST(StateMachine, test_state_machine_script_clip_plays_then_graph_resumes) {
+    // Arrange
+    GraphRig rig;
+    rig.Run(10);
+    ENJIN_EXPECT_STR_EQ(rig.animator.GetCurrentAnimationName().c_str(), "idle");
+
+    // Act: a script plays a half-second wave
+    rig.sm.PlayOverride("wave");
+    rig.Run(10);
+    const std::string during = rig.animator.GetCurrentAnimationName();
+    rig.Run(60);   // well past the end of the wave
+
+    // Assert: the wave played, then the graph took back over
+    ENJIN_EXPECT_STR_EQ(during.c_str(), "wave");
+    ENJIN_EXPECT_FALSE(rig.sm.IsOverriding());
+    ENJIN_EXPECT_STR_EQ(rig.animator.GetCurrentAnimationName().c_str(), "idle");
+}
+
+ENJIN_TEST(StateMachine, test_state_machine_bool_parameter_drives_a_transition) {
+    // Arrange
+    GraphRig rig;
+    rig.Run(5);
+
+    // Act: what Animator_SetBool does
+    rig.sm.SetBool("moving", true);
+    rig.Run(30);   // past the transition's 0.2 s cross-fade
+
+    // Assert
+    ENJIN_EXPECT_STR_EQ(rig.sm.GetCurrentState().c_str(), "Walk");
+    ENJIN_EXPECT_STR_EQ(rig.animator.GetCurrentAnimationName().c_str(), "walk");
+}
+
 ENJIN_TEST(StateMachine, TransitionDefaults) {
     AnimationTransition t;
     ENJIN_EXPECT_FLOAT_NEAR(t.blendTime, 0.2f, 0.01f);

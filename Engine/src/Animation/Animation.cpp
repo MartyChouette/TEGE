@@ -820,10 +820,37 @@ i32 AnimationStateMachine::GetInt(const std::string& name) const {
     return (it != m_IntParams.end()) ? it->second : 0;
 }
 
+void AnimationStateMachine::PlayOverride(const std::string& clip) {
+    if (!m_Animator) return;
+    m_Animator->Play(clip);
+    if (m_States.empty()) return;   // no graph to hand back to
+    m_OverrideActive = true;
+    m_OverridePrevTime = 0.0f;
+}
+
 void AnimationStateMachine::Update(f32 deltaTime) {
     (void)deltaTime;
 
     if (!m_Animator) return;
+
+    // A script's clip plays through once, then the graph resumes. Checked
+    // before the first-frame initialisation below, so a clip asked for on a
+    // character's first frame is not replaced by the default state. The clip
+    // is done when it stops, reaches its end, or wraps (a looping clip).
+    if (m_OverrideActive) {
+        const f32 t = m_Animator->GetNormalizedTime();
+        const bool done = !m_Animator->IsPlaying() || t >= 0.999f || t + 0.5f < m_OverridePrevTime;
+        if (!done) {
+            m_OverridePrevTime = t;
+            return;   // parameters keep changing; transitions wait
+        }
+        m_OverrideActive = false;
+        auto it = m_States.find(m_CurrentState);
+        if (it != m_States.end()) {
+            constexpr f32 kResumeBlend = 0.2f;
+            m_Animator->CrossFade(it->second.animationName, kResumeBlend);
+        }
+    }
 
     // Initialize if needed
     if (m_CurrentState.empty() && !m_DefaultState.empty()) {
