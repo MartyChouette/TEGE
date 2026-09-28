@@ -186,7 +186,9 @@ fn vs_main(in: VertexInput, @builtin(instance_index) instanceIdx: u32) -> Vertex
         if ((object.flags & 2048) != 0) {
             wave = wave + sin(dot(world_pos.xz, wdir * 0.08) + t * 0.6) * 0.35 * wmag;
         }
-        world_pos.y = world_pos.y + wave;
+        // Waves still as the surface freezes, as on desktop (triangle.vert):
+        // parallaxScale carries freezeProgress for water
+        world_pos.y = world_pos.y + wave * (1.0 - clamp(object.parallaxScale, 0.0, 1.0));
     }
 
     // Wind sway (FLAG_WIND_SWAY = bit 4): ANY mesh with a VegetationComponent bends
@@ -996,6 +998,23 @@ fn shadeSurface(in: VertexOutput) -> vec4<f32> {
         // Lower floor (0.15) so slopes catch snow too, not just dead-flat ground.
         let snowCoverage = snowAccum * smoothstep(0.15, 0.7, N.y);
         color = mix(color, vec3<f32>(0.95, 0.97, 1.0), snowCoverage);
+    }
+
+    // Water sheen with the freeze transition (mirrors triangle.frag's water
+    // block). Web had no sheen at all, so a frozen pond looked like open water:
+    // the freeze simulation now runs on web, and this is how it shows. Water
+    // is flags bit 5 on both backends; parallaxScale carries freezeProgress.
+    // skyHorizon stands in for desktop's sky reflection colour.
+    if ((object.flags & 32) != 0) {
+        let freezeP = clamp(object.parallaxScale, 0.0, 1.0);
+        let NdotVw = max(dot(N, V), 0.0);
+        let fresnelBase = mix(0.02, 0.08, freezeP);
+        let fresnelExp = mix(5.0, 3.0, freezeP);
+        let fresnelW = fresnelBase + (1.0 - fresnelBase) * pow(1.0 - NdotVw, fresnelExp);
+        let skyC = lighting.skyHorizon.xyz;
+        let reflectC = mix(skyC, skyC * vec3<f32>(0.85, 0.9, 1.0) + vec3<f32>(0.1), freezeP * 0.4);
+        let reflectStrength = mix(0.4, 0.85, freezeP);
+        color = mix(color, reflectC, fresnelW * reflectStrength);
     }
 
     // Shore foam (mirrors triangle.frag ~1942). Gated on the parameters rather

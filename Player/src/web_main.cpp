@@ -111,6 +111,7 @@
 #include "Enjin/Animation/PhysicsSurfaceQuery.h"
 #include "Enjin/Gameplay/QuestFlow.h"
 #include "Enjin/Effects/ElementalSystem.h"
+#include "Enjin/Effects/WaterFreeze.h"
 #include "Enjin/Effects/SeasonalWeather.h"    // web parity: seasonal weather (Update no-ops unless a scene enables it)
 #include "Enjin/Effects/Destructible.h"       // web parity: destructible sim
 #include "Enjin/Effects/CurlNoiseSystem.h"    // web parity: curl-noise wind
@@ -393,6 +394,10 @@ public:
                 }
                 if (manifest.contains("frameSettings")) {
                     const auto& fs = manifest["frameSettings"];
+                    // The project's frame cap. Web read only the fixed step and
+                    // ran at whatever the browser's refresh was (WP, 2026-09-28).
+                    // 0 = uncapped. VSync is the browser's and is not ours to set.
+                    m_TargetFPS = fs.value("targetFrameRate", 0u);
                     m_SimClock.Configure(fs.value("fixedTimestep", false),
                                          static_cast<Enjin::f32>(fs.value("physicsTicksPerSecond", 120u)));
                     m_ScriptSystem.SetExternalFixedClock(m_SimClock.IsEnabled());
@@ -949,6 +954,8 @@ public:
                 m_Vegetation->SetSun(sunDir, sunCol, sunI);
                 // Weather reaches the vegetation the same way wind and sun do.
                 m_Vegetation->SetSnowAccumulation(m_RenderSystem->GetSnowAccumulation());
+                // Seasonal canopies follow world time, as the desktop TreeRenderer does
+                m_Vegetation->SetSeasonState(m_WorldTime.GetCurrentSeason(), m_WorldTime.GetSeasonProgress());
                 m_Vegetation->SetAmbient(m_RenderSystem->GetAmbientColor(),
                                          m_RenderSystem->GetAmbientIntensity());
                 m_Vegetation->RenderScene(static_cast<WGPURenderPassEncoder>(scenePass),
@@ -2195,6 +2202,9 @@ public:
         m_CurlNoiseSystem.Update(deltaTime);
         m_DestructibleSystem.Update(deltaTime);
         UpdateWeatherZones();
+        // Water freezes in snow and in freezing temperature zones, the same
+        // engine function desktop and the editor run (web skipped it)
+        Enjin::Effects::UpdateWaterFreeze(m_World.get(), m_WeatherSystem.GetSnowIntensity(), deltaTime);
         if (m_Camera) {
             m_StreamingManager.Update(m_Camera->GetPosition(), deltaTime);
             // 2D scenes get precipitation as an XY sheet falling down the
@@ -2231,6 +2241,16 @@ public:
         // fire/water/etc particles, the fire lights glow, and now the particle
         // billboards draw on web too (the render pass pulls the pool from here).
         if (m_Camera && m_RenderSystem) {
+            // Fire heat into the wind, as desktop and the editor do: hot fire
+            // particles are heat sources that make the air above them rise.
+            // Web skipped it, so a campfire in a browser left the wind alone.
+            m_WindSystem.ClearHeatSources();
+            const auto& elemPool = m_ElementalSystem.GetPool();
+            for (Enjin::u32 i = 0; i < elemPool.activeCount && i < 8192; ++i) {
+                if (elemPool.elements[i].x > 0.5f && elemPool.intensities[i] > 0.3f) {
+                    m_WindSystem.RegisterHeatSource(elemPool.positions[i], elemPool.intensities[i]);
+                }
+            }
             m_ElementalSystem.Update(m_World.get(), deltaTime, m_Camera->GetPosition());
             m_EffectsTime += deltaTime;
             m_ElementalSystem.BuildFireLights(m_EffectsTime, m_FireLights);
@@ -2950,10 +2970,10 @@ public:
     }
 
 private:
-    // Zone-driven weather on web (mirrors desktop Player UpdateWeatherZones, minus
-    // the pieces web can't render: season state has no web TreeRenderer, water
-    // freeze has no web water surface). Feeds rain/snow intensity, fog, and the
-    // wind override; the existing GPU-particle precip spawn reads those back.
+    // Zone-driven weather on web (mirrors desktop Player UpdateWeatherZones).
+    // Feeds rain/snow intensity, fog, and the wind override; the existing
+    // GPU-particle precip spawn reads those back. Water freeze and seasonal
+    // canopies run from Update (UpdateWaterFreeze, the vegetation's season).
     // Custom precip sprite textures are Phase 3 (WebGPU has no bindless path yet).
     void UpdateWeatherZones() {
         using namespace Enjin;
@@ -3589,6 +3609,11 @@ private:
     Enjin::Gameplay::RecordRewindSystem m_RecordRewindSystem;
     bool m_RewindFeedbackWasActive = false;
     Enjin::Gameplay::SimulationClock m_SimClock;
+public:
+    // The project's frame cap from the manifest (0 = uncapped)
+    Enjin::u32 TargetFPS() const { return m_TargetFPS; }
+private:
+    Enjin::u32 m_TargetFPS = 0;
     Enjin::Gameplay::ClothSystem m_ClothSystem;
     Enjin::Gameplay::SurfaceResponseSystem m_SurfaceResponseSystem;
     Enjin::ECS::FlowerSystem m_FlowerSystem;
@@ -3919,6 +3944,15 @@ int main(int argc, char* argv[]) {
         // Real delta time from high-resolution timer
         static double lastTime = emscripten_performance_now();
         double now = emscripten_performance_now();
+        // The project's frame cap: skip browser frames until its interval has
+        // passed. dt runs from the last frame that RAN, so game time is right
+        // whatever gets skipped. Half a millisecond of slack so a 60 cap on a
+        // 60 Hz display does not drop every other frame to timer jitter.
+        // Capture runs step a fixed dt and ignore the cap.
+        if (p->TargetFPS() > 0 && s_WebFixedDelta <= 0.0f &&
+            now - lastTime < 1000.0 / static_cast<double>(p->TargetFPS()) - 0.5) {
+            return;
+        }
         float dt = static_cast<float>((now - lastTime) / 1000.0);
         lastTime = now;
         dt = std::min(dt, 0.1f);  // Clamp to 100ms (10fps floor)

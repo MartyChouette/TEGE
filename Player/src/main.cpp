@@ -30,6 +30,7 @@
 #include "Enjin/Renderer/Vulkan/VulkanRenderer.h"
 #include "Enjin/Renderer/CaptureWrite.h"
 #include "Enjin/Renderer/Camera.h"
+#include "Enjin/Effects/WaterFreeze.h"
 #include "Enjin/Renderer/CameraController.h"
 #include "Enjin/Renderer/Upscaling/IUpscaler.h"
 #include "Enjin/Scene/SceneSerializer.h"
@@ -3341,47 +3342,9 @@ private:
             treeRenderer->SetSeasonState(m_WorldTime.GetCurrentSeason(), m_WorldTime.GetSeasonProgress());
         }
 
-        // Water freeze/thaw driven by temperature zones (editor parity)
-        for (ECS::Entity waterEntity : m_World->GetEntitiesWithComponent<ECS::WaterVolumeComponent>()) {
-            auto* waterVol = m_World->GetComponent<ECS::WaterVolumeComponent>(waterEntity);
-            auto* waterTransform = m_World->GetComponent<ECS::TransformComponent>(waterEntity);
-            if (!waterVol || !waterTransform) continue;
-
-            ECS::TemperatureZoneComponent* waterTempZone = nullptr;
-            i32 bestWaterTempPri = INT_MIN;
-            for (ECS::Entity tzEntity : m_World->GetEntitiesWithComponent<ECS::TemperatureZoneComponent>()) {
-                auto* tz = m_World->GetComponent<ECS::TemperatureZoneComponent>(tzEntity);
-                auto* tzTransform = m_World->GetComponent<ECS::TransformComponent>(tzEntity);
-                if (tz && tzTransform && tz->priority > bestWaterTempPri) {
-                    if (tz->ContainsPoint(tzTransform->position, waterTransform->position)) {
-                        waterTempZone = tz;
-                        bestWaterTempPri = tz->priority;
-                    }
-                }
-            }
-
-            // Snow weather freezes water even without a temperature zone
-            // (Marty: water should freeze in snow); a temp zone still overrides.
-            bool snowFreeze = m_WeatherSystem.GetSnowIntensity() > 0.25f;
-            if ((waterTempZone && waterTempZone->IsFreezing()) || snowFreeze) {
-                waterVol->freezeProgress += waterVol->freezeRate * deltaTime;
-                if (waterVol->freezeProgress > 1.0f) waterVol->freezeProgress = 1.0f;
-            } else if (waterTempZone && waterTempZone->IsNearFreezing()) {
-                // Near-freezing (0-5C): lerp toward partial freeze (0.3)
-                f32 target = 0.3f;
-                if (waterVol->freezeProgress < target) {
-                    waterVol->freezeProgress += waterVol->freezeRate * 0.5f * deltaTime;
-                    if (waterVol->freezeProgress > target) waterVol->freezeProgress = target;
-                } else {
-                    waterVol->freezeProgress -= waterVol->thawRate * 0.5f * deltaTime;
-                    if (waterVol->freezeProgress < target) waterVol->freezeProgress = target;
-                }
-            } else {
-                waterVol->freezeProgress -= waterVol->thawRate * deltaTime;
-                if (waterVol->freezeProgress < 0.0f) waterVol->freezeProgress = 0.0f;
-            }
-            waterVol->isFrozen = (waterVol->freezeProgress >= 0.99f);
-        }
+        // Water freeze/thaw from temperature zones and snow: one engine copy
+        // shared with the editor and the web player
+        Enjin::Effects::UpdateWaterFreeze(m_World.get(), m_WeatherSystem.GetSnowIntensity(), deltaTime);
     }
 
     void SetupSplashScreen() {

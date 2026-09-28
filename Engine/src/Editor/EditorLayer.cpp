@@ -1,4 +1,5 @@
 #include "Enjin/Editor/EditorLayer.h"
+#include "Enjin/Effects/WaterFreeze.h"
 #include "Enjin/ECS/Components/Water3D.h"
 #include "Enjin/ECS/CameraZones.h"
 #include "Enjin/ECS/Billboards.h"
@@ -3525,50 +3526,8 @@ void EditorLayer::UpdateGameViewSims(f32 simDt) {
     m_RenderSystem->SetWeatherSkyBlend(m_WeatherSystem.GetRainIntensity(),
                                        m_WeatherSystem.GetSnowIntensity());
 
-    // Water freeze/thaw driven by temperature zones
-    for (ECS::Entity waterEntity : m_World->GetEntitiesWithComponent<ECS::WaterVolumeComponent>()) {
-        auto* waterVol = m_World->GetComponent<ECS::WaterVolumeComponent>(waterEntity);
-        auto* waterTransform = m_World->GetComponent<ECS::TransformComponent>(waterEntity);
-        if (!waterVol || !waterTransform) continue;
-
-        // Find highest-priority temperature zone containing this water entity
-        ECS::TemperatureZoneComponent* waterTempZone = nullptr;
-        i32 bestWaterTempPri = INT_MIN;
-        for (ECS::Entity tzEntity : m_World->GetEntitiesWithComponent<ECS::TemperatureZoneComponent>()) {
-            auto* tz = m_World->GetComponent<ECS::TemperatureZoneComponent>(tzEntity);
-            auto* tzTransform = m_World->GetComponent<ECS::TransformComponent>(tzEntity);
-            if (tz && tzTransform && tz->priority > bestWaterTempPri) {
-                if (tz->ContainsPoint(tzTransform->position, waterTransform->position)) {
-                    waterTempZone = tz;
-                    bestWaterTempPri = tz->priority;
-                }
-            }
-        }
-
-        // Snow weather freezes water even without a temperature zone (Marty:
-        // water should freeze in snow). A temperature zone still overrides.
-        bool snowFreeze = m_WeatherSystem.GetSnowIntensity() > 0.25f;
-        if ((waterTempZone && waterTempZone->IsFreezing()) || snowFreeze) {
-            // Freezing: increase freeze progress
-            waterVol->freezeProgress += waterVol->freezeRate * simDt;
-            if (waterVol->freezeProgress > 1.0f) waterVol->freezeProgress = 1.0f;
-        } else if (waterTempZone && waterTempZone->IsNearFreezing()) {
-            // Near-freezing (0-5C): lerp toward partial freeze (0.3)
-            f32 target = 0.3f;
-            if (waterVol->freezeProgress < target) {
-                waterVol->freezeProgress += waterVol->freezeRate * 0.5f * simDt;
-                if (waterVol->freezeProgress > target) waterVol->freezeProgress = target;
-            } else {
-                waterVol->freezeProgress -= waterVol->thawRate * 0.5f * simDt;
-                if (waterVol->freezeProgress < target) waterVol->freezeProgress = target;
-            }
-        } else {
-            // Warm or no zone: thaw
-            waterVol->freezeProgress -= waterVol->thawRate * simDt;
-            if (waterVol->freezeProgress < 0.0f) waterVol->freezeProgress = 0.0f;
-        }
-        waterVol->isFrozen = (waterVol->freezeProgress >= 0.99f);
-    }
+    // Water freeze/thaw from temperature zones and snow (shared with both players)
+    Effects::UpdateWaterFreeze(m_World, m_WeatherSystem.GetSnowIntensity(), simDt);
 
     // Seasonal Weather: the checkbox is the authority in the editor; it drives
     // the system's own enabled flag (which defaults OFF so ungated hosts can't

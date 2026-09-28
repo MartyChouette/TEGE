@@ -1,3 +1,4 @@
+#include "Enjin/Effects/TreeSeason.h"
 #include "Enjin/Platform/Platform.h"
 
 #if ENJIN_PLATFORM_WEB
@@ -507,9 +508,11 @@ u32 WebGPUVegetationSystem::BuildVolumeParams(ECS::World* world,
         if (!g || !t || !t->visible) continue;
         VolumeParamsCPU& p = params[count];
         p.treeScale[2] = m_SnowAccumulation;   // shared with grass and shrubs
+        // The season's canopy, the same numbers the desktop TreeRenderer uses
+        const Effects::SeasonalCanopy seasonal = Effects::ComputeSeasonalCanopy(*g, m_Season, m_SeasonProgress);
         put3(p.posHalfX, t->position); p.posHalfX[3] = g->halfExtents.x;
-        put3(p.baseColorHalfZ, g->canopyBaseColor); p.baseColorHalfZ[3] = g->halfExtents.z;
-        put3(p.tipColorHeight, g->canopyTipColor);
+        put3(p.baseColorHalfZ, seasonal.base); p.baseColorHalfZ[3] = g->halfExtents.z;
+        put3(p.tipColorHeight, seasonal.tip);
         // Overall extent, used only for the wind clamp; the shader scales trunk
         // and canopy from treeDims below. Summing the four authored dimensions
         // into one height and one width -- which is what this used to do -- gave
@@ -525,7 +528,8 @@ u32 WebGPUVegetationSystem::BuildVolumeParams(ECS::World* world,
         m_VolumeTexB[count] = m_ResolveTexture ? m_ResolveTexture(g->canopyTexturePath) : GPUTextureHandle{};
         p.treeDims[0] = g->trunkWidth;
         p.treeDims[1] = g->trunkHeight;
-        p.treeDims[2] = g->canopyRadius;
+        // A thinning crown is a smaller one; winter's 0 leaves bare trunks
+        p.treeDims[2] = g->canopyRadius * seasonal.scale;
         p.treeDims[3] = g->canopyOffset;
         p.treeScale[0] = g->minHeightScale;
         p.treeScale[1] = g->maxHeightScale;

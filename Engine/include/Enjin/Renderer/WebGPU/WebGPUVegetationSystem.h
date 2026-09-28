@@ -9,6 +9,7 @@
 // the same approach as grass.vert. Draws inside the scene pass (real depth,
 // scene tonemapping) via the SetWebScenePassHook path the particles use.
 
+#include "Enjin/Effects/WorldTime.h"
 #include "Enjin/Platform/Platform.h"
 
 #if ENJIN_PLATFORM_WEB
@@ -51,6 +52,9 @@ public:
     bool IsInitialized() const { return m_Initialized; }
 
     void SetSnowAccumulation(f32 v) { m_SnowAccumulation = v; }
+    // The season for tree canopies (colour and fullness), as the desktop
+    // TreeRenderer takes it. Web trees kept their summer canopy all year.
+    void SetSeasonState(Effects::Season season, f32 progress) { m_Season = season; m_SeasonProgress = progress; }
 
     void SetWind(const Math::Vector3& wind, f32 time) { m_Wind = wind; m_WindTime = time; }
 
@@ -138,6 +142,8 @@ private:
     Math::Vector3 m_Ambient{0.35f, 0.38f, 0.42f};
     f32 m_AmbientIntensity = 1.0f;
     f32 m_SnowAccumulation = 0.0f;
+    Effects::Season m_Season = Effects::Season::Summer;
+    f32 m_SeasonProgress = 0.0f;
     f32 m_WindTime = 0.0f;
 };
 

@@ -1,4 +1,5 @@
 #include "Enjin/Effects/TreeRenderer.h"
+#include "Enjin/Effects/TreeSeason.h"
 #include "Enjin/Effects/VegetationTemplates.h"
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/Components/Gameplay.h"
@@ -337,43 +338,11 @@ void TreeRenderer::Render(VkCommandBuffer commandBuffer,
         model.m[13] = transform->position.y;
         model.m[14] = transform->position.z;
 
-        // Compute seasonal canopy color and scale
-        f32 canopyScale = 1.0f;
-        Math::Vector3 canopyBase = tree->canopyBaseColor;
-        Math::Vector3 canopyTip = tree->canopyTipColor;
-
-        bool isDeciduous = (tree->treeType == ECS::TreeType::Deciduous);
-
-        if (isDeciduous) {
-            switch (m_CurrentSeason) {
-                case Season::Spring:
-                    canopyScale = 0.3f + 0.5f * m_SeasonProgress;  // Growing back
-                    canopyBase = tree->springCanopyColor;
-                    canopyTip = tree->springCanopyColor * 1.2f;
-                    break;
-                case Season::Summer:
-                    canopyScale = 1.0f;
-                    canopyBase = tree->summerCanopyColor;
-                    canopyTip = tree->summerCanopyColor * 1.3f;
-                    break;
-                case Season::Fall: {
-                    f32 p = m_SeasonProgress;
-                    canopyScale = 1.0f - 0.7f * p;  // Thinning
-                    // Lerp summer -> fall color
-                    canopyBase.x = tree->summerCanopyColor.x + (tree->fallCanopyColor.x - tree->summerCanopyColor.x) * p;
-                    canopyBase.y = tree->summerCanopyColor.y + (tree->fallCanopyColor.y - tree->summerCanopyColor.y) * p;
-                    canopyBase.z = tree->summerCanopyColor.z + (tree->fallCanopyColor.z - tree->summerCanopyColor.z) * p;
-                    canopyTip = canopyBase * 1.2f;
-                    break;
-                }
-                case Season::Winter:
-                    canopyScale = 0.0f;  // Bare branches
-                    break;
-            }
-        } else {
-            // Evergreen: stays full year-round, slight snow tint in winter
-            canopyScale = 1.0f;
-        }
+        // Seasonal canopy colour and fullness, shared with the web renderer
+        const SeasonalCanopy seasonal = ComputeSeasonalCanopy(*tree, m_CurrentSeason, m_SeasonProgress);
+        const f32 canopyScale = seasonal.scale;
+        const Math::Vector3 canopyBase = seasonal.base;
+        const Math::Vector3 canopyTip = seasonal.tip;
 
         // Canopy base color packed 8-bit r*65536+g*256+b into one float, freeing
         // two push-constant slots for the bark/canopy texture indices
