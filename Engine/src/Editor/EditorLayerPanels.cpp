@@ -4451,6 +4451,97 @@ void EditorLayer::DrawEmptyListState(const char* what, const std::string& source
     ImGui::PopStyleColor();
 }
 
+// Edit one data-asset value of any field type, arrays included, and answer
+// whether it changed. The record editor and the schema's default-value row
+// both use it, so the two cannot disagree about how a type is edited. Array
+// fields said "edit in file" and had no editor at all (GR-7).
+static bool EditDataAssetValue(const char* label, Assets::DataFieldType type, Assets::DataAssetValue& value) {
+    bool changed = false;
+    switch (type) {
+        case Assets::DataFieldType::Float: {
+            f32 v = std::holds_alternative<f32>(value) ? std::get<f32>(value) : 0.0f;
+            if (ImGui::DragFloat(label, &v, 0.1f)) { value = v; changed = true; }
+            break;
+        }
+        case Assets::DataFieldType::Int: {
+            i32 v = std::holds_alternative<i32>(value) ? std::get<i32>(value) : 0;
+            if (ImGui::DragInt(label, &v)) { value = v; changed = true; }
+            break;
+        }
+        case Assets::DataFieldType::Bool: {
+            bool v = std::holds_alternative<bool>(value) ? std::get<bool>(value) : false;
+            if (ImGui::Checkbox(label, &v)) { value = v; changed = true; }
+            break;
+        }
+        case Assets::DataFieldType::String: {
+            std::string v = std::holds_alternative<std::string>(value) ? std::get<std::string>(value) : std::string();
+            char buf[512];
+            std::snprintf(buf, sizeof(buf), "%s", v.c_str());
+            if (ImGui::InputText(label, buf, sizeof(buf))) { value = std::string(buf); changed = true; }
+            break;
+        }
+        case Assets::DataFieldType::Vector3: {
+            Math::Vector3 v = std::holds_alternative<Math::Vector3>(value) ? std::get<Math::Vector3>(value) : Math::Vector3(0, 0, 0);
+            f32 f[3] = { v.x, v.y, v.z };
+            if (ImGui::DragFloat3(label, f, 0.1f)) { value = Math::Vector3(f[0], f[1], f[2]); changed = true; }
+            break;
+        }
+        case Assets::DataFieldType::Vector4: {
+            Math::Vector4 v = std::holds_alternative<Math::Vector4>(value) ? std::get<Math::Vector4>(value) : Math::Vector4(0, 0, 0, 0);
+            f32 f[4] = { v.x, v.y, v.z, v.w };
+            if (ImGui::DragFloat4(label, f, 0.1f)) { value = Math::Vector4(f[0], f[1], f[2], f[3]); changed = true; }
+            break;
+        }
+        case Assets::DataFieldType::StringArray: {
+            std::vector<std::string> v = std::holds_alternative<std::vector<std::string>>(value)
+                ? std::get<std::vector<std::string>>(value) : std::vector<std::string>{};
+            ImGui::TextUnformatted(label);
+            ImGui::SameLine();
+            ImGui::TextDisabled("(%zu)", v.size());
+            ImGui::PushID(label);
+            int removeAt = -1;
+            for (usize i = 0; i < v.size(); ++i) {
+                ImGui::PushID(static_cast<int>(i));
+                char buf[512];
+                std::snprintf(buf, sizeof(buf), "%s", v[i].c_str());
+                ImGui::SetNextItemWidth(220.0f);
+                if (ImGui::InputText("##item", buf, sizeof(buf))) { v[i] = buf; changed = true; }
+                ImGui::SameLine();
+                if (ImGui::SmallButton("X")) removeAt = static_cast<int>(i);
+                ImGui::PopID();
+            }
+            if (removeAt >= 0) { v.erase(v.begin() + removeAt); changed = true; }
+            if (ImGui::SmallButton("+ Add")) { v.emplace_back(); changed = true; }
+            ImGui::PopID();
+            if (changed) value = v;
+            break;
+        }
+        case Assets::DataFieldType::FloatArray: {
+            std::vector<f32> v = std::holds_alternative<std::vector<f32>>(value)
+                ? std::get<std::vector<f32>>(value) : std::vector<f32>{};
+            ImGui::TextUnformatted(label);
+            ImGui::SameLine();
+            ImGui::TextDisabled("(%zu)", v.size());
+            ImGui::PushID(label);
+            int removeAt = -1;
+            for (usize i = 0; i < v.size(); ++i) {
+                ImGui::PushID(static_cast<int>(i));
+                ImGui::SetNextItemWidth(120.0f);
+                if (ImGui::DragFloat("##item", &v[i], 0.1f)) changed = true;
+                ImGui::SameLine();
+                if (ImGui::SmallButton("X")) removeAt = static_cast<int>(i);
+                ImGui::PopID();
+            }
+            if (removeAt >= 0) { v.erase(v.begin() + removeAt); changed = true; }
+            if (ImGui::SmallButton("+ Add")) { v.push_back(0.0f); changed = true; }
+            ImGui::PopID();
+            if (changed) value = v;
+            break;
+        }
+    }
+    return changed;
+}
+
 void EditorLayer::DrawDataAssetPanel() {
     bool panelOpen = true;
     if (!ImGui::Begin("Data Asset Editor", &panelOpen)) {
@@ -4693,6 +4784,12 @@ void EditorLayer::DrawDataAssetPanel() {
                     break;
                 }
 
+                // The default a new record starts from. There was no editor
+                // for it, so every default was zero or empty (GR-7).
+                ImGui::Indent(16.0f);
+                if (EditDataAssetValue("default", field.type, field.defaultValue)) modified = true;
+                ImGui::Unindent(16.0f);
+
                 ImGui::PopID();
             }
 
@@ -4751,58 +4848,7 @@ void EditorLayer::DrawDataAssetPanel() {
                         it = asset->values.find(field.name);
                     }
 
-                    switch (field.type) {
-                        case Assets::DataFieldType::Float: {
-                            f32 val = std::holds_alternative<f32>(it->second) ? std::get<f32>(it->second) : 0.0f;
-                            if (ImGui::DragFloat(field.name.c_str(), &val, 0.1f)) {
-                                it->second = val;
-                            }
-                            break;
-                        }
-                        case Assets::DataFieldType::Int: {
-                            i32 val = std::holds_alternative<i32>(it->second) ? std::get<i32>(it->second) : 0;
-                            if (ImGui::DragInt(field.name.c_str(), &val)) {
-                                it->second = val;
-                            }
-                            break;
-                        }
-                        case Assets::DataFieldType::Bool: {
-                            bool val = std::holds_alternative<bool>(it->second) ? std::get<bool>(it->second) : false;
-                            if (ImGui::Checkbox(field.name.c_str(), &val)) {
-                                it->second = val;
-                            }
-                            break;
-                        }
-                        case Assets::DataFieldType::String: {
-                            std::string val = std::holds_alternative<std::string>(it->second) ? std::get<std::string>(it->second) : "";
-                            char buf[512];
-                            strncpy(buf, val.c_str(), sizeof(buf) - 1);
-                            buf[sizeof(buf) - 1] = '\0';
-                            if (ImGui::InputText(field.name.c_str(), buf, sizeof(buf))) {
-                                it->second = std::string(buf);
-                            }
-                            break;
-                        }
-                        case Assets::DataFieldType::Vector3: {
-                            Math::Vector3 val = std::holds_alternative<Math::Vector3>(it->second) ? std::get<Math::Vector3>(it->second) : Math::Vector3(0,0,0);
-                            f32 v[3] = {val.x, val.y, val.z};
-                            if (ImGui::DragFloat3(field.name.c_str(), v, 0.1f)) {
-                                it->second = Math::Vector3(v[0], v[1], v[2]);
-                            }
-                            break;
-                        }
-                        case Assets::DataFieldType::Vector4: {
-                            Math::Vector4 val = std::holds_alternative<Math::Vector4>(it->second) ? std::get<Math::Vector4>(it->second) : Math::Vector4(0,0,0,0);
-                            f32 v[4] = {val.x, val.y, val.z, val.w};
-                            if (ImGui::DragFloat4(field.name.c_str(), v, 0.1f)) {
-                                it->second = Math::Vector4(v[0], v[1], v[2], v[3]);
-                            }
-                            break;
-                        }
-                        default:
-                            ImGui::TextDisabled("%s: (array type — edit in file)", field.name.c_str());
-                            break;
-                    }
+                    EditDataAssetValue(field.name.c_str(), field.type, it->second);
 
                     ImGui::PopID();
                 }
