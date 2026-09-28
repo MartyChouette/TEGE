@@ -15,6 +15,7 @@
 #include "Enjin/Physics/IPhysicsBackend.h"
 #include "Enjin/Platform/Input.h"
 #include <memory>
+#include <cstdio>
 
 using namespace Enjin;
 
@@ -104,6 +105,52 @@ ENJIN_TEST(VehicleWalls, test_vehicle_drives_freely_with_no_wall_ahead) {
 
     // Assert: it moved backward, unhindered
     ENJIN_EXPECT_TRUE(end.z > 1.0f);
+}
+
+// A dynamic body is not a wall: the car shunts it along instead of stopping
+// dead at it. The crate starts well short of the wall and must end up further
+// along -Z than it started.
+ENJIN_TEST(VehicleWalls, test_vehicle_pushes_a_dynamic_crate) {
+    // Arrange
+    Track track;
+    track.Build();
+    const ECS::Entity crate = track.world.CreateEntity();
+    ECS::TransformComponent t;
+    t.position = Math::Vector3(0.0f, 0.5f, -5.0f);
+    track.world.AddComponent<ECS::TransformComponent>(crate, t);
+    ECS::BoxColliderComponent bc;
+    bc.size = Math::Vector3(1.0f, 1.0f, 1.0f);
+    track.world.AddComponent<ECS::BoxColliderComponent>(crate, bc);
+    ECS::RigidbodyComponent rb;
+    rb.mass = 20.0f;
+    track.world.AddComponent<ECS::RigidbodyComponent>(crate, rb);
+
+    // Act: two seconds flat out at it
+    track.Drive(KeyCode::W, 120);
+
+    // Assert: the crate moved away from the car
+    const auto cp = track.world.GetComponent<ECS::TransformComponent>(crate)->position;
+    std::printf("    crate at z %.2f after the push\n", cp.z);
+    ENJIN_EXPECT_TRUE(cp.z < -5.5f);
+}
+
+// RaycastAll left every hit's normal at zero, so anything reading it (the
+// car's slope test and its bounce and push) silently got nothing.
+ENJIN_TEST(VehicleWalls, test_raycast_all_reports_the_surface_normal) {
+    // Arrange
+    Track track;
+    track.Build();
+    track.physics->Update(1.0f / 60.0f);   // bodies exist after the first step
+    Physics::Ray ray;
+    ray.origin = Math::Vector3(0.0f, 1.0f, 0.0f);
+    ray.direction = Math::Vector3(0.0f, 0.0f, -1.0f);
+
+    // Act
+    const auto hits = track.physics->RaycastAll(ray, 20.0f);
+
+    // Assert: the wall's front face points back along +Z
+    ENJIN_ASSERT_TRUE(!hits.empty());
+    ENJIN_EXPECT_TRUE(hits[0].normal.z > 0.9f);
 }
 
 ENJIN_TEST_MAIN()

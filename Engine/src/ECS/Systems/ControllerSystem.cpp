@@ -2602,13 +2602,23 @@ void ControllerSystem::UpdateVehicle(Entity entity, VehicleController& ctrl, Tra
     // --- Walls ---
     // The car moved its transform straight through anything, walls included:
     // only the ground was checked. Three rays along the motion at bumper
-    // height (the centre and both front corners) find the nearest solid,
-    // non-walkable surface within this frame's travel plus the car's
-    // half-length; the car stops at it and the velocity into it reflects with
-    // a small bounce, so it glances off a wall at an angle and stops dead
-    // head-on. Sized from the car's own box collider when it has one.
-    // Pushing a dynamic body it hits needs a physics impulse, which the
-    // backend interface does not offer yet.
+    // height (the centre and both edges of the car's face in that direction)
+    // find the nearest solid, non-walkable surface within this frame's travel
+    // plus the car's extent that way; the car stops at it and the velocity
+    // into it reflects with a small bounce, so it glances off a wall at an
+    // angle and stops dead head-on. Sized from the car's own box collider when
+    // it has one.
+    //
+    // The extent follows the direction of travel. It was the half-LENGTH
+    // whatever the motion, so reversing used the rear correctly only because
+    // the box is symmetric, and a car sliding sideways stopped half a length
+    // from a wall its flank had not reached, with rays spread along its width
+    // instead of its length.
+    //
+    // A DYNAMIC body is not a wall: the car and it exchange momentum by mass,
+    // so a car shunts a crate and a crate barely slows a car. The body is
+    // pushed by writing its rigidbody velocity, which the physics backend
+    // picks up, the same way Physics_AddImpulse does.
     Math::Vector3 move(ctrl.velocity.x * dt, 0.0f, ctrl.velocity.z * dt);
     const f32 moveLen = std::sqrt(move.x * move.x + move.z * move.z);
     if (m_Physics && moveLen > 1e-5f) {
@@ -2618,16 +2628,27 @@ void ControllerSystem::UpdateVehicle(Entity entity, VehicleController& ctrl, Tra
         if (m_World) {
             if (const auto* box = m_World->GetComponent<BoxColliderComponent>(entity)) {
                 halfLength = std::max(box->size.z * 0.5f, 0.1f);
-                halfWidth = std::max(box->size.x * 0.5f - 0.05f, 0.0f);
+                halfWidth = std::max(box->size.x * 0.5f, 0.1f);
                 bumperY = box->center.y;
             }
         }
         const Math::Vector3 dir(move.x / moveLen, 0.0f, move.z / moveLen);
         const Math::Vector3 side(-dir.z, 0.0f, dir.x);
-        const f32 reach = moveLen + halfLength;
+        // The car's own axes on the ground
+        Math::Vector3 fwd(ctrl.forwardDir.x, 0.0f, ctrl.forwardDir.z);
+        const f32 fLen = std::sqrt(fwd.x * fwd.x + fwd.z * fwd.z);
+        fwd = fLen > 1e-4f ? fwd * (1.0f / fLen) : Math::Vector3(0.0f, 0.0f, -1.0f);
+        const Math::Vector3 right(-fwd.z, 0.0f, fwd.x);
+        auto extentAlong = [&](const Math::Vector3& d) {
+            return std::fabs(d.x * fwd.x + d.z * fwd.z) * halfLength +
+                   std::fabs(d.x * right.x + d.z * right.z) * halfWidth;
+        };
+        const f32 ahead = extentAlong(dir);
+        const f32 spread = std::max(extentAlong(side) - 0.05f, 0.0f);
+        const f32 reach = moveLen + ahead;
         Physics::RaycastHit nearest;
         nearest.distance = reach;
-        for (f32 lateral : { 0.0f, -halfWidth, halfWidth }) {
+        for (f32 lateral : { 0.0f, -spread, spread }) {
             Physics::Ray ray;
             ray.origin = transform.position + Math::Vector3(0.0f, bumperY, 0.0f) + side * lateral;
             ray.direction = dir;
@@ -2642,15 +2663,34 @@ void ControllerSystem::UpdateVehicle(Entity entity, VehicleController& ctrl, Tra
             }
         }
         if (nearest.hit) {
-            // Travel up to the wall, less the half-length already in front
-            const f32 allowed = std::max(nearest.distance - halfLength, 0.0f);
+            // Travel up to the contact, less the extent already in front
+            const f32 allowed = std::max(nearest.distance - ahead, 0.0f);
             move = dir * allowed;
             Math::Vector3 n(nearest.normal.x, 0.0f, nearest.normal.z);
             const f32 nLen = std::sqrt(n.x * n.x + n.z * n.z);
             if (nLen > 1e-4f) {
                 n = n * (1.0f / nLen);
                 const f32 into = ctrl.velocity.x * n.x + ctrl.velocity.z * n.z;
-                if (into < 0.0f) {
+                RigidbodyComponent* body = m_World ? m_World->GetComponent<RigidbodyComponent>(nearest.entity) : nullptr;
+                if (body && body->bodyType == RigidbodyComponent::BodyType::Dynamic) {
+                    // Momentum exchange along the contact normal, restitution
+                    // kCarPush, on the CLOSING speed between the two. A body
+                    // already moving away faster than the car gets nothing, or
+                    // a car resting against a crate would add speed to it every
+                    // frame.
+                    const f32 bodyInto = body->velocity.x * n.x + body->velocity.z * n.z;
+                    const f32 relInto = into - bodyInto;
+                    if (relInto < 0.0f) {
+                        constexpr f32 kCarPush = 0.2f;
+                        const f32 carMass = std::max(ctrl.mass, 1.0f);
+                        const f32 bodyMass = std::max(body->mass, 0.01f);
+                        const f32 closing = -relInto * (1.0f + kCarPush);
+                        const f32 total = carMass + bodyMass;
+                        body->velocity = body->velocity - n * (closing * carMass / total);
+                        ctrl.velocity.x += n.x * closing * bodyMass / total;
+                        ctrl.velocity.z += n.z * closing * bodyMass / total;
+                    }
+                } else if (into < 0.0f) {
                     constexpr f32 kWallBounce = 0.2f;
                     ctrl.velocity.x -= n.x * into * (1.0f + kWallBounce);
                     ctrl.velocity.z -= n.z * into * (1.0f + kWallBounce);

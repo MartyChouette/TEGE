@@ -473,6 +473,12 @@ void JoltBackend::SyncECSToJolt() {
             f32 diff = (ecsVel - joltVel).Length();
             if (diff > 0.01f) {
                 bodyInterface.SetLinearVelocity(bodyID, ecsVel);
+                // SetLinearVelocity does not wake a sleeping body, and a body at
+                // rest is asleep within a second. The velocity was stored and
+                // ignored, then read back as zero after the step: an impulse on
+                // a resting crate (Physics_AddImpulse, a car running into it)
+                // did nothing at all.
+                if (!ecsVel.IsNearZero()) bodyInterface.ActivateBody(bodyID);
             }
         } else if (!rb || rb->bodyType == ECS::RigidbodyComponent::BodyType::Static) {
             // Static bodies: just set position if it changed
@@ -1730,6 +1736,16 @@ std::vector<RaycastHit> JoltBackend::RaycastAll(const Ray& ray, f32 maxDistance,
         auto it = m_BodyIndexToEntity.find(hit.mBodyID.GetIndex());
         if (it != m_BodyIndexToEntity.end()) {
             result.entity = it->second;
+        }
+
+        // The surface normal, as Raycast fills it. RaycastAll left it zero, so
+        // every caller that read it got nothing: the car's slope test ("a
+        // slope to drive up, not a wall") never passed and its bounce and push
+        // never ran, which stopped it dead at any angle against anything.
+        JPH::BodyLockRead lock(m_PhysicsSystem->GetBodyLockInterface(), hit.mBodyID);
+        if (lock.Succeeded()) {
+            result.normal = FromJolt(lock.GetBody().GetWorldSpaceSurfaceNormal(
+                hit.mSubShapeID2, joltRay.GetPointOnRay(hit.mFraction)));
         }
 
         results.push_back(result);
