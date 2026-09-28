@@ -4709,8 +4709,17 @@ void EditorLayer::DrawDataAssetPanel() {
 
             // Save/Load buttons
             if (ImGui::Button("Save Schema (.enjschema)")) {
-                std::string path = editSchema.name + ".enjschema";
-                registry.SaveSchema(editSchema, path);
+                // Into the project, where a build packs it. A bare file name
+                // went to the working directory, which is the editor's own
+                // folder, so the schema never reached the project (GR-7).
+                const std::string path = DataAssetSavePath(editSchema.name, ".enjschema");
+                if (path.empty()) {
+                    ShowNotification("Open a project before saving a schema", NotificationType::Warning);
+                } else if (registry.SaveSchema(editSchema, path)) {
+                    ShowNotification("Saved " + path, NotificationType::Success);
+                } else {
+                    ShowNotification("Could not save " + path, NotificationType::Error);
+                }
             }
             ImGui::SameLine();
             if (ImGui::Button("Delete Schema")) {
@@ -4798,9 +4807,18 @@ void EditorLayer::DrawDataAssetPanel() {
             ImGui::Separator();
 
             if (ImGui::Button("Save Asset (.enjdata)")) {
-                std::string path = asset->filePath.empty() ? (asset->name + ".enjdata") : asset->filePath;
-                registry.SaveAsset(*asset, path);
-                asset->filePath = path;
+                // A new record goes into the project (GR-7); one already on
+                // disk keeps its file
+                const std::string path = asset->filePath.empty()
+                    ? DataAssetSavePath(asset->name, ".enjdata") : asset->filePath;
+                if (path.empty()) {
+                    ShowNotification("Open a project before saving a data asset", NotificationType::Warning);
+                } else if (registry.SaveAsset(*asset, path)) {
+                    asset->filePath = path;
+                    ShowNotification("Saved " + path, NotificationType::Success);
+                } else {
+                    ShowNotification("Could not save " + path, NotificationType::Error);
+                }
             }
             ImGui::SameLine();
             if (ImGui::Button("Delete Asset")) {
@@ -10058,6 +10076,30 @@ void EditorLayer::DrawUVPreviewPanel() {
     }
 
     ImGui::End();
+}
+
+} // namespace Editor
+} // namespace Enjin
+
+namespace Enjin {
+namespace Editor {
+
+// Where a new schema or data asset is saved: the project's data/ folder, with
+// the name made safe for a file. Empty when no project is open, since there is
+// nowhere a build would find it.
+std::string EditorLayer::DataAssetSavePath(const std::string& name, const char* extension) const {
+    const std::string& root = m_SceneManager.GetProjectRoot();
+    if (root.empty()) return {};
+    std::string file;
+    for (char c : name) {
+        const bool ok = std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '-' || c == ' ';
+        file += ok ? c : '_';
+    }
+    if (file.empty()) file = "Untitled";
+    std::error_code ec;
+    const std::filesystem::path dir = std::filesystem::path(root) / "data";
+    std::filesystem::create_directories(dir, ec);
+    return (dir / (file + extension)).string();
 }
 
 } // namespace Editor

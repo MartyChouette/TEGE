@@ -815,6 +815,8 @@ private:
     // (GR-2, SD-28, Timeline): a component with a system and no authoring
     // tool is not shipped.
     void DrawJsonComponentInspector(ECS::Entity entity, const char* key, const char* title);
+    // <project>/data/<name><extension> for a new schema or data asset (GR-7)
+    std::string DataAssetSavePath(const std::string& name, const char* extension) const;
     void DrawTextComponent(ECS::Entity entity);
     void DrawDisplayGraphicComponent(ECS::Entity entity);
     void DrawWeatherZoneComponent(ECS::Entity entity);
