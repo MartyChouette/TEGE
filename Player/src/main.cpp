@@ -1329,7 +1329,9 @@ public:
         // Apply deferred fullscreen change (safe between frames)
         if (m_FullscreenChangeRequested) {
             m_FullscreenChangeRequested = false;
-            if (GetWindow()) {
+            // Never in a capture run: the window is hidden, and fullscreen would
+            // put it over the screen of whoever is using the machine
+            if (GetWindow() && Enjin::Application::s_FixedFrameDelta <= 0.0f) {
                 // The Resolution option: the windowed size, or the size to come
                 // back to from fullscreen. It was chosen and never applied.
                 GetWindow()->SetWindowedSize(m_PendingWindowW, m_PendingWindowH);
@@ -4031,6 +4033,25 @@ private:
             GetWindow()->SetWindowedSize(m_WindowWidth, m_WindowHeight);
         }
         m_Fullscreen = manifest.value("fullscreen", false);
+        // The build's fullscreen choice, applied at the first safe point. It was
+        // read here and never used, so a game built fullscreen opened in a
+        // window (EP-20). The options menu starts from the build's values too,
+        // and a player's saved settings.json, loaded after this, still wins.
+        {
+            auto& gfx = m_GameMenu.GetGraphicsSettings();
+            gfx.fullscreen = m_Fullscreen;
+            gfx.resolutionWidth = m_WindowWidth;
+            gfx.resolutionHeight = m_WindowHeight;
+        }
+        // Not in a capture run (--golden): its window is hidden, and making a
+        // hidden window fullscreen would take over the screen of whoever is
+        // using the machine
+        if (m_Fullscreen && Enjin::Application::s_FixedFrameDelta <= 0.0f) {
+            m_PendingWindowW = m_WindowWidth;
+            m_PendingWindowH = m_WindowHeight;
+            m_PendingFullscreen = true;
+            m_FullscreenChangeRequested = true;
+        }
         m_EngineSplash = manifest.value("engineSplash", true);
         m_StartScene = manifest.value("startScene", "");
 

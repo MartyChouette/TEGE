@@ -1199,6 +1199,50 @@ ENJIN_TEST(BuildPackContents, test_build_uses_project_name_and_window_icon_setti
     fs::remove_all(root, ec);
 }
 
+// EP-20: validation checked the handful of path fields someone remembered, so
+// a missing cubemap face or light cookie built clean and the game went without
+// it. Every string in a scene with an asset extension is checked now.
+ENJIN_TEST(BuildValidation, test_build_warns_about_missing_cubemap_and_cookie) {
+    // Arrange
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    fs::path root = fs::temp_directory_path() / "enjin_build_missing_paths_test";
+    fs::remove_all(root, ec);
+    fs::create_directories(root / "scenes", ec);
+    {
+        std::ofstream proj(root / "Paths.enjinproject");
+        proj << R"({"name":"Paths","version":"1.0",)"
+                R"("scenes":[{"name":"Main","path":"scenes/Main.enjin","buildIndex":0,"isStartScene":true}]})";
+    }
+    {
+        std::ofstream f(root / "scenes" / "Main.enjin");
+        f << R"({"version":"1.0",)"
+             R"("skybox":{"type":2,"cubemapPaths":["sky/px.png","","","","",""]},)"
+             R"("entities":[{"id":1,"light":{"type":2,"cookieTexturePath":"cookies/blinds.png"}}]})";
+    }
+    BuildConfig cfg;
+    cfg.projectPath   = (root / "Paths.enjinproject").string();
+    cfg.outputDir     = (root / "Out").string();
+    cfg.target        = BuildTargetPlatform::Web;
+    cfg.packagingMode = PackagingMode::PackedOpen;
+    cfg.assetsOnly    = true;
+
+    // Act
+    BuildPipeline pipeline;
+    const BuildResult result = pipeline.Execute(cfg);
+
+    // Assert: one warning each, naming the field
+    bool cubemap = false, cookie = false;
+    for (const auto& m : result.messages) {
+        if (m.severity != MessageSeverity::Warning) continue;
+        if (m.text.find("cubemapPaths") != std::string::npos && m.text.find("sky/px.png") != std::string::npos) cubemap = true;
+        if (m.text.find("cookieTexturePath") != std::string::npos && m.text.find("cookies/blinds.png") != std::string::npos) cookie = true;
+    }
+    ENJIN_EXPECT_TRUE(cubemap);
+    ENJIN_EXPECT_TRUE(cookie);
+    fs::remove_all(root, ec);
+}
+
 // EP-17: a pack built with a custom key could not be opened by either
 // player, which only try the default key. The key now travels in the header.
 ENJIN_TEST(AssetPackRoundTrip, ACustomKeyPackOpensWithoutTheKey) {

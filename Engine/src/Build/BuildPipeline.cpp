@@ -8,6 +8,7 @@
 #include <fstream>
 #include <filesystem>
 #include <set>
+#include <functional>
 
 namespace fs = std::filesystem;
 
@@ -558,6 +559,62 @@ bool BuildPipeline::ValidateAssets() {
                             }
                         }
                     }
+                }
+
+                // Every other file a scene names. The checks above cover the
+                // fields someone remembered; cubemap faces, fonts, prefabs,
+                // plates, bakes, portraits, tracks, cookies and every field added
+                // since were never checked, so a missing one built clean and the
+                // game quietly went without it (EP-20). This walks every string
+                // in every entity, plus the scene's skybox and render settings,
+                // and checks anything with an asset file extension. Outside the
+                // project is still an error (through validateAssetPath); missing
+                // is a warning naming the field, since a string can look like a
+                // path without being one.
+                static const char* kAssetExts[] = {
+                    ".png", ".jpg", ".jpeg", ".tga", ".bmp", ".hdr", ".dds", ".ktx", ".ktx2", ".svg",
+                    ".wav", ".ogg", ".mp3", ".flac", ".ttf", ".otf", ".enjprefab", ".enjfluid",
+                    ".gltf", ".glb", ".fbx", ".obj", ".dae", ".vox", ".ply", ".splat", ".as",
+                    ".enjdata", ".enjschema", ".srt", ".vtt", ".yarn", ".twee", ".mid", ".midi",
+                };
+                auto hasAssetExt = [](const std::string& s) {
+                    std::string ext = fs::path(s).extension().string();
+                    for (char& c : ext) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                    for (const char* e : kAssetExts) if (ext == e) return true;
+                    return false;
+                };
+                std::set<std::string> warnedMissing;
+                std::set<std::string> anySink;
+                std::function<void(const nlohmann::json&, const std::string&, const std::string&)> walk =
+                    [&](const nlohmann::json& j, const std::string& key, const std::string& parentKey) {
+                    if (j.is_object()) {
+                        for (auto it = j.begin(); it != j.end(); ++it) walk(it.value(), it.key(), key);
+                    } else if (j.is_array()) {
+                        for (const auto& v : j) walk(v, key, parentKey);
+                    } else if (j.is_string()) {
+                        const std::string value = j.get<std::string>();
+                        if (value.empty() || !hasAssetExt(value)) return;
+                        // Reported above as required, with their own wording
+                        if (parentKey == "source" && key == "path") return;
+                        if (key == "baseColorTexturePath" || key == "normalTexturePath" ||
+                            key == "heightTexturePath" || key == "metallicRoughnessTexturePath" ||
+                            key == "emissiveTexturePath") return;
+                        validateAssetPath(value, anySink, key.c_str());   // outside the project -> error
+                        std::error_code ec;
+                        const bool found =
+                            fs::exists(fs::path(m_ProjectDir) / value, ec) ||
+                            fs::exists(fs::path(scene.absolutePath).parent_path() / value, ec) ||
+                            (fs::path(value).is_absolute() && fs::exists(value, ec));
+                        if (!found && warnedMissing.insert(value).second) {
+                            AddMessage(MessageSeverity::Warning,
+                                       "Missing file for " + key + ": " + value +
+                                       " (referenced in " + scene.name + ")", value);
+                        }
+                    }
+                };
+                for (const auto& entity : entities) walk(entity, "", "");
+                for (const char* top : {"skybox", "renderSettings"}) {
+                    if (sceneRoot.contains(top)) walk(sceneRoot[top], top, "");
                 }
             }
 
