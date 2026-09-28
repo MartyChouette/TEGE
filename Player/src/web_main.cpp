@@ -111,6 +111,7 @@
 #include "Enjin/Animation/PhysicsSurfaceQuery.h"
 #include "Enjin/Gameplay/QuestFlow.h"
 #include "Enjin/Effects/ElementalSystem.h"
+#include "Enjin/GUI/FallbackDialogueBox.h"
 #include "Enjin/Effects/WaterFreeze.h"
 #include "Enjin/Effects/SeasonalWeather.h"    // web parity: seasonal weather (Update no-ops unless a scene enables it)
 #include "Enjin/Effects/Destructible.h"       // web parity: destructible sim
@@ -2750,6 +2751,10 @@ public:
         // SaveLoadMenuComponent living in Enjin::Gameplay while every entity
         // carried the Enjin::ECS one.
         DrawSaveLoadMenus();
+        // The built-in dialogue box for a dialogue with no DialogueBoxComponent.
+        // Desktop drew it and web had none, so such a dialogue showed nothing.
+        if (!m_GameMenu.IsMenuOpen())
+            Enjin::GUI::DrawFallbackDialogueBox(m_World.get(), m_DialogueSystem.GetActiveDialogueEntity(), &m_InputMap);
         // Switch-scanning highlight / dwell cursor
         m_AlternativeInput.RenderOverlay();
         // Screen reader status bar (announcements also speak via Web Speech API)
