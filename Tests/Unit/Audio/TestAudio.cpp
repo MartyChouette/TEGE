@@ -86,6 +86,26 @@ ENJIN_TEST(MIDI, EventDefaults) {
     ENJIN_EXPECT_EQ(evt.data2, 0u);
 }
 
+ENJIN_TEST(MIDI, test_midi_inject_message_readable_after_update) {
+    // Arrange: every backend (winmm, Web MIDI) feeds raw messages through
+    // InjectMessage, so this is the path a browser's note takes
+    MIDIInput midi;
+
+    // Act
+    midi.InjectMessage(0x91, 60, 100);   // note on, channel 1
+    midi.InjectMessage(0xB0, 7, 90);     // CC 7, channel 0
+    midi.InjectMessage(0xF8, 0, 0);      // clock: dropped
+    const bool beforeUpdate = midi.IsNoteOn(60);
+    midi.Update();
+
+    // Assert
+    ENJIN_EXPECT_FALSE(beforeUpdate);
+    ENJIN_EXPECT_TRUE(midi.IsNoteOn(60, 1));
+    ENJIN_EXPECT_EQ(midi.GetNoteVelocity(60), 100u);
+    ENJIN_EXPECT_EQ(midi.GetCCValue(7, 0), 90u);
+    ENJIN_EXPECT_EQ(midi.GetEvents().size(), (size_t)2);
+}
+
 // ===========================================================================
 // AudioEventGraph Types
 // ===========================================================================

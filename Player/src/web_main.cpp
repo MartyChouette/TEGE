@@ -108,6 +108,7 @@
 // petals and every audio-reactive component were dead in the browser.
 #include "Enjin/ECS/Systems/FlowerSystem.h"
 #include "Enjin/Audio/AudioReactiveSystem.h"
+#include "Enjin/Input/MIDIInput.h"
 #include "Enjin/Animation/PhysicsSurfaceQuery.h"
 #include "Enjin/Gameplay/QuestFlow.h"
 #include "Enjin/Effects/ElementalSystem.h"
@@ -646,6 +647,11 @@ public:
 
         m_AudioReactiveSystem.SetWorld(m_World.get());
         m_AudioReactiveSystem.SetAudio(&m_AudioEngine);
+        // Web MIDI, as the desktop player has winmm MIDI. Nothing asks the
+        // browser for access until a script or binding first uses MIDI.
+        m_MIDIInput.Initialize();
+        m_AudioReactiveSystem.SetMIDI(&m_MIDIInput);
+        Enjin::Scripting::SetBindingsMIDI(&m_MIDIInput);
 
         m_AudioGraphRuntime.Initialize(&m_AudioEngine);
         Enjin::Scripting::SetBindingsAudioGraphRuntime(&m_AudioGraphRuntime);
@@ -2008,6 +2014,7 @@ public:
         m_FlowerSystem.Update(deltaTime);
 
         // Audio-reactive components (desktop: main.cpp:1196).
+        m_MIDIInput.Update();
         m_AudioReactiveSystem.Update(deltaTime);
 
         // Water3D animated surfaces (desktop: main.cpp / PlayMode). Settings are
@@ -3643,9 +3650,8 @@ private:
     Enjin::Effects::FluidTerrainCoupling m_FluidTerrainCoupling;
     Enjin::Audio::AudioEventGraphRuntime m_AudioGraphRuntime;
     Enjin::Accessibility::AudioVisualIndicatorSystem m_AudioIndicators;
-    // No MIDI on web (no MIDIInput in this build), so SetMIDI is never called
-    // and the MIDI-driven paths stay inert. Beat sync, VU-to-visual, RTPC and
-    // threshold triggers all run off AudioEngine and work here.
+    // Web MIDI feeds its MIDI bindings, as winmm does on desktop
+    Enjin::InputSystem::MIDIInput m_MIDIInput;
     Enjin::Audio::AudioReactiveSystem m_AudioReactiveSystem;
     Enjin::Animation::PhysicsSurfaceQuery m_SurfaceQuery;
     // Long-lived: Wire2DCollisionCallbacks captures a reference to this

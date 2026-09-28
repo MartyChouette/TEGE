@@ -62,7 +62,11 @@ public:
     u32 GetDeviceCount() const;
     std::string GetDeviceName(u32 index) const;
 
-    // Open / close a specific device (only one at a time)
+    // Open / close a specific device (only one at a time).
+    // On web the device list arrives only after the player allows MIDI in the
+    // browser's prompt, which the first GetDeviceCount or OpenDevice raises. An
+    // OpenDevice made before that returns true and opens once access arrives;
+    // IsDeviceOpen says when it has.
     bool OpenDevice(u32 index);
     void CloseDevice();
     bool IsDeviceOpen() const { return m_DeviceOpen; }
@@ -80,6 +84,16 @@ public:
     // Persistent CC state (survives across frames)
     u8 GetCCValue(u8 cc, u8 channel = 0) const;
 
+    // One raw channel message, as a device delivers it. Every backend feeds its
+    // messages through here; it is readable after the next Update(). System
+    // messages (status 0xF0 and up: clock, sysex) are dropped.
+    void InjectMessage(u8 status, u8 data1, u8 data2);
+
+#if defined(__EMSCRIPTEN__)
+    // Called from the page when the access request settles (count < 0 = refused)
+    void OnWebAccessSettled(i32 deviceCount);
+#endif
+
 private:
     bool m_Initialized = false;
     bool m_DeviceOpen = false;
@@ -92,6 +106,11 @@ private:
 
     // Persistent CC values (16 channels x 128 controllers)
     u8 m_CCState[16][128] = {};
+
+#if defined(__EMSCRIPTEN__)
+    // Device index asked for before the browser granted access, or -1
+    i32 m_PendingOpen = -1;
+#endif
 
 #ifdef ENJIN_PLATFORM_WINDOWS
     HMIDIIN m_MIDIHandle = nullptr;
