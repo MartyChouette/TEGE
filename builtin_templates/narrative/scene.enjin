@@ -31729,7 +31729,7 @@
           1.0,
           1.0
         ],
-        "endSize": 0.10000000149011612,
+        "endSize": 0.2,
         "gravity": [
           0.0,
           0.0,
@@ -31758,7 +31758,7 @@
           0.30000001192092896
         ],
         "startRotation": 0.0,
-        "startSize": 0.07999999821186066,
+        "startSize": 0.16,
         "startSpeed": 0.5,
         "texturePath": "",
         "textureSheetX": 1.0,

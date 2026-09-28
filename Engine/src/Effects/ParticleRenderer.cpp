@@ -337,7 +337,10 @@ void ParticleRenderer::Render(VkCommandBuffer commandBuffer,
             const auto& p = pool.particles[i];
             ParticleInstanceData inst;
             inst.position = p.position;
-            inst.size = p.size * 2.0f;
+            // Start Size is the billboard's full width in world units, as on
+            // web. This used to double it, so the same emitter drew twice as
+            // large on desktop as in a browser.
+            inst.size = p.size;
             inst.alpha = p.alpha;
             inst.color = p.color;
 

@@ -575,8 +575,8 @@
     "lifetimeVariance": 1.5,
     "startSpeed": 0.3,
     "speedVariance": 0.2,
-    "startSize": 0.6,
-    "endSize": 0.5,
+    "startSize": 1.2,
+    "endSize": 1.0,
     "startColor": [
      1,
      1,

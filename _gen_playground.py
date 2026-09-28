@@ -110,7 +110,7 @@ deco("FallFoam", (-22, 0.25, -18.4), (7.4, 0.5, 1.4), (1, 1, 1),
                 "flipbookCols": 4, "flipbookRows": 1, "flipbookFps": 8.0})
 ent("FallMist", (-22, 1.2, -18.2),
     particleEmitter={"emissionRate": 26, "lifetime": 1.6, "startSpeed": 0.7,
-                     "startSize": 1.1, "endSize": 2.2, "spread": 0.45,
+                     "startSize": 2.2, "endSize": 4.4, "spread": 0.45,
                      "direction": [0, 1, 0], "texturePath": "assets/mist.png",
                      "startColor": [0.9, 0.95, 1.0], "startAlpha": 0.28, "endAlpha": 0.0,
                      "gravityScale": -0.02, "playing": True})
@@ -219,7 +219,7 @@ ent("DripWater", (0.4, 3.2, 4),
                       "direction": [0, -1, 0], "active": True})
 ent("Fountain", (5, 0.4, 8),
     particleEmitter={"emissionRate": 42, "lifetime": 1.5, "startSpeed": 4.2,
-                     "startSize": 0.16, "endSize": 0.05, "spread": 0.14,
+                     "startSize": 0.32, "endSize": 0.1, "spread": 0.14,
                      "direction": [0, 1, 0], "startColor": [0.65, 0.8, 1.0],
                      "startAlpha": 0.9, "endAlpha": 0.0, "gravityScale": 1.0,
                      "playing": True})

@@ -73,7 +73,7 @@ public:
     const std::vector<FlowerParticle>& GetParticles() const { return m_Particles; }
 
     // Per-particle world size from a FlowerParticle's scale
-    static constexpr f32 kParticleWorldSize = 2.0f;
+    static constexpr f32 kParticleWorldSize = 4.0f;
 
 private:
     void ProcessInput();

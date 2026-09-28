@@ -358,7 +358,7 @@ prop("FountainStem", CYL, (0, 1.15, -30), (0.5, 1.4, 0.5), STONE, rough=0.8)
 prop("FountainTop", BOWL, (0, 1.9, -30), (1.5, 0.34, 1.5), STONE, rough=0.8)
 ent("FountainSpray", (0, 2.1, -30),
     particleEmitter={"emissionRate": 34, "lifetime": 1.4, "startSpeed": 3.6,
-                     "startSize": 0.14, "endSize": 0.04, "spread": 0.18,
+                     "startSize": 0.28, "endSize": 0.08, "spread": 0.18,
                      "direction": [0, 1, 0], "startColor": [0.7, 0.85, 1.0],
                      "endColor": [0.6, 0.8, 1.0], "startAlpha": 0.85,
                      "endAlpha": 0.0, "gravityScale": 1.0, "playing": True})
