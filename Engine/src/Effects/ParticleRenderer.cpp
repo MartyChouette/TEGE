@@ -212,6 +212,30 @@ void ParticleRenderer::CreatePipelineWithPass(VkRenderPass renderPass, VkDescrip
         ENJIN_LOG_ERROR(Renderer, "ParticleRenderer: Failed to create particle pipeline");
         m_Pipeline.reset();
     }
+
+    // The textured variant: same vertex stage and state, the bindless set,
+    // and particle_tex.frag (H1)
+    m_TexturedPipeline.reset();
+    if (m_BindlessLayout != VK_NULL_HANDLE) {
+        if (!m_TexturedFragmentShader) {
+            m_TexturedFragmentShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
+            if (!m_TexturedFragmentShader->LoadFromSPIRV(
+                    reinterpret_cast<const u8*>(Renderer::ShaderData::ParticleTexturedFragmentShaderData),
+                    Renderer::ShaderData::ParticleTexturedFragmentShaderDataSize)) {
+                ENJIN_LOG_ERROR(Renderer, "ParticleRenderer: Failed to load textured particle fragment shader");
+                m_TexturedFragmentShader.reset();
+            }
+        }
+        if (m_TexturedFragmentShader) {
+            m_TexturedPipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
+            m_TexturedPipeline->SetBindlessLayout(m_BindlessLayout);
+            if (!m_TexturedPipeline->CreateWithLayout(config, m_VertexShader.get(),
+                                                      m_TexturedFragmentShader.get(), sharedLayout)) {
+                ENJIN_LOG_ERROR(Renderer, "ParticleRenderer: Failed to create textured particle pipeline");
+                m_TexturedPipeline.reset();
+            }
+        }
+    }
 }
 
 void ParticleRenderer::CreatePipeline(VkDescriptorSetLayout sharedLayout) {
@@ -228,13 +252,20 @@ void ParticleRenderer::Render(VkCommandBuffer commandBuffer,
                                ECS::World* world,
                                u32 viewportWidth,
                                u32 viewportHeight,
-                               const std::function<bool(const std::string&)>& bindTexture) {
+                               const std::function<i32(const std::string&)>& resolveTexture,
+                               VkDescriptorSet bindlessSet) {
     if (!m_Initialized || !m_Pipeline || !world) return;
 
-    // First non-empty emitter texture — the art asset for the particle billboards.
-    // (One texture for the pass; the common case is a single emitter. Mixed textures
-    // would need an atlas like sprites.)
-    std::string particleTexPath;
+    // Instances are gathered per texture (bindless index, -1 = the built-in
+    // dot) and drawn as one run each, so every emitter shows its own art
+    const bool texturesUsable = m_TexturedPipeline && bindlessSet != VK_NULL_HANDLE && resolveTexture;
+    std::vector<std::pair<i32, std::vector<ParticleInstanceData>>> runs;
+    auto runFor = [&runs](i32 texIndex) -> std::vector<ParticleInstanceData>& {
+        for (auto& r : runs) if (r.first == texIndex) return r.second;
+        runs.emplace_back(texIndex, std::vector<ParticleInstanceData>{});
+        return runs.back().second;
+    };
+    usize gathered = 0;
 
     // Gather all emitter pool particles into instance cache
     m_InstanceDataCache.clear();
@@ -273,7 +304,9 @@ void ParticleRenderer::Render(VkCommandBuffer commandBuffer,
         const auto& pool = emitter->pool;
         if (!pool.initialized || pool.activeCount == 0) continue;
 
-        if (particleTexPath.empty() && !emitter->texturePath.empty()) particleTexPath = emitter->texturePath;
+        const i32 texIndex = (texturesUsable && !emitter->texturePath.empty())
+            ? resolveTexture(emitter->texturePath) : -1;
+        std::vector<ParticleInstanceData>& run = runFor(texIndex);
 
         const bool velocityStretch = emitter->renderMode == ECS::ParticleEmitterComponent::RenderMode::VelocityStretch;
         const f32 stretchScale = emitter->velocityStretchScale;
@@ -295,12 +328,12 @@ void ParticleRenderer::Render(VkCommandBuffer commandBuffer,
         // a continuous density field, where half the billboards at twice the
         // alpha integrates to the same cloud. Particles are discrete objects,
         // and twice-as-bright sparks do not read as twice as many sparks.
-        const usize remaining = MAX_PARTICLES - m_InstanceDataCache.size();
+        const usize remaining = MAX_PARTICLES - gathered;
         if (remaining == 0) break;
         const usize allowance = std::min(emitterShare, remaining);
         const usize stride = DrawStride(pool.activeCount, allowance);
 
-        for (u32 i = 0; i < pool.activeCount && m_InstanceDataCache.size() < MAX_PARTICLES; i += static_cast<u32>(stride)) {
+        for (u32 i = 0; i < pool.activeCount && gathered < MAX_PARTICLES; i += static_cast<u32>(stride)) {
             const auto& p = pool.particles[i];
             ParticleInstanceData inst;
             inst.position = p.position;
@@ -342,8 +375,21 @@ void ParticleRenderer::Render(VkCommandBuffer commandBuffer,
                 inst.stretchDirY = 0.0f;
             }
 
-            m_InstanceDataCache.push_back(inst);
+            run.push_back(inst);
+            ++gathered;
         }
+    }
+
+    // Untextured first, then each texture, one contiguous range apiece
+    std::stable_sort(runs.begin(), runs.end(),
+                     [](const auto& a, const auto& b) { return a.first < b.first; });
+    struct DrawRun { i32 texIndex; u32 first; u32 count; };
+    std::vector<DrawRun> draws;
+    for (auto& r : runs) {
+        if (r.second.empty()) continue;
+        draws.push_back({ r.first, static_cast<u32>(m_InstanceDataCache.size()),
+                          static_cast<u32>(r.second.size()) });
+        m_InstanceDataCache.insert(m_InstanceDataCache.end(), r.second.begin(), r.second.end());
     }
 
     u32 instanceCount = static_cast<u32>(m_InstanceDataCache.size());
@@ -382,22 +428,6 @@ void ParticleRenderer::Render(VkCommandBuffer commandBuffer,
     scissor.extent = extent;
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
-    // Bind the emitter art asset if there is one; flags bit 0 tells the shader to sample
-    // it. Otherwise particles fall back to the built-in soft dot (metallic=1). Colour is
-    // now per-particle (instance data), not the push-constant baseColor.
-    bool hasTexture = false;
-    if (!particleTexPath.empty() && bindTexture) hasTexture = bindTexture(particleTexPath);
-
-    Renderer::PushConstants pc{};
-    pc.model = Math::Matrix4::Identity();
-    pc.baseColor = Math::Vector3(1.0f, 1.0f, 1.0f);
-    pc.metallic = 1.0f;  // Radial falloff for soft particles (no-texture path)
-    pc.opacity = 1.0f;
-    pc.flags = hasTexture ? 1 : 0;
-
-    vkCmdPushConstants(commandBuffer, m_Pipeline->GetLayout(),
-        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
-
     // Bind vertex buffers (quad = binding 0, instances = binding 1)
     VkBuffer vertexBuffers[] = { m_QuadVertexBuffer->GetBuffer(), m_InstanceBuffer->GetBuffer() };
     VkDeviceSize offsets[] = { 0, 0 };
@@ -406,8 +436,35 @@ void ParticleRenderer::Render(VkCommandBuffer commandBuffer,
     // Bind index buffer
     vkCmdBindIndexBuffer(commandBuffer, m_QuadIndexBuffer->GetBuffer(), 0, VK_INDEX_TYPE_UINT32);
 
-    // Draw instanced: 6 indices per quad, instanceCount instances
-    vkCmdDrawIndexed(commandBuffer, 6, instanceCount, 0, 0, 0);
+    // One draw per run: the plain pipeline for the built-in soft dot, the
+    // textured one (with the bindless set) for each texture. firstInstance
+    // steps the per-instance attributes to the run's range. Colour is
+    // per-particle (instance data), not the push-constant baseColor.
+    Renderer::VulkanPipeline* bound = m_Pipeline.get();   // bound above
+    for (const DrawRun& d : draws) {
+        const bool textured = d.texIndex >= 0 && m_TexturedPipeline;
+        Renderer::VulkanPipeline* pipe = textured ? m_TexturedPipeline.get() : m_Pipeline.get();
+        if (pipe != bound) {
+            pipe->Bind(commandBuffer);
+            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                pipe->GetLayout(), 0, 1, &descriptorSets[currentFrame], 0, nullptr);
+            if (textured) {
+                vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                    pipe->GetLayout(), 1, 1, &bindlessSet, 0, nullptr);
+            }
+            bound = pipe;
+        }
+        Renderer::PushConstants pc{};
+        pc.model = Math::Matrix4::Identity();
+        pc.baseColor = Math::Vector3(1.0f, 1.0f, 1.0f);
+        pc.metallic = 1.0f;   // radial falloff for the built-in dot
+        pc.opacity = 1.0f;
+        pc.flags = 0;
+        pc.surfaceParam1 = static_cast<f32>(d.texIndex);   // particle_tex.frag's texIndex
+        vkCmdPushConstants(commandBuffer, pipe->GetLayout(),
+            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
+        vkCmdDrawIndexed(commandBuffer, 6, d.count, 0, 0, d.first);
+    }
 }
 
 void ParticleRenderer::RenderElementalParticles(VkCommandBuffer commandBuffer,

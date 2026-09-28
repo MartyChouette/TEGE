@@ -7699,6 +7699,7 @@ void RenderSystem::Initialize() {
 
     // Initialize particle emitter renderer
     m_ParticleRenderer = std::make_unique<Effects::ParticleRenderer>();
+    if (m_BindlessManager) m_ParticleRenderer->SetBindlessLayout(m_BindlessManager->GetDescriptorSetLayout());
     if (!m_ParticleRenderer->Initialize(m_VulkanRenderer, m_Pipeline->GetDescriptorSetLayout())) {
         ENJIN_LOG_WARN(Renderer, "ParticleRenderer initialization failed, emitter particles disabled");
         m_ParticleRenderer.reset();
@@ -20249,14 +20250,15 @@ void RenderSystem::RenderParticles(u32 viewportWidth, u32 viewportHeight,
         if (setIndex >= m_OffscreenDescriptorSets.size()) return;
     }
 
-    // Bind an emitter's art-asset texture (binding 3) so particles can render it.
-    auto bindParticleTexture = [this](const std::string& path) -> bool {
-        auto tex = GetOrLoadTexture(path);
-        if (tex && tex->IsValid()) { UpdateTextureDescriptor(tex.get()); return true; }
-        return false;
+    // Each emitter's art asset by bindless index, one draw per texture. It
+    // used to write binding 3 for the whole pass, so every textured emitter
+    // showed the first one's texture (H1).
+    auto resolveParticleTexture = [this](const std::string& path) -> i32 {
+        return ResolveBindlessTextureIndex(path);
     };
     m_ParticleRenderer->Render(commandBuffer, *sets, setIndex, m_World,
-                               viewportWidth, viewportHeight, bindParticleTexture);
+                               viewportWidth, viewportHeight, resolveParticleTexture,
+                               m_BindlessManager ? m_BindlessManager->GetDescriptorSet() : VK_NULL_HANDLE);
 }
 
 void RenderSystem::RenderElementalParticles(const Effects::ElementalSystem& elementalSystem,

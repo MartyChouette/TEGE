@@ -35,6 +35,10 @@ extern const size_t ParticleFragmentShaderDataSize;
 extern const unsigned char WeatherParticleFragmentShaderData[];
 extern const size_t WeatherParticleFragmentShaderDataSize;
 
+// particle_tex.frag.spv (2656 bytes, 664 words)
+extern const unsigned char ParticleTexturedFragmentShaderData[];
+extern const size_t ParticleTexturedFragmentShaderDataSize;
+
 // grass.vert.spv (13116 bytes, 3279 words)
 extern const unsigned char GrassVertexShaderData[];
 extern const size_t GrassVertexShaderDataSize;

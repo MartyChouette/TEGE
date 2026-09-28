@@ -43,17 +43,28 @@ public:
     // Hot-reload shaders from disk (compile GLSL → SPIR-V, recreate pipeline)
     bool ReloadShaders(const std::string& shaderDir, VkDescriptorSetLayout sharedLayout);
 
-    // Gather all emitter pools into instance cache and render with a single instanced draw call.
+    // The bindless set layout, for the textured pipeline. Set before
+    // Initialize / RecreateForRenderPass; without it textured emitters draw
+    // the built-in soft dot.
+    void SetBindlessLayout(VkDescriptorSetLayout layout) { m_BindlessLayout = layout; }
+
+    // Gather all emitter pools into one instance buffer and draw it: one run
+    // of instances per texture, untextured emitters first.
     // viewportWidth/Height: 0 = use swapchain extent, >0 = override (for render targets)
-    // bindTexture: optional — called with an emitter's texturePath to bind it as the
-    // particle art asset (returns true if bound). Used for the common single-texture case.
+    // resolveTexture: an emitter's texturePath to its bindless index, -1 if it
+    // cannot load. bindlessSet: the set that index is into.
+    //
+    // It drew everything in ONE draw with the first emitter's texture bound at
+    // binding 3, so two emitters with different textures showed the same one
+    // on desktop (H1).
     void Render(VkCommandBuffer commandBuffer,
                 const std::vector<VkDescriptorSet>& descriptorSets,
                 u32 currentFrame,
                 ECS::World* world,
                 u32 viewportWidth = 0,
                 u32 viewportHeight = 0,
-                const std::function<bool(const std::string&)>& bindTexture = {});
+                const std::function<i32(const std::string&)>& resolveTexture = {},
+                VkDescriptorSet bindlessSet = VK_NULL_HANDLE);
 
     // Render elemental particles from the ElementalSystem using the same pipeline.
     // Called after Render() to batch elemental particles alongside regular ones.
@@ -92,6 +103,11 @@ private:
     std::unique_ptr<Renderer::VulkanPipeline> m_Pipeline;
     std::unique_ptr<Renderer::VulkanShader> m_VertexShader;
     std::unique_ptr<Renderer::VulkanShader> m_FragmentShader;
+    // Textured emitters: particle_tex.frag, bindless set 1, texture index in
+    // the push constants
+    std::unique_ptr<Renderer::VulkanPipeline> m_TexturedPipeline;
+    std::unique_ptr<Renderer::VulkanShader> m_TexturedFragmentShader;
+    VkDescriptorSetLayout m_BindlessLayout = VK_NULL_HANDLE;
 
     // Reusable instance data cache to avoid per-frame allocation
     std::vector<ParticleInstanceData> m_InstanceDataCache;
