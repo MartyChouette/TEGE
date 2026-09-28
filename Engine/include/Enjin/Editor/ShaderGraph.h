@@ -134,6 +134,8 @@ public:
     // The graph used to save to and load from a fixed shader_graph.enjshader
     // in the working directory, which is the exe folder (GR-8).
     void SetDefaultDirectory(const std::string& dir) { m_DefaultDir = dir; }
+    // Load a file and make it the one Save writes back to
+    bool Open(const std::string& path) { if (!Load(path)) return false; m_FilePath = path; return true; }
 
     // Same JSON as Save/Load but in-memory — used to persist the editable graph
     // inside CustomShaderComponent so a scene reload restores the node layout,

@@ -6901,6 +6901,12 @@ void EditorLayer::PlayLatestReplay() {
                          NotificationType::Warning);
         return;
     }
+    PlayReplayFile(newest);
+}
+
+// Replay one .tegereplay: restore its scene snapshot and replay the input
+// stream. Split from PlayLatestReplay so the Asset Browser can open any replay.
+void EditorLayer::PlayReplayFile(const std::filesystem::path& newest) {
     std::ifstream f(newest, std::ios::binary);
     std::stringstream ss;
     ss << f.rdbuf();

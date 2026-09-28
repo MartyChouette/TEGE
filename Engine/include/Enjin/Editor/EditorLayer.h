@@ -2179,6 +2179,19 @@ private:
     // Opens the project's symbol library on first use; false with no project
     bool EnsureSymbolLibrary();
 
+    // Asset Browser: what opening a file does, and create/rename/delete
+    // (GR-9, EditorLayerAssetOps.cpp)
+    void OpenAssetFromBrowser(const std::string& path);
+    void DrawAssetFileOps(const std::string& path);
+    void DrawAssetBrowserBackgroundMenu();
+    void DrawAssetOpsPopups();
+    std::string m_AssetRenamePath;
+    char m_AssetRenameBuf[256] = {};
+    bool m_AssetOpenRenamePopup = false;
+    std::string m_AssetDeletePath;
+    bool m_AssetOpenDeletePopup = false;
+    void PlayReplayFile(const std::filesystem::path& file);
+
     // The Entity menu entries added by GR-17 (EditorLayerEntityMenu.cpp)
     ECS::Entity MakeMenuEntity(const char* name, const Math::Vector3& position);
     void FinishMenuEntity(ECS::Entity e);

@@ -938,8 +938,11 @@ void EditorLayer::DrawAssetBrowserPanel() {
     auto IsModel = [](const std::string& ext) {
         return ext == ".gltf" || ext == ".glb" || ext == ".fbx" || ext == ".obj" || ext == ".dae" || ext == ".3ds";
     };
+    // .enjin only. Every .json used to count, so a localization table or a
+    // meta.json was labelled a scene and opened as one (GR-9); opening a .json
+    // that really is a scene still works, through OpenAssetFromBrowser.
     auto IsScene = [](const std::string& ext) {
-        return ext == ".enjin" || ext == ".json";
+        return ext == ".enjin";
     };
     auto IsShader = [](const std::string& ext) {
         return ext == ".vert" || ext == ".frag" || ext == ".glsl" || ext == ".spv" || ext == ".comp";
@@ -1070,6 +1073,11 @@ void EditorLayer::DrawAssetBrowserPanel() {
                 if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
                     m_AssetBrowserPath = entry.fullPath;
                     m_AssetBrowserCacheDirty = true;
+                }
+                if (ImGui::BeginPopupContextItem("##AssetDirCtxGrid")) {
+                    if (ImGui::MenuItem("Show in Explorer")) Platform::RevealInFileManager(entry.fullPath);
+                    DrawAssetFileOps(entry.fullPath);
+                    ImGui::EndPopup();
                 }
                 // Drag a folder to move it; drop an asset onto a folder to move it inside.
                 if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID)) {
@@ -1217,17 +1225,9 @@ void EditorLayer::DrawAssetBrowserPanel() {
                     ImGui::EndDragDropSource();
                 }
 
-                // Double-click to import/open
+                // Double-click opens it: one dispatch for both views (GR-9)
                 if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
-                    if (IsModel(entry.extension)) {
-                        ImportModel(entry.fullPath);
-                    } else if (IsScene(entry.extension)) {
-                        RequestOpenScene(entry.fullPath);
-                    } else if (IsScript(entry.extension) || IsShader(entry.extension)) {
-                        OpenInExternalIDE(entry.fullPath);
-                    } else if (IsImage(entry.extension)) {
-                        OpenTextureInPixelEditor(entry.fullPath);
-                    }
+                    OpenAssetFromBrowser(entry.fullPath);
                 }
 
                 // Hover tooltip for non-image files
@@ -1306,12 +1306,14 @@ void EditorLayer::DrawAssetBrowserPanel() {
                         }
 #endif
                     }
+                    if (ImGui::MenuItem("Open")) OpenAssetFromBrowser(entry.fullPath);
                     if (ImGui::MenuItem("Show in Explorer")) {
                         // The non-Windows branch routed into the IDE launcher, so
                         // this opened the folder in VS Code, or did nothing at all
                         // when VS Code was not installed.
                         Platform::RevealInFileManager(entry.fullPath);
                     }
+                    DrawAssetFileOps(entry.fullPath);
                     ImGui::EndPopup();
                 }
             }
@@ -1361,6 +1363,11 @@ void EditorLayer::DrawAssetBrowserPanel() {
                         m_AssetBrowserCacheDirty = true;
                     }
                 }
+                if (ImGui::BeginPopupContextItem("##AssetDirCtxList")) {
+                    if (ImGui::MenuItem("Show in Explorer")) Platform::RevealInFileManager(entry.fullPath);
+                    DrawAssetFileOps(entry.fullPath);
+                    ImGui::EndPopup();
+                }
                 // Drag a folder to move it; drop an asset onto a folder to move it inside.
                 if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID)) {
                     ImGui::SetDragDropPayload("ASSET_PATH", entry.fullPath.c_str(), entry.fullPath.size() + 1);
@@ -1387,22 +1394,9 @@ void EditorLayer::DrawAssetBrowserPanel() {
                 if (ImGui::Selectable(entry.name.c_str(), selected, ImGuiSelectableFlags_AllowDoubleClick)) {
                     m_AssetBrowserSelected = entry.fullPath;
                     if (ImGui::IsMouseDoubleClicked(0)) {
-                        if (IsModel(entry.extension)) {
-                            ImportModel(entry.fullPath);
-                        } else if (IsScene(entry.extension)) {
-                            RequestOpenScene(entry.fullPath);
-                        } else if (IsScript(entry.extension) || IsShader(entry.extension)) {
-                            OpenInExternalIDE(entry.fullPath);
-                        } else if (IsImage(entry.extension)) {
-                            OpenTextureInPixelEditor(entry.fullPath);
-                        } else if (IsAudio(entry.extension)) {
-                            // Hear it. The browser already coloured audio files
-                            // teal and labelled them SFX, and then did nothing
-                            // at all when you opened one -- every other type
-                            // here has done something on double-click for as
-                            // long as the panel has existed.
-                            AuditionSound(entry.fullPath);
-                        }
+                        // One dispatch for both views (GR-9): audio used to
+                        // audition only here, not in the grid
+                        OpenAssetFromBrowser(entry.fullPath);
                     }
                 }
 
@@ -1503,12 +1497,14 @@ void EditorLayer::DrawAssetBrowserPanel() {
                         }
 #endif
                     }
+                    if (ImGui::MenuItem("Open")) OpenAssetFromBrowser(entry.fullPath);
                     if (ImGui::MenuItem("Show in Explorer")) {
                         // The non-Windows branch routed into the IDE launcher, so
                         // this opened the folder in VS Code, or did nothing at all
                         // when VS Code was not installed.
                         Platform::RevealInFileManager(entry.fullPath);
                     }
+                    DrawAssetFileOps(entry.fullPath);
                     ImGui::EndPopup();
                 }
             }
@@ -1522,6 +1518,8 @@ void EditorLayer::DrawAssetBrowserPanel() {
         DrawEmptyListState("files", m_AssetBrowserPath, false);
     }
 
+    DrawAssetBrowserBackgroundMenu();
+    DrawAssetOpsPopups();
     ImGui::EndChild();
 
     // Draw compression settings window if open
