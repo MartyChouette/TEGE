@@ -1454,6 +1454,48 @@ bool RenderSystem::AllowIKFor(Entity entity) const {
     return cfg.bands[cfg.ResolveBand(d)].ik;
 }
 
+// Adaptive quality, for both backends. It was declared inside the Vulkan half,
+// so the web player had no frame-rate governor at all: a browser on a weak GPU
+// ran every scene at the authored quality however slow that was.
+void RenderSystem::TickAdaptiveQuality(f32 deltaTime) {
+    if (m_AdaptiveQualityEnabled && deltaTime > 0.0f)
+        m_AdaptiveQuality.Update(deltaTime, 1.0f / deltaTime);
+}
+
+void RenderSystem::SetAdaptiveQualityEnabled(bool enabled) {
+    if (enabled == m_AdaptiveQualityEnabled) return;
+    m_AdaptiveQualityEnabled = enabled;
+    if (enabled) {
+        // Fresh start: keep the configured target FPS and register the apply callback.
+        // We deliberately do NOT apply the starting (max) level here — that would stomp
+        // the game's authored quality upward at boot. Levers only change when the system
+        // decides to (downgrade under load, upgrade when there's headroom).
+        Renderer::AdaptiveQualityConfig cfg = m_AdaptiveQuality.GetConfig();
+        m_AdaptiveQuality.Initialize(cfg);
+        m_AdaptiveQuality.SetEnabled(true);
+        m_AdaptiveQuality.SetQualityChangeCallback(
+            [this](Renderer::QualityLevel, Renderer::QualityLevel to) { ApplyAdaptiveQualityLevel(to); });
+    } else {
+        m_AdaptiveQuality.SetEnabled(false);
+    }
+}
+
+void RenderSystem::ApplyAdaptiveQualityLevel(Renderer::QualityLevel level) {
+    using QL = Renderer::QualityLevel;
+    // Shadow resolution resize is frame-safe (SetShadowResolution defers to
+    // FlushPendingChanges). Drop shadows entirely at the floor; cheapen far cascades
+    // below High. These are the levers RenderSystem owns directly; render-scale and
+    // cross-system levers (post-process, particles) are phase 2.
+    SetShadowsEnabled(level > QL::VeryLow);
+#if !ENJIN_RENDERER_WEBGPU
+    // Web has one fixed-size shadow map and no progressive cascades
+    SetShadowResolution(m_AdaptiveQuality.GetRecommendedShadowResolution());
+    SetCascadeProgressiveUpdate(level <= QL::Medium);
+#endif
+    // The governor has recommended this since it was written and nobody read it.
+    SetAdaptiveLODScale(m_AdaptiveQuality.GetRecommendedLODBias());
+}
+
 } // namespace ECS
 } // namespace Enjin
 
@@ -4000,6 +4042,7 @@ void RenderSystem::Update(f32 deltaTime) {
     // Palette cycling runs off the same per-frame clock. Guarded against a
     // second deposit in the same frame, because the editor ticks it too.
     TickPaletteTime(deltaTime);
+    TickAdaptiveQuality(deltaTime);
 
     // Once a second, say how much GPU memory the frame is actually holding.
     //
@@ -9370,9 +9413,7 @@ void RenderSystem::Update(f32 deltaTime) {
 
     // Adaptive quality: measure this frame's FPS and (at its own interval) scale the
     // shadow levers to hold the target frame rate. Default OFF; the game runtime opts in.
-    if (m_AdaptiveQualityEnabled && deltaTime > 0.0f) {
-        m_AdaptiveQuality.Update(deltaTime, 1.0f / deltaTime);
-    }
+    TickAdaptiveQuality(deltaTime);
 
     // Apply deferred MSAA change (requested mid-frame by editor settings UI).
     // Must happen before any rendering — it recreates swapchain, render pass, pipelines.
@@ -16475,37 +16516,6 @@ void RenderSystem::SetShadowResolution(u32 r) {
     // Defer the actual resize to FlushPendingChanges() where the GPU is already idle
     m_PendingShadowResolution = r;
     m_PendingRecreation = PendingRecreationType::PipelineOnly;
-}
-
-void RenderSystem::SetAdaptiveQualityEnabled(bool enabled) {
-    if (enabled == m_AdaptiveQualityEnabled) return;
-    m_AdaptiveQualityEnabled = enabled;
-    if (enabled) {
-        // Fresh start: keep the configured target FPS and register the apply callback.
-        // We deliberately do NOT apply the starting (max) level here — that would stomp
-        // the game's authored quality upward at boot. Levers only change when the system
-        // decides to (downgrade under load, upgrade when there's headroom).
-        Renderer::AdaptiveQualityConfig cfg = m_AdaptiveQuality.GetConfig();
-        m_AdaptiveQuality.Initialize(cfg);
-        m_AdaptiveQuality.SetEnabled(true);
-        m_AdaptiveQuality.SetQualityChangeCallback(
-            [this](Renderer::QualityLevel, Renderer::QualityLevel to) { ApplyAdaptiveQualityLevel(to); });
-    } else {
-        m_AdaptiveQuality.SetEnabled(false);
-    }
-}
-
-void RenderSystem::ApplyAdaptiveQualityLevel(Renderer::QualityLevel level) {
-    using QL = Renderer::QualityLevel;
-    // Shadow resolution resize is frame-safe (SetShadowResolution defers to
-    // FlushPendingChanges). Drop shadows entirely at the floor; cheapen far cascades
-    // below High. These are the levers RenderSystem owns directly; render-scale and
-    // cross-system levers (post-process, particles) are phase 2.
-    SetShadowResolution(m_AdaptiveQuality.GetRecommendedShadowResolution());
-    SetShadowsEnabled(level > QL::VeryLow);
-    SetCascadeProgressiveUpdate(level <= QL::Medium);
-    // The governor has recommended this since it was written and nobody read it.
-    SetAdaptiveLODScale(m_AdaptiveQuality.GetRecommendedLODBias());
 }
 
 void RenderSystem::SetHDREnabled(bool enabled) {

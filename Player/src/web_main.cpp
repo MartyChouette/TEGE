@@ -875,6 +875,12 @@ public:
         m_RenderSystem->SetCamera(m_Camera.get());
         m_RenderSystem->SetAssetReader(&m_AssetReader);
         m_RenderSystem->Initialize();
+        // The frame-rate governor, as the desktop player has it. It lived in the
+        // Vulkan half of RenderSystem, so web had none: a weak GPU ran every scene
+        // at the authored quality however slow that was. On web it turns shadows
+        // off at the floor and scales LOD distances.
+        m_RenderSystem->SetAdaptiveQualityTargetFPS(Enjin::Renderer::AdaptiveTargetForFrameCap(m_TargetFPS));
+        m_RenderSystem->SetAdaptiveQualityEnabled(true);
         m_RenderSystem->SetWindSystem(&m_WindSystem);   // wind -> lighting UBO (water waves)
 
         // The boot scene's sky, which could not be pushed when it was read.

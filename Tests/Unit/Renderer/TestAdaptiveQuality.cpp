@@ -73,4 +73,21 @@ ENJIN_TEST(AdaptiveQuality, DisabledDoesNothing) {
     ENJIN_EXPECT_EQ((int)sys.GetCurrentLevel(), (int)QualityLevel::Ultra);
 }
 
+ENJIN_TEST(AdaptiveQuality, test_adaptive_quality_frame_cap_30_holds_quality) {
+    // Arrange: a game capped at 30 measures 30 on any machine. With the fixed
+    // 60 target both players used, that read as load and quality fell to the floor.
+    AdaptiveQualityConfig cfg = MakeConfig();
+    cfg.targetFPS = AdaptiveTargetForFrameCap(30);
+    AdaptiveQualitySystem sys;
+    sys.Initialize(cfg);
+
+    // Act: ten seconds at the cap
+    for (int i = 0; i < 300; ++i) sys.Update(1.0f / 30.0f, 30.0f);
+
+    // Assert
+    ENJIN_EXPECT_EQ((int)sys.GetCurrentLevel(), (int)QualityLevel::Ultra);
+    ENJIN_EXPECT_FLOAT_EQ(AdaptiveTargetForFrameCap(0), 60.0f);
+    ENJIN_EXPECT_FLOAT_EQ(AdaptiveTargetForFrameCap(144), 60.0f);
+}
+
 ENJIN_TEST_MAIN()

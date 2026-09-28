@@ -33,6 +33,13 @@ struct AdaptiveQualityConfig {
     bool adjustLODBias = true;       // Allow LOD distance bias changes
 };
 
+// The frame rate the governor should hold for a project's frame cap (0 = uncapped).
+// A game capped at 30 can never measure 60, so a fixed 60 target read the cap as
+// load and walked quality down to the floor, shadows off, on any machine.
+inline f32 AdaptiveTargetForFrameCap(u32 frameCap) {
+    return (frameCap > 0 && frameCap < 60) ? static_cast<f32>(frameCap) : 60.0f;
+}
+
 // Callback when quality level changes: (old level, new level)
 using QualityChangeCallback = std::function<void(QualityLevel, QualityLevel)>;
 

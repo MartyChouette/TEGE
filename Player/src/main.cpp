@@ -418,7 +418,7 @@ public:
         // 120-FPS-No-Matter-What pillar: hold the frame rate by scaling shadow quality
         // under load (adr / AdaptiveQualitySystem). Target 60 by default; a high-refresh
         // build can raise it. Shipped games opt in here; the editor leaves it off.
-        m_RenderSystem->SetAdaptiveQualityTargetFPS(60.0f);
+        m_RenderSystem->SetAdaptiveQualityTargetFPS(Enjin::Renderer::AdaptiveTargetForFrameCap(m_TargetFPS));
         m_RenderSystem->SetAdaptiveQualityEnabled(true);
 
         // Initialize ImGui layer for pause menu and dialogue overlays

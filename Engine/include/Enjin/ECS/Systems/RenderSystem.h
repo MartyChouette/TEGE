@@ -880,7 +880,6 @@ public:
 
     void SetShadowDistance(f32 d);
 
-#if !ENJIN_RENDERER_WEBGPU
     // --- Adaptive quality (120-FPS-No-Matter-What pillar) ------------------------
     // Dynamically scales rendering quality to HOLD a target frame rate. Default OFF
     // (the editor must not change quality while you author) — enable it in the game
@@ -888,12 +887,12 @@ public:
     // frame-safe shadow levers (resolution defers to FlushPendingChanges). Target FPS
     // defaults to 60; raise it for high-refresh displays. NOTE: with vsync the measured
     // FPS is capped at the display refresh, so set the target at or below it.
-    // (Vulkan only for now — the shadow levers are Vulkan-side; WebGPU is a follow-up.)
+    // Both backends. Web has no shadow-map resize or progressive cascades, so there it
+    // turns shadows off at the floor and scales LOD; desktop also resizes the map.
     void SetAdaptiveQualityEnabled(bool enabled);
     bool IsAdaptiveQualityEnabled() const { return m_AdaptiveQualityEnabled; }
     void SetAdaptiveQualityTargetFPS(f32 fps) { m_AdaptiveQuality.SetTargetFPS(fps); }
     Renderer::QualityLevel GetAdaptiveQualityLevel() const { return m_AdaptiveQuality.GetCurrentLevel(); }
-#endif
 
     bool IsBackfaceCullingEnabled() const { return m_BackfaceCulling; }
     void SetBackfaceCullingEnabled(bool enabled);
@@ -2638,13 +2637,12 @@ private:
     bool m_OcclusionForcedOff = false;        // ENJIN_OCCLUSION=0, read at Initialize
     f32 m_ShadowDistance = 100.0f;
 
-#if !ENJIN_RENDERER_WEBGPU
     // Adaptive quality (120-FPS pillar). Default OFF; enabled by the game runtime.
     // Ticked in Update(); a level change applies frame-safe shadow levers.
     Renderer::AdaptiveQualitySystem m_AdaptiveQuality;
     bool m_AdaptiveQualityEnabled = false;
     void ApplyAdaptiveQualityLevel(Renderer::QualityLevel level);
-#endif
+    void TickAdaptiveQuality(f32 deltaTime);
 
     bool m_BackfaceCulling = false;
     // Order-Independent Transparency, the SETTING. Unguarded because it is
