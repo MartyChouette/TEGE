@@ -1,4 +1,5 @@
 #include "Enjin/Renderer/SceneRenderSettings.h"
+#include "Enjin/Logging/Log.h"
 #include "Enjin/ECS/Components/ArtStyle.h"
 #include "Enjin/ECS/Components/Camera.h"
 #include "Enjin/ECS/World.h"
@@ -1953,6 +1954,16 @@ SceneRenderSettings DeserializeRenderSettings(const json& j) {
 
     // Anti-Aliasing
     if (j.contains("aaMode"))                 s.aaMode                 = j["aaMode"].get<u32>();
+    // MSAA left the anti-aliasing list (Marty, 2026-09-28). It did nothing in
+    // the editor, whose targets are single-sample, nor in a shipped game once
+    // post-processing drew into the single-sample post target by default, so
+    // a scene that chose it rendered without anti-aliasing. It loads as None,
+    // which is what it looked like.
+    if (s.aaMode >= 4) {
+        ENJIN_LOG_INFO(Renderer, "This scene chose MSAA, which is no longer offered; "
+                                 "anti-aliasing is set to None (pick FXAA, TAA or SMAA).");
+        s.aaMode = 0;
+    }
     if (j.contains("textureFilter"))     s.textureFilter     = j["textureFilter"].get<u32>();
     if (j.contains("textureAnisotropy")) s.textureAnisotropy = j["textureAnisotropy"].get<u32>();
     if (j.contains("textureMipmaps"))    s.textureMipmaps    = j["textureMipmaps"].get<bool>();

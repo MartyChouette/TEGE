@@ -1169,16 +1169,15 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
 
         // Anti-Aliasing
         if (UI::SectionHeader("Anti-Aliasing")) {
-            const char* aaModes[] = { "None", "FXAA", "TAA", "SMAA", "MSAA 2x", "MSAA 4x", "MSAA 8x" };
-            int aaMode = static_cast<int>(settings.aaMode);
+            // No MSAA (Marty, 2026-09-28): it did nothing in the editor's
+            // single-sample targets or in a shipped game's post target
+            const char* aaModes[] = { "None", "FXAA", "TAA", "SMAA" };
+            int aaMode = settings.aaMode < 4 ? static_cast<int>(settings.aaMode) : 0;
             if (ImGui::Combo("AA Mode", &aaMode, aaModes, IM_ARRAYSIZE(aaModes))) {
                 u32 newMode = static_cast<u32>(aaMode);
                 settings.aaMode = newMode;
                 // Sync legacy fxaaEnabled flag
                 settings.fxaaEnabled = (newMode == 1) ? 1 : 0;
-                // MSAA modes (4/5/6) require render pass recreation via RenderSystem.
-                // SetAAMode defers the actual MSAA change to the start of the next
-                // frame (swapchain recreation is unsafe mid-render-pass).
                 if (m_RenderSystem) {
                     m_RenderSystem->SetAAMode(newMode);
                     m_MSAAImGuiUpdatePending = true;
@@ -1224,31 +1223,6 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
             // offscreen scene target wrote no velocity. The target carries a
             // velocity attachment and the game view resolves TAA with it now,
             // so the line was false and is gone.)
-
-            // MSAA info
-            if (settings.aaMode >= 4 && settings.aaMode <= 6) {
-                int sampleCount = 1 << (settings.aaMode - 3);  // 4->2x, 5->4x, 6->8x
-                ImGui::TextDisabled("Hardware multisampling at %dx", sampleCount);
-                // Be honest about where this applies. Every offscreen RenderTarget
-                // is created VK_SAMPLE_COUNT_1_BIT, and the editor draws both the
-                // viewport and the game view into one, so MSAA cannot show here at
-                // all. It is still worth authoring: a standalone build renders to
-                // the swapchain, where it does apply. Saying "Hardware
-                // multisampling at 4x" and nothing else read as though the setting
-                // were live in the panel you are looking at.
-                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f),
-                    "No effect in the editor: the viewport and game view render to a "
-                    "single-sample offscreen target. Applies to a standalone build.");
-                if (m_RenderSystem) {
-                    u32 maxSamples = m_RenderSystem->GetMaxMSAASamples();
-                    if (static_cast<u32>(sampleCount) > maxSamples) {
-                        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f),
-                            "GPU supports up to %dx MSAA", maxSamples);
-                    }
-                }
-                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f),
-                    "MSAA and TAA are mutually exclusive");
-            }
 
             // AA Comparison Mode (split-screen)
             ImGui::Spacing();

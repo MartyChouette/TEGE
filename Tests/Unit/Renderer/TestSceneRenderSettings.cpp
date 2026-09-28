@@ -250,4 +250,22 @@ ENJIN_TEST(Culling, OcclusionIsOnByDefaultAndSurvivesASave) {
     ENJIN_EXPECT_TRUE(DeserializeRenderSettings(j).occlusionCulling);
 }
 
+// MSAA left the anti-aliasing list. A scene saved with it (modes 4 to 6)
+// loads as None, which is what it rendered: MSAA reached neither the editor's
+// single-sample targets nor a shipped game's post target.
+ENJIN_TEST(AntiAliasing, test_render_settings_msaa_loads_as_none) {
+    // Arrange
+    SceneRenderSettings s;
+    auto j = SerializeRenderSettings(s);
+    j["aaMode"] = 5;   // MSAA 4x
+
+    // Act
+    const SceneRenderSettings back = DeserializeRenderSettings(j);
+
+    // Assert
+    ENJIN_EXPECT_EQ(back.aaMode, 0u);
+    j["aaMode"] = 2;   // TAA is kept
+    ENJIN_EXPECT_EQ(DeserializeRenderSettings(j).aaMode, 2u);
+}
+
 ENJIN_TEST_MAIN()
