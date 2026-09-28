@@ -24780,7 +24780,12 @@ void RenderSystem::EnsureTilemapMeshes() {
 
     for (Entity entity : m_World->GetEntitiesWithComponent<TilemapComponent>()) {
         auto* tilemap = m_World->GetComponent<TilemapComponent>(entity);
-        if (!tilemap || !tilemap->meshDirty) continue;
+        if (!tilemap) continue;
+        // Any change since the last build, flagged or not (inspector undo is not)
+        const u64 fingerprint = tilemap->LayoutFingerprint();
+        if (fingerprint != tilemap->builtFingerprint) tilemap->meshDirty = true;
+        if (!tilemap->meshDirty) continue;
+        tilemap->builtFingerprint = fingerprint;
 
         // The tileset's real size, so the UVs cut Tile Width x Tile Height
         // pixel cells instead of guessing the sheet's shape from the tiles used

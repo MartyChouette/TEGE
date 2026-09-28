@@ -3204,6 +3204,10 @@ void EditorLayer::FlushCreativeWaterEdits() {
     // or gave a new one a surface at all.
     m_RenderSystem->EnsureWaterMeshes();
     m_RenderSystem->EnsureWater3DMeshes();
+    // Tilemaps too. Only RenderSystem::Update built them, and the editor never
+    // calls it, so a tilemap edit (or its undo) reached the screen only when
+    // something else happened to rebuild it.
+    m_RenderSystem->EnsureTilemapMeshes();
 }
 
 void EditorLayer::UpdateGameViewSims(f32 simDt) {

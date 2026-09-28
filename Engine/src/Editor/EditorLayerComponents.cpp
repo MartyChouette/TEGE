@@ -1,4 +1,6 @@
 #include "Enjin/ECS/Components/PreRenderedBackground.h"
+#include "Enjin/Assets/MeshAssetCache.h"
+#include "Enjin/Platform/AssetFS.h"
 #include "Enjin/Editor/EntityPicker.h"
 #include "Enjin/Renderer/CameraLens.h"
 #include "Enjin/Editor/EditorTheme.h"
@@ -1697,6 +1699,90 @@ void EditorLayer::DrawCameraComponent(ECS::Entity entity) {
             ImGui::TreePop();
         }
 
+    }
+}
+
+void EditorLayer::DrawJsonComponentInspector(ECS::Entity entity, const char* key, const char* title) {
+    if (!m_World) return;
+    const std::string text = Scene::SceneSerializer::SerializeOneComponent(m_World, entity, key);
+    if (text.empty()) return;   // the entity does not have it
+
+    const std::string headerId = std::string(title) + "##json_" + key;
+    const bool open = UI::SectionHeader(headerId.c_str(), ImGuiTreeNodeFlags_DefaultOpen);
+    const std::string ctxId = std::string("JsonCtx_") + key;
+    if (ImGui::BeginPopupContextItem(ctxId.c_str())) {
+        if (ImGui::MenuItem("Remove Component")) {
+            const std::string before = Scene::SceneSerializer::SerializeEntityToString(m_World, entity, false);
+            Scene::SceneSerializer::RemoveOneComponent(m_World, entity, key);
+            const std::string after = Scene::SceneSerializer::SerializeEntityToString(m_World, entity, false);
+            m_UndoRedo.Execute(std::make_unique<EntityEditCommand>(m_World, entity, before, after));
+            MarkDirty();
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (!open) return;
+
+    nlohmann::json j;
+    try { j = nlohmann::json::parse(text); } catch (...) { return; }
+    if (!j.is_object()) return;
+
+    // "autoSaveIntervalSeconds" -> "Auto Save Interval Seconds"
+    auto label = [](const std::string& k) {
+        std::string out;
+        for (usize i = 0; i < k.size(); ++i) {
+            const char c = k[i];
+            if (i == 0) out += static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+            else if (std::isupper(static_cast<unsigned char>(c)) &&
+                     !std::isupper(static_cast<unsigned char>(k[i - 1]))) { out += ' '; out += c; }
+            else out += c;
+        }
+        return out;
+    };
+
+    bool changed = false;
+    ImGui::PushID(key);
+    for (auto it = j.begin(); it != j.end(); ++it) {
+        const std::string name = label(it.key());
+        const std::string id = name + "##" + it.key();
+        nlohmann::json& v = it.value();
+        if (v.is_boolean()) {
+            bool b = v.get<bool>();
+            if (ImGui::Checkbox(id.c_str(), &b)) { v = b; changed = true; }
+        } else if (v.is_number_integer()) {
+            int n = v.get<int>();
+            if (ImGui::DragInt(id.c_str(), &n, 0.2f)) {
+                if (v.is_number_unsigned()) v = static_cast<unsigned>(std::max(n, 0));
+                else v = n;
+                changed = true;
+            }
+        } else if (v.is_number()) {
+            float f = v.get<float>();
+            if (ImGui::DragFloat(id.c_str(), &f, 0.01f)) { v = f; changed = true; }
+        } else if (v.is_string()) {
+            char buf[512];
+            std::snprintf(buf, sizeof(buf), "%s", v.get<std::string>().c_str());
+            if (ImGui::InputText(id.c_str(), buf, sizeof(buf))) { v = std::string(buf); changed = true; }
+        } else if (v.is_array() && v.size() >= 2 && v.size() <= 4 &&
+                   std::all_of(v.begin(), v.end(), [](const nlohmann::json& e) { return e.is_number(); })) {
+            float f[4] = {};
+            for (usize i = 0; i < v.size(); ++i) f[i] = v[i].get<float>();
+            const int n = static_cast<int>(v.size());
+            const bool edited = n == 2 ? ImGui::DragFloat2(id.c_str(), f, 0.01f)
+                              : n == 3 ? ImGui::DragFloat3(id.c_str(), f, 0.01f)
+                                       : ImGui::DragFloat4(id.c_str(), f, 0.01f);
+            if (edited) { for (int i = 0; i < n; ++i) v[i] = f[i]; changed = true; }
+        } else {
+            ImGui::TextDisabled("%s: %s (edit in the scene file)", name.c_str(),
+                                v.is_array() ? "list" : "group");
+        }
+    }
+    ImGui::PopID();
+
+    if (changed) {
+        Scene::SceneSerializer::DeserializeOneComponent(m_World, entity, key, j.dump());
+        MarkDirty();
     }
 }
 
@@ -5499,32 +5585,57 @@ void EditorLayer::DrawSprite2DComponent(ECS::Entity entity) {
             ImGui::Separator();
             ImGui::Text("Generate Collider:");
 
+            // The sprite's pixels, from the project: the stored path is
+            // project-relative and the editor runs from its exe folder, so a
+            // raw stbi_load of it found nothing and every Fit button did
+            // nothing for a project-relative texture
+            auto loadSpritePixels = [&](int& w, int& h) -> u8* {
+                std::vector<u8> bytes;
+                const std::string path = Assets::MeshAssetCache::ResolveAgainstSearchRoot(sprite->texturePath);
+                if (!Platform::AssetFS::ReadBytes(path, bytes) || bytes.empty()) return nullptr;
+                int ch = 0;
+                return stbi_load_from_memory(bytes.data(), static_cast<int>(bytes.size()), &w, &h, &ch, 4);
+            };
+            // Onto the Body2D, the one 2D shape Box2D reads, as Fit Polygon
+            // does. These three added 3D Box/Capsule/Sphere colliders, which
+            // Box2D never reads, so a fitted sprite collided with nothing. The
+            // fit itself is the 3D generator's, flattened to the sprite plane.
+            auto ensureBody2D = [&]() -> Physics::Body2DComponent* {
+                if (!m_World->HasComponent<Physics::Body2DComponent>(entity)) {
+                    auto& b = m_World->AddComponent<Physics::Body2DComponent>(entity);
+                    b.isStatic = true;   // a new body is static, like Fit Polygon's
+                }
+                return m_World->GetComponent<Physics::Body2DComponent>(entity);
+            };
             auto generateCollider = [&](const char* label, int type) {
                 if (ImGui::Button(label)) {
-                    int w, h, ch;
-                    u8* pixels = stbi_load(sprite->texturePath.c_str(), &w, &h, &ch, 4);
+                    int w = 0, h = 0;
+                    u8* pixels = loadSpritePixels(w, h);
                     if (pixels) {
                         Math::Vector2 sprSize(sprite->size.x > 0 ? sprite->size.x : 1.0f,
                                               sprite->size.y > 0 ? sprite->size.y : 1.0f);
+                        auto* body = ensureBody2D();
                         if (type == 0) {
-                            auto box = SpriteColliderGenerator::FitBoxCollider(
+                            const auto box = SpriteColliderGenerator::FitBoxCollider(
                                 pixels, (u32)w, (u32)h, sprSize, sprite->pivot);
-                            if (!m_World->HasComponent<ECS::BoxColliderComponent>(entity))
-                                m_World->AddComponent<ECS::BoxColliderComponent>(entity);
-                            *m_World->GetComponent<ECS::BoxColliderComponent>(entity) = box;
+                            body->shapeType = Physics::Shape2DType::Box;
+                            body->box.halfExtents = Math::Vector2(box.size.x * 0.5f, box.size.y * 0.5f);
+                            body->box.offset = Math::Vector2(box.center.x, box.center.y);
                         } else if (type == 1) {
-                            auto capsule = SpriteColliderGenerator::FitCapsuleCollider(
+                            const auto capsule = SpriteColliderGenerator::FitCapsuleCollider(
                                 pixels, (u32)w, (u32)h, sprSize, sprite->pivot);
-                            if (!m_World->HasComponent<ECS::CapsuleColliderComponent>(entity))
-                                m_World->AddComponent<ECS::CapsuleColliderComponent>(entity);
-                            *m_World->GetComponent<ECS::CapsuleColliderComponent>(entity) = capsule;
+                            body->shapeType = Physics::Shape2DType::Capsule;
+                            body->capsule.radius = capsule.radius;
+                            body->capsule.height = capsule.TotalHeight();   // 2D height includes the caps
+                            body->capsule.offset = Math::Vector2(capsule.center.x, capsule.center.y);
                         } else {
-                            auto sphere = SpriteColliderGenerator::FitSphereCollider(
+                            const auto sphere = SpriteColliderGenerator::FitSphereCollider(
                                 pixels, (u32)w, (u32)h, sprSize, sprite->pivot);
-                            if (!m_World->HasComponent<ECS::SphereColliderComponent>(entity))
-                                m_World->AddComponent<ECS::SphereColliderComponent>(entity);
-                            *m_World->GetComponent<ECS::SphereColliderComponent>(entity) = sphere;
+                            body->shapeType = Physics::Shape2DType::Circle;
+                            body->circle.radius = sphere.radius;
+                            body->circle.offset = Math::Vector2(sphere.center.x, sphere.center.y);
                         }
+                        MarkDirty();
                         stbi_image_free(pixels);
                     }
                 }
@@ -5537,8 +5648,8 @@ void EditorLayer::DrawSprite2DComponent(ECS::Entity entity) {
             generateCollider("Fit Circle", 2);
             ImGui::SameLine();
             if (ImGui::Button("Fit Polygon")) {
-                int w, h, channels;
-                u8* pixels = stbi_load(sprite->texturePath.c_str(), &w, &h, &channels, 4);
+                int w = 0, h = 0;
+                u8* pixels = loadSpritePixels(w, h);
                 if (pixels) {
                     Math::Vector2 sprSize(sprite->size.x > 0 ? sprite->size.x : 1.0f,
                                           sprite->size.y > 0 ? sprite->size.y : 1.0f);

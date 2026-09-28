@@ -807,6 +807,14 @@ private:
     void DrawNotesComponent(ECS::Entity entity);
     void DrawPreRenderedBackgroundComponent(ECS::Entity entity);
     void DrawHoverHighlightComponent(ECS::Entity entity);
+    // An inspector built from a component's saved fields: booleans, numbers,
+    // text and 2-4 number vectors are editable, anything nested is named and
+    // left to the file. Edits go back through the serializer, so they are
+    // exactly what a save writes, and the inspector's edit session records the
+    // undo step. For working components that had no editor path at all
+    // (GR-2, SD-28, Timeline): a component with a system and no authoring
+    // tool is not shipped.
+    void DrawJsonComponentInspector(ECS::Entity entity, const char* key, const char* title);
     void DrawTextComponent(ECS::Entity entity);
     void DrawDisplayGraphicComponent(ECS::Entity entity);
     void DrawWeatherZoneComponent(ECS::Entity entity);

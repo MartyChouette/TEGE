@@ -1746,6 +1746,27 @@ struct TilemapComponent {
 
     // Dirty flag — triggers mesh regeneration in RenderSystem
     bool meshDirty = true;
+
+    // Everything the mesh is built from, hashed. The renderer rebuilds when it
+    // differs from the last build's, however the change arrived: inspector
+    // undo writes the old value straight back through the field's address and
+    // never set meshDirty, so an undone tilemap edit kept showing the edited
+    // tiles. Runtime only, never saved.
+    u64 builtFingerprint = 0;
+    u64 LayoutFingerprint() const {
+        u64 h = 1469598103934665603ull;   // FNV-1a
+        auto mix = [&h](const void* p, usize n) {
+            const auto* b = static_cast<const unsigned char*>(p);
+            for (usize i = 0; i < n; ++i) { h ^= b[i]; h *= 1099511628211ull; }
+        };
+        mix(&width, sizeof width); mix(&height, sizeof height);
+        mix(&tileWidth, sizeof tileWidth); mix(&tileHeight, sizeof tileHeight);
+        mix(&tilesetColumns, sizeof tilesetColumns);
+        mix(&worldTileWidth, sizeof worldTileWidth); mix(&worldTileHeight, sizeof worldTileHeight);
+        mix(tilesetPath.data(), tilesetPath.size());
+        if (!tiles.empty()) mix(tiles.data(), tiles.size() * sizeof(i32));
+        return h;
+    }
 };
 
 // 2D Camera bounds (for 2D games)

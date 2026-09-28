@@ -46,6 +46,7 @@
 #include "Enjin/Editor/ComponentHelp.h"
 #include "Enjin/ECS/Components/GPUParticleEmitter.h"
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
+#include "Enjin/Animation/Timeline.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/Cloth.h"
 #include "Enjin/ECS/Components/DynamicDifficulty.h"
@@ -328,6 +329,32 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::FirstPersonController>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::FirstPersonController>(e); },
             "firstPerson", DimensionTag::Only3D},
+        // Working components that had no Add Component entry (GR-2, SD-28)
+        {"Water Vehicle", "Character Controller", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::WaterVehicleController>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::WaterVehicleController>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::WaterVehicleController>(e); },
+            "waterVehicle", DimensionTag::Only3D},
+        {"Save Point", "Gameplay", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::SavePointComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::SavePointComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::SavePointComponent>(e); },
+            "savePoint", DimensionTag::Any},
+        {"Save System", "Gameplay", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::SaveSystemComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::SaveSystemComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::SaveSystemComponent>(e); },
+            "saveSystem", DimensionTag::Any},
+        {"Face Card", "Gameplay", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::FaceCardComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::FaceCardComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::FaceCardComponent>(e); },
+            "faceCard", DimensionTag::Any},
+        {"Timeline", "2D Graphics", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<Animation::TimelineComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<Animation::TimelineComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<Animation::TimelineComponent>(e); },
+            "timeline", DimensionTag::Any},
         {"Vehicle", "Character Controller", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::VehicleController>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::VehicleController>(e); },
@@ -2014,8 +2041,20 @@ void EditorLayer::DrawInspectorPanel() {
         // Notes component
         if (m_World->HasComponent<ECS::NotesComponent>(m_PrimarySelected)) {
             DrawNotesComponent(m_PrimarySelected);
-            DrawHoverHighlightComponent(m_PrimarySelected);
         }
+
+        // Hover Highlight, on its own: it sat inside the Notes block, so an
+        // entity without Notes could have one added and never edited or
+        // removed (GR-3). It checks for its own component.
+        DrawHoverHighlightComponent(m_PrimarySelected);
+
+        // Working components that had no editor path (GR-2, SD-28), drawn
+        // from their saved fields. Each draws only when the entity has it.
+        DrawJsonComponentInspector(m_PrimarySelected, "savePoint", "Save Point");
+        DrawJsonComponentInspector(m_PrimarySelected, "saveSystem", "Save System");
+        DrawJsonComponentInspector(m_PrimarySelected, "faceCard", "Face Card");
+        DrawJsonComponentInspector(m_PrimarySelected, "waterVehicle", "Water Vehicle");
+        DrawJsonComponentInspector(m_PrimarySelected, "timeline", "Timeline");
 
         // Pre-rendered background (lives on the camera it was baked from)
         if (m_World->HasComponent<ECS::PreRenderedBackgroundComponent>(m_PrimarySelected)) {
