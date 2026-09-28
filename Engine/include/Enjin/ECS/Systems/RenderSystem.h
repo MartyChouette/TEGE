@@ -1605,7 +1605,8 @@ public:
     // finding it.
     //
     // A consumer opts in each frame, before the scene renders. Default false,
-    // so a runtime that resolves nothing gets no jitter.
+    // so a runtime that resolves nothing gets no jitter. Both TAA and the
+    // upscaler now run in the editor and the desktop player (SD-13b).
     void SetTemporalResolveActive(bool active) { m_TemporalResolveActive = active; }
     bool IsTemporalResolveActive() const { return m_TemporalResolveActive; }
 #if !ENJIN_RENDERER_WEBGPU

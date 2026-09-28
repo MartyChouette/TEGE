@@ -1,4 +1,5 @@
 #include <string>
+#include "Enjin/Renderer/EmbeddedComputeShaders.h"
 #include <vector>
 #include "Enjin/Renderer/ShaderPaths.h"
 #include "Enjin/Renderer/Upscaling/FSR2Upscaler.h"
@@ -48,6 +49,15 @@ FSR2Upscaler::~FSR2Upscaler() {
 // ============================================================================
 // INITIALIZE
 // ============================================================================
+
+// The engine's own copy of an upscaler shader. A .spv on disk wins, so a
+// shader edit can be tried without rebuilding; this is what an exported game
+// runs, since it ships no .spv at all. Without it the upscaler failed to start
+// in every built game (SD-13b).
+static bool LoadEmbeddedUpscaleShader(VulkanShader& shader, const char* shaderName) {
+    const EmbeddedComputeShader* e = FindEmbeddedComputeShader(shaderName);
+    return e && shader.LoadFromSPIRV(e->data, e->size) && shader.GetModule() != VK_NULL_HANDLE;
+}
 
 bool FSR2Upscaler::Initialize(u32 renderWidth, u32 renderHeight,
                               u32 displayWidth, u32 displayHeight,
@@ -836,6 +846,7 @@ bool FSR2Upscaler::CreateComputePipelines() {
             }
         }
 
+        if (!loaded) loaded = LoadEmbeddedUpscaleShader(shader, shaderName);
         if (!loaded) {
             ENJIN_LOG_WARN(Renderer, "FSR 2: %s shader not found — compile with: "
                            "glslangValidator -V Engine/shaders/%s -o Engine/shaders/%s.spv",
@@ -975,12 +986,13 @@ bool FSR2Upscaler::CreateComputePipelines() {
         if (tempOk) {
             VulkanShader shader(m_Context);
             bool loaded = false;
-            for (u32 i = 0; i < 4; i++) {
-                if (shader.LoadFromFile(temporalPaths[i], false) && shader.GetModule() != VK_NULL_HANDLE) {
+            for (const std::string& candidate : temporalPaths) {
+                if (shader.LoadFromFile(candidate, false) && shader.GetModule() != VK_NULL_HANDLE) {
                     loaded = true;
                     break;
                 }
             }
+            if (!loaded) loaded = LoadEmbeddedUpscaleShader(shader, "upscale_temporal_accumulate.comp");
 
             if (loaded) {
                 VkPipelineShaderStageCreateInfo stage{};

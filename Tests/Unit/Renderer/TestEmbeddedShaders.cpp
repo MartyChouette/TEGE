@@ -45,6 +45,29 @@ ENJIN_TEST(EmbeddedShaders, RegistryCoversAllHelperShaders) {
     }
 }
 
+// The built-in upscaler looked for these as loose .spv files only, which an
+// exported game does not ship, so it failed to start in every built game and a
+// Render Scale below native did nothing (SD-13b).
+ENJIN_TEST(EmbeddedShaders, test_embedded_upscaler_shaders_all_present) {
+    // Arrange
+    const char* required[] = {
+        "upscale_lanczos.comp",
+        "upscale_cas.comp",
+        "upscale_easu.comp",
+        "upscale_rcas.comp",
+        "upscale_temporal_accumulate.comp",
+    };
+
+    for (const char* name : required) {
+        // Act
+        const auto* e = Renderer::FindEmbeddedComputeShader(name);
+
+        // Assert
+        ENJIN_ASSERT_TRUE(e != nullptr);
+        ENJIN_EXPECT_TRUE(IsValidSpirv(e->data, e->size));
+    }
+}
+
 ENJIN_TEST(EmbeddedShaders, RegistryRejectsUnknownAndNull) {
     ENJIN_EXPECT_TRUE(Renderer::FindEmbeddedComputeShader("not_a_shader.comp") == nullptr);
     ENJIN_EXPECT_TRUE(Renderer::FindEmbeddedComputeShader(nullptr) == nullptr);

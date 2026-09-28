@@ -15408,28 +15408,38 @@ void RenderSystem::UpdateFrameUniforms() {
     const bool wantsJitter = (m_AAMode == 2 || m_UpscalerType > 0);
     const bool applyJitter = Renderer::ShouldApplyTemporalJitter(
         m_AAMode, m_UpscalerType, m_TemporalResolveActive);
+    // Warned only when it lasts a second. A setting switched on mid-frame (the
+    // player applies Render Scale that way) misses one frame's resolve, and a
+    // warning for that one frame reported a problem that was not there.
+    static u32 s_noResolveFrames = 0;
     if (wantsJitter && !applyJitter) {
         static bool s_noResolveWarned = false;
-        if (!s_noResolveWarned) {
+        if (++s_noResolveFrames == 60 && !s_noResolveWarned) {
             s_noResolveWarned = true;
             ENJIN_LOG_WARN(Renderer,
-                "%s is selected but nothing here resolves it, so temporal jitter is off. "
-                "The image is rendered at full resolution with no temporal anti-aliasing.",
+                "%s is selected but nothing here resolves it, so temporal jitter is off "
+                "and there is no temporal anti-aliasing.",
                 m_AAMode == 2 ? "TAA" : "A temporal upscaler");
         }
+    } else {
+        s_noResolveFrames = 0;
     }
     if (applyJitter) { // TAA or temporal upscaler, and something will resolve it
         VkExtent2D extent = m_VulkanRenderer->GetSwapchainExtent();
         // An offscreen target overrides it: see m_JitterExtentW.
-        if (m_JitterExtentW > 0 && m_JitterExtentH > 0) {
+        const bool targetSized = m_JitterExtentW > 0 && m_JitterExtentH > 0;
+        if (targetSized) {
             extent.width = m_JitterExtentW;
             extent.height = m_JitterExtentH;
         }
-        // When an upscaler is active, compute jitter relative to the lower render resolution
-        // so that sub-pixel offsets are correctly sized for the internal rendering target.
+        // Jitter is one pixel of the image actually being rendered. An
+        // offscreen target IS that image (the player sizes its scene target to
+        // the upscaler's resolution, the editor renders at full size), so only
+        // the swapchain extent is shrunk to the upscaler's render resolution.
+        // Shrinking a target's size again made the offsets twice too large.
         u32 jitterW = extent.width;
         u32 jitterH = extent.height;
-        if (m_UpscalerType > 0 && m_Upscaler) {
+        if (!targetSized && m_UpscalerType > 0 && m_Upscaler) {
             Renderer::IUpscaler::GetRenderResolution(
                 extent.width, extent.height,
                 static_cast<Renderer::UpscalerQuality>(m_UpscalerQuality),

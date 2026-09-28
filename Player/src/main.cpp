@@ -31,6 +31,7 @@
 #include "Enjin/Renderer/CaptureWrite.h"
 #include "Enjin/Renderer/Camera.h"
 #include "Enjin/Renderer/CameraController.h"
+#include "Enjin/Renderer/Upscaling/IUpscaler.h"
 #include "Enjin/Scene/SceneSerializer.h"
 #include "Enjin/Scene/SceneManager.h"
 #include "Enjin/Scene/LevelStreaming.h"
@@ -2397,6 +2398,7 @@ public:
         // in postprocess.frag ever applied in exported games. PT mode keeps its
         // own PP source; splitscreen falls back to the direct path (no PP).
         m_RasterPPThisFrame = false;
+        m_UpscaledThisFrame = false;
         // GPU culling reads, and pauses, the swapchain pass unless this frame
         // renders offscreen, which re-points it below.
         if (m_RenderSystem) m_RenderSystem->SetCullTarget(nullptr);
@@ -2422,6 +2424,21 @@ public:
                     // must flush here — same contract as the editor loop.
                     // Before the flush: the Hi-Z pyramid is sized from the cull
                     // target there.
+                    // The scene renders at the upscaler's resolution when one is
+                    // selected, and at the swapchain's otherwise. Render Scale in
+                    // the options picks an upscaler preset, so this follows the
+                    // player's choice from the next frame. Resize waits for the
+                    // frames in flight; nothing in this frame has used the
+                    // target yet.
+                    {
+                        const VkExtent2D sc = m_Renderer->GetSwapchainExtent();
+                        Enjin::u32 sw = sc.width, sh = sc.height;
+                        ScenePPTargetSize(sc.width, sc.height, sw, sh);
+                        if (sw != m_ScenePPTarget->GetWidth() || sh != m_ScenePPTarget->GetHeight()) {
+                            m_ScenePPTarget->Resize(sw, sh);
+                            m_LastPTSourceView = VK_NULL_HANDLE;
+                        }
+                    }
                     m_RenderSystem->SetCullTarget(m_ScenePPTarget.get());
                     m_RenderSystem->FlushPendingChanges();
                     m_RenderSystem->BeginFrame(m_FrameDeltaTime);
@@ -2442,18 +2459,17 @@ public:
                     if (m_RenderSystem->HasScriptRenderTargets()) {
                         m_RenderSystem->RenderScriptTargets(preCmd);
                     }
-                    // Jitter is only correct when something will resolve it.
-                    // TAA does, below, now that it is given a colour input.
-                    // An upscaler does NOT here: only the editor dispatches one,
-                    // so counting "an upscaler is selected" jittered a shipped
-                    // game with nothing to resolve it, and it shimmered with FSR
-                    // chosen and TAA off (SD-13, the harm 7ca2683f fixed and
-                    // 727fce25 brought back). Count it once the player runs it.
+                    // Jitter is only correct when something will resolve it: TAA,
+                    // or the upscaler's temporal pass, both run below. The
+                    // upscaler used to be counted while only the editor ran it,
+                    // which jittered a shipped game with nothing to resolve it
+                    // (SD-13). The player dispatches it now (SD-13b).
+                    const bool upscalerWillRun = m_RenderSystem->IsUpscalerActive();
                     {
                         const bool taaWillResolve =
                             m_PostProcessing && m_PostProcessing->IsInitialized() &&
                             m_PostProcessing->IsTAAEnabled();
-                        m_RenderSystem->SetTemporalResolveActive(taaWillResolve);
+                        m_RenderSystem->SetTemporalResolveActive(taaWillResolve || upscalerWillRun);
                     }
                     m_RenderSystem->ApplyCameraClearColor(m_ScenePPTarget.get());
                     // Frustum + occlusion phase 0, outside any render pass;
@@ -2492,7 +2508,10 @@ public:
                     // already transitioned the target for sampling, so the last
                     // argument tells ApplyTAA not to barrier it.
                     m_TAAResolvedThisFrame = false;
-                    if (m_PostProcessing && m_PostProcessing->IsTAAEnabled()) {
+                    // With an upscaler the upscaler's own temporal pass does
+                    // this job at display resolution, so TAA stands aside,
+                    // as it does in the editor.
+                    if (m_PostProcessing && m_PostProcessing->IsTAAEnabled() && !upscalerWillRun) {
                         // Real per-pixel velocity, so moving objects reproject
                         // instead of smearing. ApplyTAA falls back to depth
                         // reconstruction if a target ever lacks the attachment.
@@ -2505,6 +2524,31 @@ public:
                                                            m_ScenePPTarget->GetColorImage(),
                                                            /*alreadyReadable*/ true);
                         m_TAAResolvedThisFrame = m_PostProcessing->ApplyTAA(preCmd);
+                    }
+
+                    // The selected upscaler: the scene rendered at its lower
+                    // resolution above, and it produces the display-resolution
+                    // image post-processing reads. Only the editor ran it
+                    // before, so a shipped game with FSR chosen (or a Render
+                    // Scale below native) rendered at full cost and got nothing
+                    // back (SD-13b). A compute dispatch, so here, between the
+                    // offscreen pass closing and the swapchain pass opening.
+                    if (upscalerWillRun) {
+                        if (auto* upscaler = m_RenderSystem->GetUpscaler()) {
+                            Enjin::Renderer::UpscalerInput up{};
+                            up.colorInput = m_ScenePPTarget->GetColorImageView();
+                            up.depthInput = m_ScenePPTarget->GetDepthImageView();
+                            up.velocityInput = m_ScenePPTarget->HasVelocity()
+                                ? m_ScenePPTarget->GetVelocityImageView() : VK_NULL_HANDLE;
+                            up.output = VK_NULL_HANDLE;   // the upscaler owns its output image
+                            up.deltaTime = m_FrameDeltaTime;
+                            up.cameraNear = m_Camera->GetNearPlane();
+                            up.cameraFar = m_Camera->GetFarPlane();
+                            up.sharpness = m_RenderSystem->GetUpscalerSharpness();
+                            up.cameraCut = false;
+                            upscaler->Dispatch(preCmd, up);
+                            m_UpscaledThisFrame = upscaler->GetOutputImageView() != VK_NULL_HANDLE;
+                        }
                     }
 
                     m_RenderSystem->SetSkipMainPassRendering(true);
@@ -2556,6 +2600,9 @@ public:
                 if (m_TAAResolvedThisFrame) {
                     VkImageView taaOut = m_PostProcessing->GetTAAOutputImageView();
                     if (taaOut != VK_NULL_HANDLE) ppSource = taaOut;
+                }
+                if (m_UpscaledThisFrame) {
+                    ppSource = m_RenderSystem->GetUpscaler()->GetOutputImageView();
                 }
                 if (m_LastPTSourceView != ppSource) {
                     m_PostProcessing->UpdateSourceImage(ppSource,
@@ -3484,7 +3531,11 @@ private:
                     m_PostProcessing->UpdateRenderPass(m_Renderer->GetRenderPass(), 2);
                 }
                 if (m_ScenePPTarget) {
-                    m_ScenePPTarget->Resize(w, h);
+                    Enjin::u32 sw = w, sh = h;
+                    ScenePPTargetSize(w, h, sw, sh);
+                    m_ScenePPTarget->Resize(sw, sh);
+                    if (m_RenderSystem && m_RenderSystem->IsUpscalerActive())
+                        m_RenderSystem->GetUpscaler()->Resize(sw, sh, w, h);
                     // Force the PP source rebind — the color view just changed
                     m_LastPTSourceView = VK_NULL_HANDLE;
                 }
@@ -4720,6 +4771,21 @@ private:
     static constexpr bool kEnableRasterPP = true;
     std::unique_ptr<Enjin::Renderer::RenderTarget> m_ScenePPTarget;
     bool m_RasterPPThisFrame = false;
+    // The scene target's size for a swapchain of dispW x dispH: the upscaler's
+    // render resolution when one is selected, the swapchain's otherwise.
+    void ScenePPTargetSize(Enjin::u32 dispW, Enjin::u32 dispH,
+                           Enjin::u32& outW, Enjin::u32& outH) const {
+        outW = dispW; outH = dispH;
+        if (m_RenderSystem && m_RenderSystem->IsUpscalerActive()) {
+            Enjin::Renderer::IUpscaler::GetRenderResolution(dispW, dispH,
+                static_cast<Enjin::Renderer::UpscalerQuality>(m_RenderSystem->GetUpscalerQuality()),
+                outW, outH);
+            if (outW == 0 || outH == 0) { outW = dispW; outH = dispH; }
+        }
+    }
+    // The selected upscaler ran this frame, so post-processing reads its
+    // display-resolution output instead of the scene target (SD-13b)
+    bool m_UpscaledThisFrame = false;
     // Whether ApplyTAA resolved this frame, so the post-process pass knows
     // whether the TAA output holds anything.
     bool m_TAAResolvedThisFrame = false;

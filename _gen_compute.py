@@ -24,6 +24,14 @@ SHADER_LIST = [
     ("ddgi_probe_update.comp", "DdgiProbeUpdateSpv"),
     ("ddgi_sample.comp",       "DdgiSampleSpv"),
     ("volumetric_fog.comp",    "VolumetricFogSpv"),
+    # The built-in upscaler (FSR2Upscaler), which loads these itself rather
+    # than through ComputePipelineHelper and falls back to this registry.
+    # File-only, it failed to start in every exported game (SD-13b).
+    ("upscale_lanczos.comp",   "UpscaleLanczosSpv"),
+    ("upscale_cas.comp",       "UpscaleCasSpv"),
+    ("upscale_easu.comp",      "UpscaleEasuSpv"),
+    ("upscale_rcas.comp",      "UpscaleRcasSpv"),
+    ("upscale_temporal_accumulate.comp", "UpscaleTemporalAccumulateSpv"),
 ]
 
 def emit_array(name, data):
