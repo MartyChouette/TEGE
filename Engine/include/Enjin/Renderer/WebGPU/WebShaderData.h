@@ -2353,6 +2353,60 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 }
 )";
 
+// Textured particle billboard: PARTICLE_WGSL's vertex stage, and the emitter's
+// art asset from a group-1 texture (the sprite layout). Web had no particle
+// texture path at all, so every textured emitter drew soft dots in a browser
+// (H1). One draw per texture, as the sprites do.
+static const char* PARTICLE_TEX_WGSL = R"(
+struct ViewProjection {
+    view: mat4x4<f32>,
+    proj: mat4x4<f32>,
+    viewPos: vec3<f32>,
+    time: f32,
+};
+@group(0) @binding(0) var<uniform> viewProj: ViewProjection;
+@group(1) @binding(0) var particleTex: texture_2d<f32>;
+@group(1) @binding(1) var particleSmp: sampler;
+
+struct VertexInput {
+    @location(0) position: vec2<f32>,
+    @location(1) uv: vec2<f32>,
+};
+struct InstanceInput {
+    @location(2) worldPos: vec3<f32>,
+    @location(3) size: f32,
+    @location(4) alpha: f32,
+    @location(5) colorR: f32,
+    @location(6) colorG: f32,
+    @location(7) colorB: f32,
+};
+struct VertexOutput {
+    @builtin(position) position: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+    @location(1) color: vec3<f32>,
+    @location(2) alpha: f32,
+};
+
+@vertex
+fn vs_main(vert: VertexInput, inst: InstanceInput) -> VertexOutput {
+    let right = vec3<f32>(viewProj.view[0][0], viewProj.view[1][0], viewProj.view[2][0]);
+    let up = vec3<f32>(viewProj.view[0][1], viewProj.view[1][1], viewProj.view[2][1]);
+    let worldPosition = inst.worldPos + right * vert.position.x * inst.size + up * vert.position.y * inst.size;
+    var out: VertexOutput;
+    out.position = viewProj.proj * viewProj.view * vec4<f32>(worldPosition, 1.0);
+    out.uv = vert.uv;
+    out.color = vec3<f32>(inst.colorR, inst.colorG, inst.colorB);
+    out.alpha = inst.alpha;
+    return out;
+}
+
+@fragment
+fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    let t = textureSample(particleTex, particleSmp, in.uv);
+    return vec4<f32>(in.color * t.rgb, in.alpha * t.a);
+}
+)";
+
 // Grass blade shader — instanced procedural placement
 
 // Tree shader — instanced trunk+canopy crossing quads

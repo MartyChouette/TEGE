@@ -2331,6 +2331,9 @@ private:
     // Particle rendering (instanced billboard quads)
     Renderer::GPUShaderHandle m_WebParticleShader;
     Renderer::GPUPipelineHandle m_WebParticlePipeline;
+    // Textured emitters (PARTICLE_TEX_WGSL, group 1 = the sprite texture layout)
+    Renderer::GPUShaderHandle m_WebParticleTexShader;
+    Renderer::GPUPipelineHandle m_WebParticleTexPipeline;
     Renderer::GPUBufferHandle m_WebParticleQuadVB;
     Renderer::GPUBufferHandle m_WebParticleQuadIB;
     static constexpr u32 WEB_MAX_PARTICLES = 8192;

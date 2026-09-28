@@ -3162,6 +3162,53 @@ void RenderSystem::Initialize() {
 
         if (m_WebSpritePipeline.IsValid())
             ENJIN_LOG_INFO(Renderer, "RenderSystem: Sprite pipeline initialized");
+
+        // Textured particles: the particle pipeline's state and vertex layout,
+        // with the sprite texture layout as group 1. Built here because that
+        // layout does not exist yet where the particle pipeline is made (H1).
+        m_WebParticleTexShader = shaderMgr->LoadShader(
+            Renderer::WebShaderData::PARTICLE_TEX_WGSL,
+            std::strlen(Renderer::WebShaderData::PARTICLE_TEX_WGSL),
+            Renderer::GPUShaderStage::Vertex, "ParticleTextured");
+        Renderer::GPURenderPipelineDesc tpd;
+        tpd.vertexShader = m_WebParticleTexShader;
+        tpd.fragmentShader = m_WebParticleTexShader;
+        tpd.bindGroupLayouts = {m_WebFrameLayout, m_WebSpriteTexLayout};
+        tpd.topology = Renderer::GPUPrimitiveTopology::TriangleList;
+        tpd.cullMode = Renderer::GPUCullMode::None;
+        tpd.frontFace = Renderer::GPUFrontFace::CCW;
+        tpd.depthTest = true;
+        tpd.depthWrite = false;
+        tpd.depthCompare = Renderer::GPUCompareFunction::Less;
+        tpd.alphaBlend = true;
+        tpd.blendState.srcColor = Renderer::GPUBlendFactor::SrcAlpha;
+        tpd.blendState.dstColor = Renderer::GPUBlendFactor::OneMinusSrcAlpha;
+        tpd.blendState.srcAlpha = Renderer::GPUBlendFactor::One;
+        tpd.blendState.dstAlpha = Renderer::GPUBlendFactor::OneMinusSrcAlpha;
+        tpd.colorFormat = Renderer::GPUTextureFormat::RGBA16Float;
+        tpd.depthFormat = Renderer::GPUTextureFormat::Depth24PlusStencil8;
+        tpd.sampleCount = Renderer::kWebSceneSampleCount;
+        tpd.label = "ParticleTexturedPipeline";
+        Renderer::GPUVertexBufferLayoutDesc tQuad;
+        tQuad.stride = 4 * sizeof(f32);
+        tQuad.perInstance = false;
+        tQuad.attributes = {
+            {Renderer::GPUVertexFormat::Float32x2, 0, 0},
+            {Renderer::GPUVertexFormat::Float32x2, 2 * sizeof(f32), 1},
+        };
+        Renderer::GPUVertexBufferLayoutDesc tInst;
+        tInst.stride = 8 * sizeof(f32);
+        tInst.perInstance = true;
+        tInst.attributes = {
+            {Renderer::GPUVertexFormat::Float32x3, 0, 2},
+            {Renderer::GPUVertexFormat::Float32, 3 * sizeof(f32), 3},
+            {Renderer::GPUVertexFormat::Float32, 4 * sizeof(f32), 4},
+            {Renderer::GPUVertexFormat::Float32, 5 * sizeof(f32), 5},
+            {Renderer::GPUVertexFormat::Float32, 6 * sizeof(f32), 6},
+            {Renderer::GPUVertexFormat::Float32, 7 * sizeof(f32), 7},
+        };
+        tpd.vertexBuffers = {tQuad, tInst};
+        m_WebParticleTexPipeline = pipeMgr->CreateRenderPipeline(tpd);
     }
 
     m_Initialized = true;
@@ -6334,24 +6381,51 @@ void RenderSystem::Update(f32 deltaTime) {
         }
         const usize webShare = Effects::DrawBudgetShare(WEB_MAX_PARTICLES, webDrawingEmitters);
 
+        // One run of instances per texture ("" = the built-in soft dot), drawn
+        // with one call each, so every emitter shows its own art (H1). Web had
+        // no particle texture path; every emitter drew soft dots.
+        static std::vector<std::pair<std::string, std::vector<ParticleInst>>> texRuns;
+        texRuns.clear();
+        auto runFor = [](const std::string& tex) -> std::vector<ParticleInst>& {
+            for (auto& r : texRuns) if (r.first == tex) return r.second;
+            texRuns.emplace_back(tex, std::vector<ParticleInst>{});
+            return texRuns.back().second;
+        };
+        usize gathered = 0;
+        const bool webTexturesUsable = m_WebParticleTexPipeline.IsValid();
+
         for (Entity pe : particleEntities) {
             auto* emitter = m_World->GetComponent<ParticleEmitterComponent>(pe);
             if (!emitter || !emitter->pool.initialized || emitter->pool.activeCount == 0) continue;
             auto* pxf = m_World->GetComponent<TransformComponent>(pe);
             if (pxf && !pxf->visible) continue;
 
-            const usize remaining = WEB_MAX_PARTICLES - instances.size();
+            const usize remaining = WEB_MAX_PARTICLES - gathered;
             if (remaining == 0) break;
             const usize allowance = std::min(webShare, remaining);
             const usize stride = Effects::DrawStride(emitter->pool.activeCount, allowance);
+            std::vector<ParticleInst>& run = runFor(webTexturesUsable ? emitter->texturePath : std::string());
 
-            for (u32 i = 0; i < emitter->pool.activeCount && instances.size() < WEB_MAX_PARTICLES;
+            for (u32 i = 0; i < emitter->pool.activeCount && gathered < WEB_MAX_PARTICLES;
                  i += static_cast<u32>(stride)) {
                 const auto& p = emitter->pool.particles[i];
                 const f32 lifeRatio = p.lifetime / std::max(p.maxLifetime, 0.001f);
-                instances.push_back({p.position.x, p.position.y, p.position.z,
+                run.push_back({p.position.x, p.position.y, p.position.z,
                     p.size, p.alpha * lifeRatio, p.color.x, p.color.y, p.color.z});
+                ++gathered;
             }
+        }
+
+        // Untextured first, then each texture, contiguous in one buffer
+        std::stable_sort(texRuns.begin(), texRuns.end(),
+                         [](const auto& a, const auto& b) { return a.first < b.first; });
+        struct WebParticleRun { const std::string* tex; u32 first; u32 count; };
+        static std::vector<WebParticleRun> webRuns;
+        webRuns.clear();
+        for (auto& r : texRuns) {
+            if (r.second.empty()) continue;
+            webRuns.push_back({ &r.first, static_cast<u32>(instances.size()), static_cast<u32>(r.second.size()) });
+            instances.insert(instances.end(), r.second.begin(), r.second.end());
         }
 
         if (!instances.empty()) {
@@ -6363,7 +6437,21 @@ void RenderSystem::Update(f32 deltaTime) {
             wgpuRenderPassEncoderSetVertexBuffer(scenePassEncoder, 0, webBufMgrP->GetNativeBuffer(m_WebParticleQuadVB), 0, WGPU_WHOLE_SIZE);
             wgpuRenderPassEncoderSetVertexBuffer(scenePassEncoder, 1, webBufMgrP->GetNativeBuffer(instBuf), 0, WGPU_WHOLE_SIZE);
             wgpuRenderPassEncoderSetIndexBuffer(scenePassEncoder, webBufMgrP->GetNativeBuffer(m_WebParticleQuadIB), WGPUIndexFormat_Uint32, 0, WGPU_WHOLE_SIZE);
-            wgpuRenderPassEncoderDrawIndexed(scenePassEncoder, 6, static_cast<u32>(instances.size()), 0, 0, 0);
+            bool texturedBound = false;
+            for (const WebParticleRun& r : webRuns) {
+                Renderer::GPUBindGroupHandle bg;
+                if (!r.tex->empty()) bg = WebGetOrCreateSpriteBindGroup(*r.tex);
+                const bool textured = bg.IsValid();
+                if (textured != texturedBound) {
+                    wgpuRenderPassEncoderSetPipeline(scenePassEncoder, webPipeMgr->GetNativePipeline(
+                        textured ? m_WebParticleTexPipeline : m_WebParticlePipeline));
+                    wgpuRenderPassEncoderSetBindGroup(scenePassEncoder, 0, webBindMgr->GetNativeGroup(m_WebFrameBindGroup), 0, nullptr);
+                    texturedBound = textured;
+                }
+                if (textured)
+                    wgpuRenderPassEncoderSetBindGroup(scenePassEncoder, 1, webBindMgr->GetNativeGroup(bg), 0, nullptr);
+                wgpuRenderPassEncoderDrawIndexed(scenePassEncoder, 6, r.count, 0, 0, r.first);
+            }
 
         }
     }
