@@ -1388,7 +1388,10 @@ void Input::SetMouseCaptureMode(MouseCaptureMode mode) {
     {
         const bool wantLock = (mode == MouseCaptureMode::Hidden);
         EM_ASM({ Module.tegeWantPointerLock = $0 ? true : false; }, wantLock ? 1 : 0);
-        if (wantLock) {
+        // A capture run (web_main sets tegeCaptureRun) never locks: headless
+        // Chrome clips the real OS cursor to its invisible window to do it.
+        const bool captureRun = EM_ASM_INT({ return Module.tegeCaptureRun ? 1 : 0; }) != 0;
+        if (wantLock && !captureRun) {
             emscripten_request_pointerlock("#game-canvas", true);
         } else {
             emscripten_exit_pointerlock();

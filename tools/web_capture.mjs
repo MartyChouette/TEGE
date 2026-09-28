@@ -195,6 +195,17 @@ try {
         logLines.push(`[requestfailed] ${r.url()} ${r.failure()?.errorText ?? ''}`);
     });
 
+    // No pointer lock, ever. Headless Chrome on Windows implements it by
+    // clipping the REAL cursor to its invisible window, so capturing a
+    // mouse-look game held the cursor of whoever was using the machine inside
+    // a 900x600 rectangle until the capture ended (measured 2026-09-28: the
+    // clip appeared only during web captures, never desktop ones). The engine
+    // also skips the lock in a capture run; this covers any page, whatever
+    // build or shell it carries.
+    await page.evaluateOnNewDocument(() => {
+        Element.prototype.requestPointerLock = function () { return Promise.resolve(); };
+    });
+
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
 
     // Wait for the engine's own account of itself rather than for a timer --

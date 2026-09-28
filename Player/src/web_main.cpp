@@ -441,6 +441,11 @@ public:
 
         // --- Input ---
         Enjin::Input::Initialize(nullptr);
+        // A capture run never locks the pointer. Headless Chrome on Windows
+        // implements pointer lock by clipping the REAL cursor to its invisible
+        // window, so a capture of a mouse-look game held the cursor of whoever
+        // was using the machine inside a 900x600 rectangle (2026-09-28).
+        if (WebIsCaptureRun()) EM_ASM({ Module.tegeCaptureRun = true; });
         EM_ASM({
             var c = document.getElementById('game-canvas');
             if (!c) { console.warn('TEGE: no #game-canvas element found'); return; }
@@ -449,7 +454,7 @@ public:
                 c.focus();
                 // Re-lock only while the game wants capture (Web Demo menu
                 // mode releases the cursor for the on-screen UI)
-                if (Module.tegeWantPointerLock !== false) c.requestPointerLock();
+                if (!Module.tegeCaptureRun && Module.tegeWantPointerLock !== false) c.requestPointerLock();
             });
             c.addEventListener('contextmenu', function(e){ e.preventDefault(); });
             c.focus();
