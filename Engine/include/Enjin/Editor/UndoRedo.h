@@ -284,6 +284,33 @@ private:
 };
 
 /**
+ * @brief The scene's render settings, before and after one edit, as JSON.
+ * The Settings window's Scene tab had about 350 raw widgets and no undo, so
+ * Ctrl+Z skipped the render setting just changed and reverted something older.
+ * `apply` puts a snapshot back into the live systems (the editor owns them).
+ */
+class ENJIN_API SceneSettingsEditCommand : public ICommand {
+public:
+    using ApplyFn = std::function<void(const std::string& settingsJson)>;
+    SceneSettingsEditCommand(ApplyFn apply, std::string beforeJson, std::string afterJson)
+        : m_Apply(std::move(apply)), m_Before(std::move(beforeJson)), m_After(std::move(afterJson)) {}
+
+    void Execute() override {
+        // The edit is already live when the command is recorded
+        if (m_FirstExecute) { m_FirstExecute = false; return; }
+        if (m_Apply) m_Apply(m_After);
+    }
+    void Undo() override { if (m_Apply) m_Apply(m_Before); }
+    const char* GetDescription() const override { return "Edit Scene Settings"; }
+
+private:
+    ApplyFn m_Apply;
+    std::string m_Before;
+    std::string m_After;
+    bool m_FirstExecute = true;
+};
+
+/**
  * @brief Command to reparent an entity (drag-drop or unparent).
  */
 class ENJIN_API ReparentEntityCommand : public ICommand {

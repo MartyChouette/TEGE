@@ -2081,6 +2081,15 @@ void EditorLayer::DrawSettingsWindow() {
             if (m_SettingsActiveTab == 2) m_SettingsActiveTab = -1;
             ImGui::PushID("Scene");
 
+            // Undo for everything below. Not during play (play-mode changes
+            // are reverted on Stop anyway) and not while a quality tier is
+            // previewed, since the live values are then clamped copies.
+            const bool sceneUndoEligible = !m_PlayMode.IsPlaying() && m_QualityPreviewTier < 0 && m_RenderSystem;
+            if (sceneUndoEligible && !m_SceneSettingsUndoEditing) {
+                m_SceneSettingsUndoBaseline = CaptureSceneSettingsSnapshot();
+                m_SceneSettingsUndoStackAtStart = m_UndoRedo.GetUndoCount();
+            }
+
             // "Use Project Defaults" toggle at the top
             if (ImGui::Checkbox("Use Project Defaults", &m_CurrentSceneUsesProjectDefaults)) {
                 if (m_CurrentSceneUsesProjectDefaults) {
@@ -2343,6 +2352,26 @@ void EditorLayer::DrawSettingsWindow() {
             ImGui::PushTextWrapPos(); ImGui::TextDisabled("World settings, weather, time of day, rendering modes"); ImGui::PopTextWrapPos();
             DrawSettingsSection_DisplayOptions();
             DrawSettingsSection_Environment();
+
+            if (sceneUndoEligible) {
+                if (ImGui::IsAnyItemActive()) {
+                    m_SceneSettingsUndoEditing = true;
+                } else if (m_SceneSettingsUndoEditing) {
+                    m_SceneSettingsUndoEditing = false;
+                    // A wrapped widget that pushed its own command owns the change
+                    if (m_UndoRedo.GetUndoCount() == m_SceneSettingsUndoStackAtStart) {
+                        std::string after = CaptureSceneSettingsSnapshot();
+                        if (after != m_SceneSettingsUndoBaseline) {
+                            m_UndoRedo.Execute(std::make_unique<SceneSettingsEditCommand>(
+                                [this](const std::string& j) { ApplySceneSettingsSnapshot(j); },
+                                m_SceneSettingsUndoBaseline, std::move(after)));
+                            MarkDirty();
+                        }
+                    }
+                }
+            } else {
+                m_SceneSettingsUndoEditing = false;
+            }
             ImGui::PopID();
             ImGui::EndTabItem();
         }

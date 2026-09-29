@@ -1497,6 +1497,31 @@ namespace Editor {
 // the unclamped settings are kept aside and a save restores them (see
 // WriteSceneWorldTime). Switching tiers carries any edit made during the
 // preview into the kept settings first.
+// The scene's render settings as the save writes them (CaptureFromRuntime plus
+// the pieces it cannot see), for the Scene tab's undo.
+std::string EditorLayer::CaptureSceneSettingsSnapshot() const {
+    if (!m_RenderSystem) return {};
+    auto s = Renderer::SceneRenderSettings::CaptureFromRuntime(
+        m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
+    s.useProjectDefaults = m_CurrentSceneUsesProjectDefaults;
+    WriteSceneWorldTime(s);
+    if (m_PostProcessing) s.lutPath = m_PostProcessing->GetLUTPath();
+    return Renderer::SerializeRenderSettings(s).dump();
+}
+
+// Put a snapshot back, the way opening the scene applies its settings
+void EditorLayer::ApplySceneSettingsSnapshot(const std::string& json) {
+    if (!m_RenderSystem || json.empty()) return;
+    nlohmann::json j = nlohmann::json::parse(json, nullptr, /*allow_exceptions=*/false);
+    if (j.is_discarded()) return;
+    const auto s = Renderer::DeserializeRenderSettings(j);
+    m_CurrentSceneUsesProjectDefaults = s.useProjectDefaults;
+    s.ApplyToRuntime(m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
+    ApplySceneLUT(s);
+    AdoptSceneWorldTime(s);
+    MarkDirty();
+}
+
 void EditorLayer::SetQualityPreview(i32 tier) {
     if (!m_RenderSystem || tier == m_QualityPreviewTier) return;
     Renderer::PostProcessSettings* pp = m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr;

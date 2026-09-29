@@ -5,6 +5,9 @@
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/Editor/UndoRedo.h"
 #include "Enjin/Scene/SceneSerializer.h"
+#include "Enjin/Renderer/SceneRenderSettings.h"
+#include <nlohmann/json.hpp>
+#include <vector>
 
 #include <memory>
 #include <string>
@@ -37,6 +40,33 @@ ENJIN_TEST(EntityEdit, UndoRedoRestoresPropertyValues) {
     ENJIN_EXPECT_FLOAT_EQ(w.GetComponent<LightComponent>(e)->intensity, 1.0f);
     mgr.Redo();
     ENJIN_EXPECT_FLOAT_EQ(w.GetComponent<LightComponent>(e)->intensity, 5.0f);
+}
+
+ENJIN_TEST(SceneSettingsEdit, test_scene_settings_edit_undo_redo_apply_snapshots) {
+    // Arrange: the render settings as the Scene tab snapshots them. The edit
+    // is live when the command is recorded, so the first Execute applies nothing.
+    Renderer::SceneRenderSettings before;
+    Renderer::SceneRenderSettings after;
+    after.bloomIntensity = before.bloomIntensity + 1.0f;
+    const std::string beforeJson = Renderer::SerializeRenderSettings(before).dump();
+    const std::string afterJson = Renderer::SerializeRenderSettings(after).dump();
+    std::vector<std::string> applied;
+    UndoRedoManager mgr;
+
+    // Act
+    mgr.Execute(std::make_unique<SceneSettingsEditCommand>(
+        [&](const std::string& j) { applied.push_back(j); }, beforeJson, afterJson));
+    const usize afterExecute = applied.size();
+    mgr.Undo();
+    mgr.Redo();
+
+    // Assert
+    ENJIN_EXPECT_EQ(afterExecute, (usize)0);
+    ENJIN_ASSERT_TRUE(applied.size() == 2);
+    ENJIN_EXPECT_TRUE(applied[0] == beforeJson);
+    ENJIN_EXPECT_TRUE(applied[1] == afterJson);
+    ENJIN_EXPECT_FLOAT_EQ(Renderer::DeserializeRenderSettings(nlohmann::json::parse(applied[0])).bloomIntensity,
+                          before.bloomIntensity);
 }
 
 ENJIN_TEST(EntityEdit, UndoRemovesComponentAddedDuringEdit) {

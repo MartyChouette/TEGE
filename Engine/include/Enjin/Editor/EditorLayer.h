@@ -1907,6 +1907,15 @@ private:
     // The world-time and art-style fields a scene carries that
     // CaptureFromRuntime cannot read back: taken on open, written on save
     void AdoptSceneWorldTime(const Renderer::SceneRenderSettings& settings);
+
+    // Scene render settings undo: the Scene tab's state as JSON on quiet
+    // frames, frozen while a widget is active, and one SceneSettingsEditCommand
+    // when the edit ends (the same shape as the entity inspector's snapshot).
+    std::string CaptureSceneSettingsSnapshot() const;
+    void ApplySceneSettingsSnapshot(const std::string& json);
+    bool m_SceneSettingsUndoEditing = false;
+    std::string m_SceneSettingsUndoBaseline;
+    u32 m_SceneSettingsUndoStackAtStart = 0;
     void WriteSceneWorldTime(Renderer::SceneRenderSettings& settings) const;
     // What world time took over, as the scene had it. World time rewrites the
     // first directional light (rotation, colour, intensity) and the ambient
