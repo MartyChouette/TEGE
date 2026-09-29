@@ -5,6 +5,7 @@
 #include "Enjin/ECS/Entity.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/Physics/IPhysicsBackend2D.h"
+#include "Enjin/Physics/PhysicsTypes2D.h"
 #include <angelscript.h>
 #include <cassert>
 
@@ -90,12 +91,20 @@ static bool Physics2D_OverlapBoxMask(const Vector2& center, const Vector2& halfE
 }
 
 // ============================================================================
-// Body manipulation (operates on RigidbodyComponent velocity, same as 3D)
+// Body manipulation
 // ============================================================================
+//
+// These wrote RigidbodyComponent, which Box2D never reads: a 2D body is a
+// Body2DComponent, and Box2D reads its velocity only when the body is made. So
+// a script pushing a 2D body did nothing at all. They go to the live body now
+// through the backend, and fall back to the old RigidbodyComponent write only
+// for an entity with no 2D body (the historic behaviour, kept for anything
+// relying on it).
 
 static void Physics2D_AddForce(u64 entityId, const Vector2& force) {
     if (!s_BindingsWorld) return;
     Entity entity = static_cast<Entity>(entityId);
+    if (s_BindingsPhysics2D && s_BindingsPhysics2D->ApplyForce(entity, force)) return;
     auto* rb = s_BindingsWorld->GetComponent<RigidbodyComponent>(entity);
     if (!rb || rb->bodyType != RigidbodyComponent::BodyType::Dynamic) return;
 
@@ -107,6 +116,7 @@ static void Physics2D_AddForce(u64 entityId, const Vector2& force) {
 static void Physics2D_AddImpulse(u64 entityId, const Vector2& impulse) {
     if (!s_BindingsWorld) return;
     Entity entity = static_cast<Entity>(entityId);
+    if (s_BindingsPhysics2D && s_BindingsPhysics2D->ApplyImpulse(entity, impulse)) return;
     auto* rb = s_BindingsWorld->GetComponent<RigidbodyComponent>(entity);
     if (!rb || rb->bodyType != RigidbodyComponent::BodyType::Dynamic) return;
 
@@ -118,6 +128,7 @@ static void Physics2D_AddImpulse(u64 entityId, const Vector2& impulse) {
 static void Physics2D_SetVelocity(u64 entityId, const Vector2& velocity) {
     if (!s_BindingsWorld) return;
     Entity entity = static_cast<Entity>(entityId);
+    if (s_BindingsPhysics2D && s_BindingsPhysics2D->SetBodyVelocity(entity, velocity)) return;
     auto* rb = s_BindingsWorld->GetComponent<RigidbodyComponent>(entity);
     if (rb) {
         rb->velocity.x = velocity.x;
@@ -128,6 +139,8 @@ static void Physics2D_SetVelocity(u64 entityId, const Vector2& velocity) {
 static Vector2 Physics2D_GetVelocity(u64 entityId) {
     if (!s_BindingsWorld) return Vector2();
     Entity entity = static_cast<Entity>(entityId);
+    Math::Vector3 v;
+    if (s_BindingsPhysics2D && s_BindingsPhysics2D->GetBodyVelocity(entity, v)) return Vector2(v.x, v.y);
     auto* rb = s_BindingsWorld->GetComponent<RigidbodyComponent>(entity);
     return rb ? Vector2(rb->velocity.x, rb->velocity.y) : Vector2();
 }
@@ -148,6 +161,11 @@ static Vector2 Physics2D_GetGravity() {
 static void Physics2D_SetGravityScale(u64 entityId, f32 scale) {
     if (!s_BindingsWorld) return;
     Entity entity = static_cast<Entity>(entityId);
+    // Box2D takes the scale from Body2DComponent every step
+    if (auto* b2d = s_BindingsWorld->GetComponent<Physics::Body2DComponent>(entity)) {
+        b2d->gravityScale = scale;
+        return;
+    }
     auto* rb = s_BindingsWorld->GetComponent<RigidbodyComponent>(entity);
     if (rb) rb->gravityScale = scale;
 }

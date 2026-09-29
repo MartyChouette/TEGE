@@ -391,6 +391,38 @@ ENJIN_TEST(PhysicsSim2D, RaycastSkipsSensors) {
     ENJIN_EXPECT_FLOAT_NEAR(hit.distance, 9.5f, 0.3f);
 }
 
+ENJIN_TEST(PhysicsSim2D, test_physics2d_set_velocity_and_impulse_move_live_body) {
+    // Arrange: a resting dynamic body with no gravity. The script calls used to
+    // write RigidbodyComponent, which Box2D never reads, so the body stayed put.
+    ECS::World world;
+    ECS::Entity e = world.CreateEntity();
+    world.AddComponent<ECS::TransformComponent>(e, ECS::TransformComponent{});
+    Physics::Body2DComponent b;
+    b.gravityScale = 0.0f;
+    b.linearDamping = 0.0f;
+    b.shapeType = Physics::Shape2DType::Circle;
+    world.AddComponent<Physics::Body2DComponent>(e, b);
+    auto backend = Physics::CreatePhysicsBackend2D(Physics::PhysicsBackendType::Auto);
+    ENJIN_ASSERT_NOT_NULL(backend.get());
+    backend->Initialize(&world);
+    backend->Update(1.0f / 60.0f);   // create the body
+
+    // Act
+    const bool setOk = backend->SetBodyVelocity(e, Math::Vector2(3.0f, 0.0f));
+    for (int i = 0; i < 60; ++i) backend->Update(1.0f / 60.0f);
+    const f32 xAfterSet = world.GetComponent<ECS::TransformComponent>(e)->position.x;
+    const bool impOk = backend->ApplyImpulse(e, Math::Vector2(0.0f, 5.0f));
+    backend->Update(1.0f / 60.0f);
+    Math::Vector3 v;
+    const bool gotV = backend->GetBodyVelocity(e, v);
+
+    // Assert: about 3 units in a second, and the impulse gave it upward speed
+    ENJIN_EXPECT_TRUE(setOk && impOk && gotV);
+    ENJIN_EXPECT_FLOAT_NEAR(xAfterSet, 3.0f, 0.3f);
+    ENJIN_EXPECT_TRUE(v.y > 0.5f);
+    ENJIN_EXPECT_FALSE(backend->SetBodyVelocity(ECS::Entity{}, Math::Vector2(1.0f, 0.0f)));
+}
+
 ENJIN_TEST(PhysicsSim2D, DistanceJointMaintainsSeparation) {
     // Arrange: a static anchor at (0,10) and a dynamic weight below it joined by
     // a RIGID distance joint (stiffness 0) of length 2. Under gravity the weight

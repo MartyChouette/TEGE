@@ -1049,6 +1049,32 @@ bool Box2DBackend::GetBodyVelocity(ECS::Entity entity, Math::Vector3& outLinear)
 }
 
 // ============================================================================
+// Script control of a live body
+// ============================================================================
+
+bool Box2DBackend::SetBodyVelocity(ECS::Entity entity, const Math::Vector2& velocity) {
+    auto it = m_EntityToBody.find(entity);
+    if (it == m_EntityToBody.end() || !b2Body_IsValid(it->second)) return false;
+    b2Body_SetLinearVelocity(it->second, b2Vec2{velocity.x, velocity.y});
+    b2Body_SetAwake(it->second, true);
+    return true;
+}
+
+bool Box2DBackend::ApplyForce(ECS::Entity entity, const Math::Vector2& force) {
+    auto it = m_EntityToBody.find(entity);
+    if (it == m_EntityToBody.end() || !b2Body_IsValid(it->second)) return false;
+    b2Body_ApplyForceToCenter(it->second, b2Vec2{force.x, force.y}, true);
+    return true;
+}
+
+bool Box2DBackend::ApplyImpulse(ECS::Entity entity, const Math::Vector2& impulse) {
+    auto it = m_EntityToBody.find(entity);
+    if (it == m_EntityToBody.end() || !b2Body_IsValid(it->second)) return false;
+    b2Body_ApplyLinearImpulseToCenter(it->second, b2Vec2{impulse.x, impulse.y}, true);
+    return true;
+}
+
+// ============================================================================
 // Force-set body state (for rewind system)
 // ============================================================================
 

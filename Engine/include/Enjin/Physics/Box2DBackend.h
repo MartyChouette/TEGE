@@ -58,6 +58,9 @@ public:
 
     // Rewind state capture/restoration
     bool GetBodyVelocity(ECS::Entity entity, Math::Vector3& outLinear) const override;
+    bool SetBodyVelocity(ECS::Entity entity, const Math::Vector2& velocity) override;
+    bool ApplyForce(ECS::Entity entity, const Math::Vector2& force) override;
+    bool ApplyImpulse(ECS::Entity entity, const Math::Vector2& impulse) override;
     void ForceSetBodyState(ECS::Entity entity, const Math::Vector3& position,
                             const Math::Vector3& velocity) override;
 

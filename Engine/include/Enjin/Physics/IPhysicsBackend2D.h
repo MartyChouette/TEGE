@@ -73,6 +73,13 @@ public:
     // Body velocity query (for rewind system — captures current physics state)
     virtual bool GetBodyVelocity(ECS::Entity entity, Math::Vector3& outLinear) const { return false; }
 
+    // Script control of a live body. Body2DComponent's velocity is read only
+    // when the body is created, so a script writing a component never reached
+    // the simulation. These go to the body and wake it; false = no such body.
+    virtual bool SetBodyVelocity(ECS::Entity entity, const Math::Vector2& velocity) { (void)entity; (void)velocity; return false; }
+    virtual bool ApplyForce(ECS::Entity entity, const Math::Vector2& force) { (void)entity; (void)force; return false; }
+    virtual bool ApplyImpulse(ECS::Entity entity, const Math::Vector2& impulse) { (void)entity; (void)impulse; return false; }
+
     // Force-set body state (for rewind system — restores position/velocity)
     virtual void ForceSetBodyState(ECS::Entity entity, const Math::Vector3& position,
                                     const Math::Vector3& velocity) {}
