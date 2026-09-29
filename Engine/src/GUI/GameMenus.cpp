@@ -120,6 +120,7 @@ std::string GameSettingsToJson(const GraphicsSettings& g, const AudioSettings& a
     j["resolutionHeight"] = g.resolutionHeight;
     j["fullscreen"] = g.fullscreen;
     j["vsync"] = g.vsync;
+    j["hdr"] = g.hdr;
     j["qualityPreset"] = g.qualityPreset;
     j["renderScale"] = g.renderScale;
     j["fieldOfView"] = g.fieldOfView;
@@ -146,6 +147,7 @@ bool GameSettingsFromJson(const std::string& json, GraphicsSettings& g, AudioSet
         g.resolutionHeight = j.value("resolutionHeight", g.resolutionHeight);
         g.fullscreen = j.value("fullscreen", g.fullscreen);
         g.vsync = j.value("vsync", g.vsync);
+        g.hdr = j.value("hdr", g.hdr);
         g.qualityPreset = std::min(j.value("qualityPreset", g.qualityPreset), 3u);
         g.renderScale = std::clamp(j.value("renderScale", g.renderScale), 0.5f, 1.0f);
         g.fieldOfView = std::clamp(j.value("fieldOfView", g.fieldOfView), 40.0f, 120.0f);
@@ -614,6 +616,13 @@ void GameMenuSystem::RenderGraphics(f32 w, f32 h) {
 #if !ENJIN_PLATFORM_WEB
     ImGui::Checkbox("Fullscreen", &m_Graphics.fullscreen);
     ImGui::Checkbox("VSync", &m_Graphics.vsync);
+    // Only on a display that has an HDR format; an SDR screen never sees it
+    if (m_HDRAvailable) {
+        ImGui::Checkbox("HDR", &m_Graphics.hdr);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("High dynamic range output for HDR displays.");
+        }
+    }
 #else
     // In a browser there is no vsync to choose: presentation is the browser's,
     // on its own cadence through requestAnimationFrame, and nothing here can

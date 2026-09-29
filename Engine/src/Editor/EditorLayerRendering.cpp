@@ -2743,51 +2743,6 @@ void EditorLayer::DrawSettingsSection_DisplayOptions() {
         }
         ImGui::SetItemTooltip("Render triangle edges only. Useful for debugging mesh topology.");
 
-        // HDR output
-        ImGui::Separator();
-        {
-            auto* swapchain = m_RenderSystem->GetSwapchain();
-            bool hdrAvailable = swapchain && swapchain->IsHDRFormatAvailable();
-            bool hdrEnabled = m_RenderSystem->IsHDREnabled();
-
-            if (!hdrAvailable && !hdrEnabled) {
-                ImGui::BeginDisabled();
-            }
-            if (ImGui::Checkbox("HDR Output", &hdrEnabled)) {
-                // Record the request only. RenderSystem recreates the swapchain,
-                // render pass and pipelines at the next frame start — doing it here,
-                // mid-frame, crashes the driver at submit. The ImGui pipeline and the
-                // post-process hdrOutputMode are reconciled in EditorLayer::Render()
-                // once the deferred change has been applied.
-                m_RenderSystem->SetHDREnabled(hdrEnabled);
-                m_HDRImGuiUpdatePending = true;
-            }
-            if (!hdrAvailable && !hdrEnabled) {
-                ImGui::EndDisabled();
-            }
-            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-                ImGui::SetTooltip(hdrAvailable
-                    ? "Enable HDR output on compatible displays.\n"
-                      "Prefers scRGB (FP16 linear), falls back to HDR10 (PQ/ST.2084)."
-                    : "HDR not available.\n"
-                      "Enable Windows HDR in Settings > Display > HDR first.");
-            }
-            if (m_RenderSystem->IsHDREnabled()) {
-                const char* modeNames[] = { "SDR", "scRGB (FP16)", "HDR10 (PQ)" };
-                u32 mode = m_RenderSystem->GetHDROutputMode();
-                ImGui::TextColored(ImVec4(0.5f, 0.9f, 0.5f, 1.0f), "Active: %s",
-                    mode < 3 ? modeNames[mode] : "Unknown");
-            } else if (!hdrAvailable) {
-                ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "No HDR formats detected");
-            }
-            if (m_RenderSystem->IsHDREnabled()) {
-                // The scene is rendered into an 8-bit UNORM offscreen target and
-                // composited into the frame, so the viewport preview stays SDR
-                // whatever the surface is doing. Worth saying, or the panel reads
-                // as though the picture in it were the HDR one.
-                ImGui::TextDisabled("Applies to the output surface. The viewport preview stays SDR.");
-            }
-        }
     }
 
     // === SDF SCENE ===

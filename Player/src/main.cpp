@@ -536,6 +536,7 @@ public:
                 gfx.fxaa = m_PostProcessing->GetSettings().fxaaEnabled != 0;
             }
             if (m_RenderSystem) gfx.shadows = m_RenderSystem->IsShadowsEnabled();
+            if (m_RenderSystem) gfx.hdr = m_RenderSystem->IsHDREnabled();
             audio.masterVolume = m_AudioEngine.GetMasterVolume();
             // Fullscreen as it is, or Back after visiting Options dropped a
             // fullscreen game to windowed (IN-18)
@@ -563,6 +564,9 @@ public:
         // Live preview split: hovering a visual setting shows the screen half
         // without / half with the effect.
         m_GameMenu.SetPostProcessing(m_PostProcessing.get());
+        // The Graphics tab offers HDR only on a display that has an HDR format
+        if (auto* swapchain = m_RenderSystem ? m_RenderSystem->GetSwapchain() : nullptr)
+            m_GameMenu.SetHDRAvailable(swapchain->IsHDRFormatAvailable());
         // Controls-screen changes are saved as they happen (IN-14).
         m_GameMenu.SetBindingsChangedCallback([this]() { SaveInputBindings(); });
         // Options > Controls opens the one UICanvas controls screen (IN-16);
@@ -596,6 +600,18 @@ public:
 
             // --- VSync (deferred — recreates swapchain) ---
             m_Renderer->RequestVSyncChange(gfx.vsync);
+
+            // --- HDR (deferred — recreates swapchain, render pass, pipelines) ---
+            // Only where the display has an HDR format; a settings.json carried
+            // from an HDR machine to an SDR one asks for nothing.
+            {
+                auto* swapchain = m_RenderSystem->GetSwapchain();
+                const bool hdr = gfx.hdr && swapchain && swapchain->IsHDRFormatAvailable();
+                if (hdr != m_RenderSystem->IsHDREnabled()) {
+                    m_RenderSystem->SetHDREnabled(hdr);
+                    m_HDRFollowUpPending = true;
+                }
+            }
 
             // --- Fullscreen and windowed size (deferred to next Update) ---
             m_PendingFullscreen = gfx.fullscreen;
@@ -2680,6 +2696,17 @@ public:
 
         // Render ImGui overlays (pause menu, dialogue)
         VkCommandBuffer cmd = m_Renderer->GetCurrentCommandBuffer();
+        // After an HDR switch the render pass format changed: once RenderSystem
+        // has applied it (between frames), ImGui's pipeline follows and the post
+        // process encodes for the new output. As the editor does.
+        if (m_HDRFollowUpPending && m_RenderSystem && !m_RenderSystem->IsHDRChangePending()) {
+            m_HDRFollowUpPending = false;
+            if (m_ImGuiLayer && m_RenderSystem->GetVulkanRenderer()) {
+                m_ImGuiLayer->UpdateRenderPass(m_RenderSystem->GetVulkanRenderer()->GetRenderPass(),
+                                               m_RenderSystem->GetVulkanRenderer()->GetMSAASamples());
+            }
+            if (m_PostProcessing) m_PostProcessing->GetSettings().hdrOutputMode = m_RenderSystem->GetHDROutputMode();
+        }
         if (m_ImGuiLayer && cmd != VK_NULL_HANDLE) {
             m_ImGuiLayer->RebuildFontsIfNeeded();
             m_ImGuiLayer->BeginFrame();
@@ -4773,6 +4800,7 @@ private:
 
     // MIDI input
     Enjin::InputSystem::MIDIInput m_MIDIInput;
+    bool m_HDRFollowUpPending = false;   // see the HDR block before ImGui's frame
 
     // Accessibility systems
     Enjin::Accessibility::SubtitleSystem m_SubtitleSystem;

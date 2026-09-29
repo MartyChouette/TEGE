@@ -198,8 +198,9 @@ struct SceneRenderSettings {
     bool rainActive = false;
 
     // --- PostProcessSettings fields ---
-    // HDR output
-    bool hdrOutput = false;        // Enable HDR swapchain output
+    // HDR output is not a scene setting: it depends on the player's display,
+    // so it is the player's Graphics option (GraphicsSettings::hdr). The old
+    // "hdrOutput" key was captured and saved and never applied by anything.
 
     // Tone mapping
     // Off by default. ACES is a strong look and it was being applied to every

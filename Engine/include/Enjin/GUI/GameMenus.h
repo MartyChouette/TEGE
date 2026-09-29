@@ -43,6 +43,9 @@ struct GraphicsSettings {
     u32 resolutionHeight = 1080;
     bool fullscreen = false;
     bool vsync = true;
+    // HDR output. Offered only where the display has an HDR format
+    // (GameMenuSystem::SetHDRAvailable); ignored everywhere else.
+    bool hdr = false;
     u32 qualityPreset = 2;
     f32 renderScale = 1.0f;
     f32 fieldOfView = 60.0f;
@@ -104,6 +107,10 @@ public:
     // (bloom = true stomped the renderer's setting every options visit).
     using SettingsSyncCallback = std::function<void(GraphicsSettings&, AudioSettings&)>;
     void SetSettingsSyncCallback(SettingsSyncCallback cb) { m_SettingsSyncCallback = std::move(cb); }
+
+    // Whether this display can show HDR. The Graphics tab shows the HDR switch
+    // only when it can, so a player on an SDR screen never sees a dead control.
+    void SetHDRAvailable(bool available) { m_HDRAvailable = available; }
 
     // Accessibility tab edits the host's LIVE RuntimeAccessibilitySettings in
     // place (no copy — the host's per-frame apply loops pick most fields up).
@@ -228,6 +235,7 @@ private:
     MenuCallback m_Callback;
     SettingsCallback m_SettingsCallback;
     SettingsSyncCallback m_SettingsSyncCallback;
+    bool m_HDRAvailable = false;
     AccessibilityChangedCallback m_AccessibilityChanged;
     std::function<void()> m_BindingsChanged;
     std::string m_GameTitle = "My Game";

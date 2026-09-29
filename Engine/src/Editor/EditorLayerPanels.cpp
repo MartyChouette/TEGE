@@ -2031,6 +2031,9 @@ void EditorLayer::ExecuteConsoleCommand(const std::string& command) {
         if (m_RenderSystem) {
             bool enabled = !m_RenderSystem->IsHDREnabled();
             m_RenderSystem->SetHDREnabled(enabled);
+            // The render pass format changes: ImGui's pipeline and the post
+            // process output mode follow once the swap is applied
+            m_HDRImGuiUpdatePending = true;
             m_ConsoleLog.push_back(std::string("HDR ") + (enabled ? "ON" : "OFF"));
         }
     } else if (cmdLower == "flatshading") {

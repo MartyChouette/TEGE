@@ -529,6 +529,7 @@ ENJIN_TEST(GameSettings, RoundTripAndOlderFiles) {
     GraphicsSettings g;
     AudioSettings a;
     g.fullscreen = true;
+    g.hdr = true;   // the player's HDR choice travels with the rest
     g.renderScale = 0.75f;
     g.resolutionWidth = 2560;
     a.musicVolume = 0.25f;
@@ -538,6 +539,7 @@ ENJIN_TEST(GameSettings, RoundTripAndOlderFiles) {
     AudioSettings a2;
     ENJIN_ASSERT_TRUE(GameSettingsFromJson(GameSettingsToJson(g, a), g2, a2));
     ENJIN_EXPECT_TRUE(g2.fullscreen);
+    ENJIN_EXPECT_TRUE(g2.hdr);
     ENJIN_EXPECT_FLOAT_NEAR(g2.renderScale, 0.75f, 1e-6f);
     ENJIN_EXPECT_EQ(g2.resolutionWidth, 2560u);
     ENJIN_EXPECT_FLOAT_NEAR(a2.musicVolume, 0.25f, 1e-6f);

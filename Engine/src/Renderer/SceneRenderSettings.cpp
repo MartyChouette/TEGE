@@ -295,9 +295,6 @@ SceneRenderSettings SceneRenderSettings::CaptureFromRuntime(ECS::RenderSystem* r
     }
 
     if (pp) {
-        // HDR output
-        s.hdrOutput                    = pp->hdrOutputMode != 0;
-
         // Tone mapping
         s.toneMappingMode              = pp->toneMappingMode;
         s.exposure                     = pp->exposure;
@@ -1473,9 +1470,6 @@ json SerializeRenderSettings(const SceneRenderSettings& s) {
     j["worldCurvature"]    = RF(s.worldCurvature);
     j["rainActive"]        = s.rainActive;
 
-    // HDR output
-    j["hdrOutput"]         = s.hdrOutput;
-
     // Tone mapping
     j["toneMappingMode"]   = s.toneMappingMode;
     j["exposure"]          = RF(s.exposure);
@@ -1917,9 +1911,6 @@ SceneRenderSettings DeserializeRenderSettings(const json& j) {
     if (j.contains("snowIntensity"))     s.snowIntensity     = j["snowIntensity"].get<f32>();
     if (j.contains("worldCurvature"))    s.worldCurvature    = j["worldCurvature"].get<f32>();
     if (j.contains("rainActive"))        s.rainActive        = JB(j["rainActive"]);
-
-    // HDR output
-    if (j.contains("hdrOutput"))         s.hdrOutput         = JB(j["hdrOutput"]);
 
     // Tone mapping
     if (j.contains("toneMappingMode"))   s.toneMappingMode   = j["toneMappingMode"].get<u32>();
