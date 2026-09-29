@@ -111,7 +111,6 @@ private:
     std::set<std::string> m_ModelPaths;
     std::set<std::string> m_ScriptPaths;    // .as AngelScript files
     std::set<std::string> m_AudioPaths;     // .wav/.mp3/.ogg/.flac audio files
-    std::set<std::string> m_DialoguePaths;  // .enjdlg dialogue assets
     std::set<std::string> m_PrefabPaths;    // .enjprefab prefab files
     std::set<std::string> m_DataAssetPaths; // .enjdata/.enjschema data assets
 

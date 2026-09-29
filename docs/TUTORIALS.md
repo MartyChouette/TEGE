@@ -2366,7 +2366,7 @@ The system syncs at 20Hz with interpolation buffer, providing smooth movement ev
 Assets are packed into `.enjpak` files with:
 - Per-file CRC32 integrity checks
 - XOR obfuscation (basic protection)
-- All asset types: scenes, scripts (.as), audio, textures, models (.gltf/.glb/.fbx/.obj), dialogue (.enjdlg), prefabs (.enjprefab), data assets, SVG, icons
+- All asset types: scenes, scripts (.as), audio, textures, models (.gltf/.glb/.fbx/.obj), prefabs (.enjprefab), data assets, SVG, icons
 
 ### Running Your Game
 
@@ -2712,7 +2712,6 @@ The real power of Enjin comes from combining multiple systems. Here are some adv
 | `.enjin` | Scene | Scene file (JSON) |
 | `.enjprefab` | Prefab | Reusable entity template |
 | `.enjpak` | Pack | Compiled asset package |
-| `.enjdlg` | Dialogue | Dialogue tree |
 | `.enjdata` | Data | Data asset instance |
 | `.enjschema` | Schema | Data asset schema |
 | `.enjshader` | Shader | Shader graph |

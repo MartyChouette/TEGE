@@ -82,7 +82,7 @@ enjin/
 │   │   ├── Editor/         # EditorLayer, PlayMode, PlayModeDiff, EditorSettings, FeedbackSystem, PerformanceStats, VectorDrawingEditor
 │   │   ├── Effects/        # Weather, Water, Wind, RetroEffects, Destructible, SpriteBatchRenderer, SpriteContourTracer
 │   │   ├── GUI/            # ImGui integration, Localization, DialogueTree, UICanvas, UISystem
-│   │   ├── Gameplay/       # TieredSaveSystem, SaveBackend, SaveLoadMenu, HUDSystem, QuestSystem, FootstepSystem, ObjectPool, CinematicSystem, DialogueAsset
+│   │   ├── Gameplay/       # TieredSaveSystem, SaveBackend, SaveLoadMenu, HUDSystem, QuestSystem, FootstepSystem, ObjectPool, CinematicSystem
 │   │   ├── Networking/     # LANMultiplayer, NetworkPanel, SteamSaveBackend
 │   │   ├── Physics/        # IPhysicsBackend, JoltBackend, Box2DBackend, PhysicsBackendFactory
 │   │   ├── Platform/       # FileDialog
@@ -412,7 +412,6 @@ Alternative render path: geometry-only pass writes triangle ID + instance ID to 
 - `EntityEventBus` - Decoupled C++ entity communication
 - `DestructibleSystem` - Voronoi, grid, radial, shatter fracture patterns with debris physics
 - `LocalizationManager` - String tables, CSV/JSON I/O, LOC() macro for UI text
-- `DialogueAsset` - .enjdlg dialogue files with tree editor
 
 ### Terrain System
 

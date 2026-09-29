@@ -22,8 +22,7 @@
         "Engine/*/Enjin/Plugin/HotReload.*",
         "Engine/*/Enjin/Editor/EditorSettings.*",
         "Engine/*/Enjin/Editor/TemplateCreator.*",
-        "Engine/*/Enjin/Editor/TemplateMarketplace.*",
-        "Engine/*/Enjin/GUI/DialogueAsset.*"
+        "Engine/*/Enjin/Editor/TemplateMarketplace.*"
       ]
     },
 

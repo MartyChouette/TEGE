@@ -37,7 +37,6 @@ BuildResult BuildPipeline::Execute(const BuildConfig& requested) {
     m_ModelPaths.clear();
     m_ScriptPaths.clear();
     m_AudioPaths.clear();
-    m_DialoguePaths.clear();
     m_PrefabPaths.clear();
     m_DataAssetPaths.clear();
 
@@ -750,14 +749,6 @@ bool BuildPipeline::PackAssets(const std::string& outputDir, const std::string& 
         }
     }
 
-    // Pack dialogue files
-    for (const auto& path : m_DialoguePaths) {
-        auto relPath = fs::relative(fs::path(path), fs::path(m_ProjectDir));
-        if (!packer.AddFile(relPath.generic_string(), path)) {
-            AddMessage(MessageSeverity::Warning, "Failed to pack dialogue: " + path);
-        }
-    }
-
     // Pack prefab files
     for (const auto& path : m_PrefabPaths) {
         auto relPath = fs::relative(fs::path(path), fs::path(m_ProjectDir));
@@ -1227,7 +1218,6 @@ bool BuildPipeline::CopyLooseFiles(const std::string& outputDir) {
     ReportProgress("Copying audio", 0.7f);
     copyAssetSet(m_AudioPaths, "audio");
 
-    copyAssetSet(m_DialoguePaths, "dialogue");
     copyAssetSet(m_PrefabPaths, "prefab");
     copyAssetSet(m_DataAssetPaths, "data asset");
     copyAssetSet(m_ModelPaths, "model");
@@ -1340,7 +1330,6 @@ void BuildPipeline::ScanProjectDirectory() {
         { ".mp3",        &m_AudioPaths },
         { ".ogg",        &m_AudioPaths },
         { ".flac",       &m_AudioPaths },
-        { ".enjdlg",     &m_DialoguePaths },
         { ".enjprefab",  &m_PrefabPaths },
         { ".enjdata",    &m_DataAssetPaths },
         { ".enjschema",  &m_DataAssetPaths },
@@ -1480,7 +1469,6 @@ void BuildPipeline::ScanProjectDirectory() {
                "Directory scan: " +
                std::to_string(m_ScriptPaths.size()) + " scripts, " +
                std::to_string(m_AudioPaths.size()) + " audio, " +
-               std::to_string(m_DialoguePaths.size()) + " dialogues, " +
                std::to_string(m_PrefabPaths.size()) + " prefabs, " +
                std::to_string(m_DataAssetPaths.size()) + " data assets, " +
                std::to_string(m_ModelPaths.size()) + " models");
