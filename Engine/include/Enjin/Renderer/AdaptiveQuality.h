@@ -45,7 +45,7 @@ using QualityChangeCallback = std::function<void(QualityLevel, QualityLevel)>;
 
 // Adaptive quality system that dynamically adjusts rendering parameters
 // to maintain a target framerate. Works on all platforms but especially
-// useful on constrained hardware like Steam Deck, consoles, and mobile.
+// useful on constrained hardware such as handhelds, low-end laptops and phones.
 class ENJIN_API AdaptiveQualitySystem {
 public:
     AdaptiveQualitySystem() = default;
