@@ -275,7 +275,7 @@ Alternative render path: geometry-only pass writes triangle ID + instance ID to 
   - Controllers (Platformer2D, TopDown2D, TopDown3D, ThirdPerson, FirstPerson, Vehicle, Possessable)
   - Terrain (TerrainComponent, Terrain2DComponent)
   - Physics (Rigidbody, BoxCollider, SphereCollider, CapsuleCollider, MeshCollider, TriggerZone)
-  - Joints (DistanceJoint, HingeJoint, BallSocketJoint, SpringJoint, FixedJoint, SliderJoint, Ragdoll)
+  - Joints (DistanceJoint, HingeJoint, BallSocketJoint, SpringJoint, FixedJoint, SliderJoint; Ragdoll is not yet built)
   - Environment (WeatherZone, WaterVolume, GrassVolume, Vegetation, Temperature, Gravity, CameraTrigger)
   - Combat (Health, Damage, DamageResistance, Resource)
   - Gameplay (QuestState, HUDWidget, CinematicCamera, Footstep, Poolable, SaveData [with PersistenceTier + tags], SaveLoadMenu, Interactable, Pickup, Inventory, Timer, Audio, Tag, SpawnPoint, Script, LOD, DialogueBoxComponent, PerFrameColliderComponentComponent, GameOver, ParallaxMachine)
@@ -338,10 +338,10 @@ Alternative render path: geometry-only pass writes triangle ID + instance ID to 
 - `LookAtIKComponent` - Head/neck look-at IK with max rotation and smoothing
 - `InteractionIKComponent` - Hand IK toward nearby interactables
 - `BoneAttachmentComponent` - Parent entity transforms to skeleton bones with local offsets
-- `RagdollComponent` - Per-bone physics joints with death auto-activation and animation blending
+- `RagdollComponent` - **Not yet built.** Per-bone joint definitions, death auto-activation and a blend weight are authored and saved, but no per-bone physics bodies are created
 - `AnimationRecorderComponent` - Captures bone transforms over time to create new animation clips
 
-**Pipeline**: FBX/glTF import (Assimp) -> Skeleton + animation clips -> AnimatorComponent state machine -> blend tree evaluation -> IK solvers (two-bone, look-at) -> bone attachment updates -> ragdoll (on death). The editor calls the skeletal animator update directly (not via RenderSystem::Update) to decouple animation timing from rendering.
+**Pipeline**: FBX/glTF import (Assimp) -> Skeleton + animation clips -> AnimatorComponent state machine -> blend tree evaluation -> IK solvers (two-bone, look-at) -> bone attachment updates. (Ragdoll on death is not yet built.) The editor calls the skeletal animator update directly (not via RenderSystem::Update) to decouple animation timing from rendering.
 
 ### Effects System
 
@@ -377,10 +377,9 @@ Alternative render path: geometry-only pass writes triangle ID + instance ID to 
 - Entity ID stored in Jolt `mUserData` for O(1) reverse lookup
 - Update loop: SyncECSToJolt → SyncJointsToJolt → ApplyGravityZones → PhysicsSystem::Update → SyncJoltToECS → ProcessContactEvents
 
-**RagdollComponent**:
-- Per-bone joint definitions mapped to skeleton
-- Blend weight for animation-to-ragdoll transition
-- Auto-settle detection
+**RagdollComponent** (**not yet built**):
+- Per-bone joint definitions mapped to skeleton are authored and saved
+- No per-bone bodies are created, so an activated ragdoll does not fall
 
 **Additional features**:
 - Auto-generated box colliders on model import

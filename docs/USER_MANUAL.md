@@ -2235,6 +2235,8 @@ Analytic two-bone IK (law of cosines) for arms and legs. Solves the joint angle 
 
 #### RagdollComponent
 
+> **Not yet built.** The component and its settings exist and are saved, but no per-bone physics bodies are created, so an activated ragdoll does not fall. It is planned after the first release.
+
 Maps physics joints to skeleton bones for ragdoll simulation. Each `BoneJoint` entry defines a bone, joint type, mass, collider dimensions, and angular limits.
 
 | Field | Type | Default | Description |

@@ -1000,6 +1000,12 @@ void EditorLayer::DrawRagdollComponent(ECS::Entity entity) {
 
         DrawComponentHelp("ragdoll", m_World, entity);
 
+        // Relabelled for the first release (Marty, 2026-09-28): the per-bone
+        // loop in RagdollSystem is comments, so nothing here makes a body fall.
+        ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "Not yet built");
+        ImGui::TextWrapped("%s", "The component and its settings exist, but no per-bone physics bodies are created, so an activated ragdoll does not fall.");
+        ImGui::Spacing();
+
         InspectorUndo::Checkbox(m_UndoRedo, "Enabled##Ragdoll", &r->enabled);
         InspectorUndo::Checkbox(m_UndoRedo, "Auto Activate On Death", &r->autoActivateOnDeath);
         ImGui::SetItemTooltip("Automatically activate ragdoll when HealthComponent reaches 0");
