@@ -2907,7 +2907,7 @@ void EditorLayer::DrawSettingsSection_RayTracing() {
         if (UI::SectionHeader("Ray Tracing")) {
             ImGui::TextDisabled("Hardware-accelerated shadows, reflections, AO, GI, path tracing");
             ImGui::TextColored(ImVec4(0.82f, 0.67f, 0.2f, 1.0f), "Experimental");
-            ImGui::SetItemTooltip("Ray tracing and path tracing are experimental in 0.9.7.\nExpect visual glitches and performance swings while they stabilize.");
+            ImGui::SetItemTooltip("Ray tracing and path tracing are experimental in " ENJIN_VERSION_STRING ".\nExpect visual glitches and performance swings while they stabilize.");
             if (rtSupported) {
                 ImGui::TextColored(ImVec4(0.3f, 0.9f, 0.3f, 1.0f), "Supported");
             } else {

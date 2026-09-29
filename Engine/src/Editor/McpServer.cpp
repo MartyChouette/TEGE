@@ -1,4 +1,5 @@
 #include "Enjin/Editor/McpServer.h"
+#include "Enjin/Core/Version.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/Scene/SceneSerializer.h"
@@ -362,7 +363,7 @@ std::string McpServer::HandleJsonRpc(const std::string& body) {
         return result(json{
             {"protocolVersion", "2024-11-05"},
             {"capabilities", {{"tools", json::object()}}},
-            {"serverInfo", {{"name", "TEGE Editor"}, {"version", "0.9.7"}}},
+            {"serverInfo", {{"name", "TEGE Editor"}, {"version", ENJIN_VERSION_STRING}}},
         });
     }
     if (method == "ping") return result(json::object());

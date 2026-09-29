@@ -1,4 +1,5 @@
 #include "Enjin/Editor/PlayMode.h"
+#include "Enjin/Core/Version.h"
 #include "Enjin/ECS/CameraZones.h"
 #include "Enjin/ECS/EntityEventBridge.h"
 #include "Enjin/ECS/Timers.h"
@@ -371,7 +372,7 @@ void PlayMode::Play() {
     // no vertex data - replays are shared alongside the project, not instead of it.
     if (!m_Replaying) {
         m_ActiveRecording = Gameplay::ReplayData{};
-        m_ActiveRecording.engineVersion = "0.9.7";
+        m_ActiveRecording.engineVersion = ENJIN_VERSION_STRING;
         if (m_SceneManager) {
             const auto& gfs = m_SceneManager->GetGameFrameSettings();
             m_ActiveRecording.simFixedTimestep = gfs.fixedTimestep;
