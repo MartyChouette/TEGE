@@ -112,6 +112,7 @@ extern char** environ;
 #include "Enjin/Renderer/PostProcessing.h"
 #include "Enjin/Platform/Input.h"
 #include "Enjin/Platform/FileDialog.h"
+#include "Enjin/Assets/HeightmapImage.h"
 #include "Enjin/GUI/UIFontRegistry.h"
 #include "Enjin/ECS/Components/GaussianSplat.h"
 #include "Enjin/Assets/Prefab.h"
@@ -2975,6 +2976,50 @@ void EditorLayer::DrawTerrainComponent(ECS::Entity entity) {
         if (terrain->heightmap.empty()) {
             if (ImGui::Button("Initialize Flat")) {
                 terrain->InitializeFlat(0.0f);
+            }
+        }
+
+        // Heightmap in and out. A terrain could only be shaped with the brush
+        // here; now one made in another tool comes in, and this one goes out.
+        // Black is Min Height, white is Max Height. The edit is on undo through
+        // the inspector's snapshot of the entity.
+        {
+            std::string importPath;
+            if (ImGui::Button("Import Heightmap...") && FileDialog::IsAvailable()) {
+                importPath = FileDialog::OpenFile("Import Heightmap",
+                    {{ "Images", "*.png;*.jpg;*.jpeg;*.bmp;*.tga;*.psd" }});
+            }
+            ImGui::SetItemTooltip("A greyscale image, 8 or 16 bit: black = Min Height, white = Max Height.\n"
+                                  "The grid takes the image's size, up to 512. Drop an image here too.");
+            if (ImGui::BeginDragDropTarget()) {
+                if (const ImGuiPayload* pl = ImGui::AcceptDragDropPayload("ASSET_PATH"))
+                    importPath = static_cast<const char*>(pl->Data);
+                ImGui::EndDragDropTarget();
+            }
+            if (!importPath.empty()) {
+                std::string err;
+                if (Assets::ImportHeightmapImage(*terrain, importPath, err)) {
+                    MarkDirty();
+                    ShowNotification("Heightmap imported (" + std::to_string(terrain->gridWidth) + " x " +
+                                     std::to_string(terrain->gridHeight) + ")", NotificationType::Success);
+                } else {
+                    ShowNotification("Heightmap import failed: " + err, NotificationType::Error);
+                }
+            }
+            if (!terrain->heightmap.empty()) {
+                ImGui::SameLine();
+                if (ImGui::Button("Export Heightmap...") && FileDialog::IsAvailable()) {
+                    const std::string out = FileDialog::SaveFile("Export Heightmap",
+                        {{ "PNG (16-bit)", "*.png" }}, "", "heightmap.png");
+                    if (!out.empty()) {
+                        std::string err;
+                        if (Assets::ExportHeightmapImage(*terrain, out, err))
+                            ShowNotification("Heightmap exported: " + out, NotificationType::Success);
+                        else
+                            ShowNotification("Heightmap export failed: " + err, NotificationType::Error);
+                    }
+                }
+                ImGui::SetItemTooltip("A 16-bit greyscale PNG of this terrain's heights.");
             }
         }
 
