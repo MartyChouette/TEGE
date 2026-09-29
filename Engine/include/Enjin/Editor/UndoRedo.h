@@ -40,6 +40,11 @@ public:
 
     /// Merge another command into this one
     virtual void MergeWith(const ICommand* other) { (void)other; }
+
+    /// One inspector field's old and new value (InspectorUndo's commands).
+    /// Undoing and redoing one only writes that field back, which is what lets
+    /// the inspector step around it to see the state underneath.
+    virtual bool IsPropertyEdit() const { return false; }
 };
 
 // ============================================================================
@@ -615,6 +620,18 @@ public:
     /// Get redo stack size
     u32 GetRedoCount() const { return static_cast<u32>(m_RedoStack.size()); }
 
+    /// Moves on every Execute, Undo, Redo and Clear. The undo COUNT cannot say
+    /// whether a command landed: a merged command leaves it unchanged, and so
+    /// does every command once the history is full.
+    u64 GetChangeSerial() const { return m_ChangeSerial; }
+    /// Whether the last Execute merged into the command below it
+    bool LastExecuteMerged() const { return m_LastExecuteMerged; }
+    /// The command Undo would undo next, or null
+    ICommand* PeekUndo() const { return m_UndoStack.empty() ? nullptr : m_UndoStack.back().get(); }
+    /// Put an already-applied command UNDER the newest one, without running it.
+    /// Used when an edit is found to have happened before the command on top.
+    void InsertBelowTop(std::unique_ptr<ICommand> command);
+
     // --- History enumeration (History panel) ---
     /// Description of undo stack entry i, i=0 is the OLDEST action
     const char* GetUndoDescriptionAt(u32 i) const {
@@ -658,6 +675,8 @@ private:
     std::vector<std::unique_ptr<ICommand>> m_UndoStack;
     std::vector<std::unique_ptr<ICommand>> m_RedoStack;
     u32 m_MaxHistorySize;
+    u64 m_ChangeSerial = 0;
+    bool m_LastExecuteMerged = false;
     bool m_MergeEnabled = true;
 
     // Compound command support

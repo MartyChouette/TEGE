@@ -2087,7 +2087,7 @@ void EditorLayer::DrawSettingsWindow() {
             const bool sceneUndoEligible = !m_PlayMode.IsPlaying() && m_QualityPreviewTier < 0 && m_RenderSystem;
             if (sceneUndoEligible && !m_SceneSettingsUndoEditing) {
                 m_SceneSettingsUndoBaseline = CaptureSceneSettingsSnapshot();
-                m_SceneSettingsUndoStackAtStart = m_UndoRedo.GetUndoCount();
+                m_SceneSettingsUndoSerialAtStart = m_UndoRedo.GetChangeSerial();
             }
 
             // "Use Project Defaults" toggle at the top
@@ -2359,7 +2359,7 @@ void EditorLayer::DrawSettingsWindow() {
                 } else if (m_SceneSettingsUndoEditing) {
                     m_SceneSettingsUndoEditing = false;
                     // A wrapped widget that pushed its own command owns the change
-                    if (m_UndoRedo.GetUndoCount() == m_SceneSettingsUndoStackAtStart) {
+                    if (m_UndoRedo.GetChangeSerial() == m_SceneSettingsUndoSerialAtStart) {
                         std::string after = CaptureSceneSettingsSnapshot();
                         if (after != m_SceneSettingsUndoBaseline) {
                             m_UndoRedo.Execute(std::make_unique<SceneSettingsEditCommand>(

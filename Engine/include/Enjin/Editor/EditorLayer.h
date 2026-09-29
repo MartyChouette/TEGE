@@ -1922,7 +1922,7 @@ private:
     void ApplySceneSettingsSnapshot(const std::string& json);
     bool m_SceneSettingsUndoEditing = false;
     std::string m_SceneSettingsUndoBaseline;
-    u32 m_SceneSettingsUndoStackAtStart = 0;
+    u64 m_SceneSettingsUndoSerialAtStart = 0;
     void WriteSceneWorldTime(Renderer::SceneRenderSettings& settings) const;
     // What world time took over, as the scene had it. World time rewrites the
     // first directional light (rotation, colour, intensity) and the ambient
@@ -2088,7 +2088,10 @@ private:
     ECS::Entity m_PropUndoBaselineEntity = ECS::INVALID_ENTITY;
     i32 m_PropUndoRefreshTick = 0;   // frames since last baseline refresh (heavy-entity throttle)
     std::string m_PropUndoBaseline;
-    u32 m_PropUndoStackAtSessionStart = 0;
+    u64 m_PropUndoSerialAtSessionStart = 0;   // UndoRedoManager::GetChangeSerial
+    // A wrapped widget's command landed mid-session: record the raw edits made
+    // before it as their own step under it, and restart the session after it
+    void FoldLandedCommandIntoPropSession();
 
     // History panel: lists the undo/redo stacks, click any entry to jump
     bool m_ShowHistoryPanel = false;

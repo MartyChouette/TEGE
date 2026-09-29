@@ -580,6 +580,7 @@ void UndoRedoManager::Execute(std::unique_ptr<ICommand> command) {
 
     // If building compound, add to it instead
     if (m_CompoundCommand) {
+        ++m_ChangeSerial;
         command->Execute();
         m_CompoundCommand->AddCommand(std::move(command));
         return;
@@ -589,6 +590,7 @@ void UndoRedoManager::Execute(std::unique_ptr<ICommand> command) {
     command->Execute();
 
     // Add to undo stack
+    ++m_ChangeSerial;
     AddToUndoStack(std::move(command));
 
     // Clear redo stack (new action invalidates redo history)
@@ -599,10 +601,12 @@ void UndoRedoManager::Execute(std::unique_ptr<ICommand> command) {
 
 void UndoRedoManager::AddToUndoStack(std::unique_ptr<ICommand> command) {
     // Try to merge with last command if enabled
+    m_LastExecuteMerged = false;
     if (m_MergeEnabled && !m_UndoStack.empty()) {
         auto& last = m_UndoStack.back();
         if (last->CanMergeWith(command.get())) {
             last->MergeWith(command.get());
+            m_LastExecuteMerged = true;
             return;
         }
     }
@@ -622,6 +626,7 @@ void UndoRedoManager::Undo() {
     auto cmd = std::move(m_UndoStack.back());
     m_UndoStack.pop_back();
 
+    ++m_ChangeSerial;
     cmd->Undo();
 
     m_RedoStack.push_back(std::move(cmd));
@@ -636,11 +641,21 @@ void UndoRedoManager::Redo() {
     auto cmd = std::move(m_RedoStack.back());
     m_RedoStack.pop_back();
 
+    ++m_ChangeSerial;
     cmd->Execute();
 
     m_UndoStack.push_back(std::move(cmd));
 
     ENJIN_LOG_INFO(Editor, "Redo: %s", m_UndoStack.back()->GetDescription());
+    NotifyStateChanged();
+}
+
+void UndoRedoManager::InsertBelowTop(std::unique_ptr<ICommand> command) {
+    if (!command) return;
+    const auto at = m_UndoStack.empty() ? m_UndoStack.end() : m_UndoStack.end() - 1;
+    m_UndoStack.insert(at, std::move(command));
+    while (m_UndoStack.size() > m_MaxHistorySize) m_UndoStack.erase(m_UndoStack.begin());
+    ++m_ChangeSerial;
     NotifyStateChanged();
 }
 
@@ -655,6 +670,7 @@ const char* UndoRedoManager::GetRedoDescription() const {
 }
 
 void UndoRedoManager::Clear() {
+    ++m_ChangeSerial;
     m_UndoStack.clear();
     m_RedoStack.clear();
     m_CompoundCommand.reset();

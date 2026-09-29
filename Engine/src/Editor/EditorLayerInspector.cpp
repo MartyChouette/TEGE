@@ -1646,14 +1646,14 @@ void EditorLayer::DrawInspectorPanel() {
             // (Marty, 2026-08-07: "selecting an FBX slows its anim fps").
             const bool needRefresh =
                 m_PropUndoBaselineEntity != m_PrimarySelected ||
-                m_PropUndoStackAtSessionStart != m_UndoRedo.GetUndoCount() ||
+                m_PropUndoSerialAtSessionStart != m_UndoRedo.GetChangeSerial() ||
                 (++m_PropUndoRefreshTick >= 30);
             if (needRefresh) {
                 m_PropUndoRefreshTick = 0;
                 m_PropUndoBaseline = Scene::SceneSerializer::SerializeEntityToString(
                     m_World, m_PrimarySelected, /*includeVertexData=*/false);
                 m_PropUndoBaselineEntity = m_PrimarySelected;
-                m_PropUndoStackAtSessionStart = m_UndoRedo.GetUndoCount();
+                m_PropUndoSerialAtSessionStart = m_UndoRedo.GetChangeSerial();
             }
         }
 
@@ -5473,20 +5473,23 @@ void EditorLayer::DrawInspectorPanel() {
         if (propUndoEligible && m_PropUndoBaselineEntity == m_PrimarySelected &&
             m_World->IsValid(m_PrimarySelected)) {
             const bool anyActive = ImGui::IsAnyItemActive();
+            // Another command landed during the session (a wrapped widget, Add
+            // or Remove Component, a transform command). It owns its change;
+            // what the session had before it is kept, and the session restarts.
+            // This used to discard the whole session, so a raw edit made in
+            // the same session as a wrapped one was never recorded at all.
+            if (m_PropUndoEditing && m_UndoRedo.GetChangeSerial() != m_PropUndoSerialAtSessionStart) {
+                FoldLandedCommandIntoPropSession();
+            }
             if (anyActive) {
                 m_PropUndoEditing = true;
             } else if (m_PropUndoEditing) {
                 m_PropUndoEditing = false;
-                // If another command landed during the session (Add/Remove
-                // Component, a bespoke transform command), that command owns
-                // the change — don't double-record it.
-                if (m_UndoRedo.GetUndoCount() == m_PropUndoStackAtSessionStart) {
-                    std::string after = Scene::SceneSerializer::SerializeEntityToString(
-                        m_World, m_PrimarySelected, /*includeVertexData=*/false);
-                    if (after != m_PropUndoBaseline) {
-                        m_UndoRedo.Execute(std::make_unique<EntityEditCommand>(
-                            m_World, m_PrimarySelected, m_PropUndoBaseline, std::move(after)));
-                    }
+                std::string after = Scene::SceneSerializer::SerializeEntityToString(
+                    m_World, m_PrimarySelected, /*includeVertexData=*/false);
+                if (after != m_PropUndoBaseline) {
+                    m_UndoRedo.Execute(std::make_unique<EntityEditCommand>(
+                        m_World, m_PrimarySelected, m_PropUndoBaseline, std::move(after)));
                 }
             }
         } else {
@@ -6222,6 +6225,30 @@ void EditorLayer::DrawQuickSetup(ECS::Entity entity) {
     }
 }
 
+
+void EditorLayer::FoldLandedCommandIntoPropSession() {
+    const ECS::Entity e = m_PrimarySelected;
+    if (!m_World || !m_World->IsValid(e)) return;
+
+    // Exactly one inspector property command, and not merged into an older
+    // one: undoing and redoing it only writes that one field, so stepping
+    // around it shows the entity as it was just before it landed.
+    ICommand* top = m_UndoRedo.PeekUndo();
+    const bool one = m_UndoRedo.GetChangeSerial() == m_PropUndoSerialAtSessionStart + 1 &&
+                     !m_UndoRedo.LastExecuteMerged();
+    if (one && top && top->IsPropertyEdit()) {
+        m_UndoRedo.Undo();
+        std::string before = Scene::SceneSerializer::SerializeEntityToString(m_World, e, false);
+        m_UndoRedo.Redo();
+        if (before != m_PropUndoBaseline) {
+            auto raw = std::make_unique<EntityEditCommand>(m_World, e, m_PropUndoBaseline, std::move(before));
+            raw->Execute();   // the edit is live: consume the first-Execute no-op
+            m_UndoRedo.InsertBelowTop(std::move(raw));
+        }
+    }
+    m_PropUndoBaseline = Scene::SceneSerializer::SerializeEntityToString(m_World, e, false);
+    m_PropUndoSerialAtSessionStart = m_UndoRedo.GetChangeSerial();
+}
 
 } // namespace Editor
 } // namespace Enjin

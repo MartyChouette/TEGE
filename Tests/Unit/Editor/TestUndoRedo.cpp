@@ -4,6 +4,7 @@
 #include "Enjin/ECS/Components/Light.h"
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/Editor/UndoRedo.h"
+#include "Enjin/Editor/InspectorUndo.h"
 #include "Enjin/Scene/SceneSerializer.h"
 #include "Enjin/Renderer/SceneRenderSettings.h"
 #include <nlohmann/json.hpp>
@@ -67,6 +68,59 @@ ENJIN_TEST(SceneSettingsEdit, test_scene_settings_edit_undo_redo_apply_snapshots
     ENJIN_EXPECT_TRUE(applied[1] == afterJson);
     ENJIN_EXPECT_FLOAT_EQ(Renderer::DeserializeRenderSettings(nlohmann::json::parse(applied[0])).bloomIntensity,
                           before.bloomIntensity);
+}
+
+ENJIN_TEST(UndoManager, test_undo_manager_insert_below_top_keeps_edit_order) {
+    // Arrange: a raw edit (x: 0 -> 1) found after a wrapped command (y: 0 -> 5)
+    // already landed on top of it. The raw one goes UNDER, so undo walks back
+    // y first and then x, the order they happened in.
+    World w;
+    Entity e = w.CreateEntity();
+    w.AddComponent<TransformComponent>(e);
+    const std::string base = Scene::SceneSerializer::SerializeEntityToString(&w, e, false);
+    w.GetComponent<TransformComponent>(e)->position.x = 1.0f;
+    const std::string rawAfter = Scene::SceneSerializer::SerializeEntityToString(&w, e, false);
+    UndoRedoManager mgr;
+    mgr.Execute(std::make_unique<PropertyEditCommand<f32>>("Y", 0.0f, 5.0f,
+        [&](const f32& v) { w.GetComponent<TransformComponent>(e)->position.y = v; }));
+    const u64 serialBefore = mgr.GetChangeSerial();
+
+    // Act
+    auto raw = std::make_unique<EntityEditCommand>(&w, e, base, rawAfter);
+    raw->Execute();   // consume the first-Execute no-op, as the inspector does
+    mgr.InsertBelowTop(std::move(raw));
+    mgr.Undo();
+    const f32 xAfterOne = w.GetComponent<TransformComponent>(e)->position.x;
+    const f32 yAfterOne = w.GetComponent<TransformComponent>(e)->position.y;
+    mgr.Undo();
+    const f32 xAfterTwo = w.GetComponent<TransformComponent>(e)->position.x;
+    mgr.Redo();
+    mgr.Redo();
+
+    // Assert
+    ENJIN_EXPECT_TRUE(mgr.GetChangeSerial() > serialBefore);
+    ENJIN_EXPECT_FLOAT_EQ(yAfterOne, 0.0f);
+    ENJIN_EXPECT_FLOAT_EQ(xAfterOne, 1.0f);
+    ENJIN_EXPECT_FLOAT_EQ(xAfterTwo, 0.0f);
+    ENJIN_EXPECT_FLOAT_EQ(w.GetComponent<TransformComponent>(e)->position.x, 1.0f);
+    ENJIN_EXPECT_FLOAT_EQ(w.GetComponent<TransformComponent>(e)->position.y, 5.0f);
+}
+
+ENJIN_TEST(UndoManager, test_undo_manager_merged_execute_still_moves_serial) {
+    // Arrange: two edits of one field merge into one command, so the undo
+    // COUNT stays at 1 and cannot tell the second one landed
+    f32 v = 0.0f;
+    UndoRedoManager mgr;
+    mgr.Execute(std::make_unique<PropertyEditCommand<f32>>("V", 0.0f, 1.0f, [&](const f32& x) { v = x; }));
+    const u64 s1 = mgr.GetChangeSerial();
+
+    // Act
+    mgr.Execute(std::make_unique<PropertyEditCommand<f32>>("V", 1.0f, 2.0f, [&](const f32& x) { v = x; }));
+
+    // Assert
+    ENJIN_EXPECT_EQ(mgr.GetUndoCount(), 1u);
+    ENJIN_EXPECT_TRUE(mgr.LastExecuteMerged());
+    ENJIN_EXPECT_TRUE(mgr.GetChangeSerial() == s1 + 1);
 }
 
 ENJIN_TEST(EntityEdit, UndoRemovesComponentAddedDuringEdit) {

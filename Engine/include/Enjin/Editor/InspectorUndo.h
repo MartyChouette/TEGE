@@ -27,6 +27,7 @@ public:
     void Execute() override { m_Setter(m_NewValue); }
     void Undo() override { m_Setter(m_OldValue); }
     const char* GetDescription() const override { return m_Desc; }
+    bool IsPropertyEdit() const override { return true; }
 
     bool CanMergeWith(const ICommand* other) const override {
         auto* o = dynamic_cast<const PropertyEditCommand<T>*>(other);
