@@ -111,6 +111,7 @@ namespace ECS { struct HandIKComponent; struct AnimatorComponent; }
 #include <algorithm>
 #include <chrono>
 #include <unordered_map>
+#include <array>
 #include <unordered_set>
 #include <memory>
 #include <functional>
@@ -241,6 +242,7 @@ struct EntityRenderData {
     bool hasMatcap = false;                     // matcap texture bound (drives ObjectData.matcapBlend)
     bool hasScrollRefl = false;                 // scrolling-reflection texture bound
     bool hasHeight = false;                     // height map bound (drives parallax flag bit 10)
+    bool hasSplat = false;                      // terrain layers bound in the base/matcap/scroll/height slots (bit 9)
     // Skinned meshes cannot share the frame's object bind group, because
     // binding 1 is their own bone buffer. Cached here and rebuilt only when the
     // shared object buffer is reallocated, rather than created and destroyed
@@ -1144,6 +1146,15 @@ public:
     // Mark the material SSBO as dirty so it will be fully rebuilt next frame.
     // Call when material properties change outside of entity add/remove (e.g., inspector edits, scripts).
     void MarkMaterialsDirty() { m_MaterialSSBODirty = true; }
+
+    // Terrain splat layers (band 700). BuildMaterialSSBO resolves a terrain's
+    // four layer textures to bindless indices and writes its tile scales into
+    // the entity's material row (the SSS slots, SSS forced off); the draw
+    // builders then call ApplyTerrainSplat, which claims surfaceParam1 and packs
+    // the four indices 16 bits each into surfaceParam2 and 3. False, and the
+    // params untouched, for anything that is not a textured terrain.
+    bool ApplyTerrainSplat(Entity entity, f32& surfaceParam1, f32& surfaceParam2, f32& surfaceParam3) const;
+    std::unordered_map<u32, std::array<u32, 4>> m_TerrainSplatIndices;   // by EntityIndex
 
     // Rebuild this entity's vertex/index buffers because its MeshComponent data
     // changed underneath them. Queued, never done here: building buffers on the

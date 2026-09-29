@@ -803,7 +803,20 @@ ECS::MeshComponent MeshFactory::CreateTerrain(const ECS::TerrainComponent& terra
             // lands it reads from there, or this transport comes back together
             // WITH the consumer that needs it. Until then, shipping the weights
             // into a channel that means "tint" is the bug.
-            const Math::Vector4 color(1.0f, 1.0f, 1.0f, 1.0f);
+            //
+            // UPDATE: the consumer exists now. With a layer texture set, the
+            // draw takes surfaceParam1 band 700, where triangle.frag reads
+            // vertex colour as the four weights and skips the tint multiply;
+            // without one the colour stays white and the tint is harmless.
+            Math::Vector4 color(1.0f, 1.0f, 1.0f, 1.0f);
+            if (terrain.HasSplatTextures()) {
+                const usize si = (static_cast<usize>(z) * w + x) * 4;
+                if (si + 3 < terrain.splatmap.size())
+                    color = Math::Vector4(terrain.splatmap[si], terrain.splatmap[si + 1],
+                                          terrain.splatmap[si + 2], terrain.splatmap[si + 3]);
+                else
+                    color = Math::Vector4(1.0f, 0.0f, 0.0f, 0.0f);   // no paint yet: layer 0
+            }
 
             ECS::MeshComponent::Vertex vert;
             vert.position = pos;

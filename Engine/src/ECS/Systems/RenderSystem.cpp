@@ -1457,6 +1457,20 @@ bool RenderSystem::AllowIKFor(Entity entity) const {
 // Adaptive quality, for both backends. It was declared inside the Vulkan half,
 // so the web player had no frame-rate governor at all: a browser on a weak GPU
 // ran every scene at the authored quality however slow that was.
+bool RenderSystem::ApplyTerrainSplat(Entity entity, f32& p1, f32& p2, f32& p3) const {
+    auto it = m_TerrainSplatIndices.find(EntityIndex(entity));
+    if (it == m_TerrainSplatIndices.end()) return false;
+    const TerrainComponent* terr = m_World ? m_World->GetComponent<TerrainComponent>(entity) : nullptr;
+    if (!terr || !terr->HasSplatTextures()) return false;
+    const auto& idx = it->second;
+    const u32 a = (idx[0] & 0xFFFFu) | ((idx[1] & 0xFFFFu) << 16);
+    const u32 b = (idx[2] & 0xFFFFu) | ((idx[3] & 0xFFFFu) << 16);
+    p1 = ECS::MaterialGPU::SURFACE_PARAM1_TERRAIN_SPLAT;
+    std::memcpy(&p2, &a, sizeof(f32));
+    std::memcpy(&p3, &b, sizeof(f32));
+    return true;
+}
+
 void RenderSystem::TickAdaptiveQuality(f32 deltaTime) {
     if (m_AdaptiveQualityEnabled && deltaTime > 0.0f)
         m_AdaptiveQuality.Update(deltaTime, 1.0f / deltaTime);
@@ -1622,7 +1636,7 @@ static_assert(sizeof(WebLightingUBO) == 2016,
 struct WebObjectDataUBO {
     ENJIN_WEB_OBJECTDATA_FIELDS(ENJIN_WEB_OBJECTDATA_MEMBER)
 };
-static_assert(sizeof(WebObjectDataUBO) == 160,
+static_assert(sizeof(WebObjectDataUBO) == 176,
               "WebObjectDataUBO changed size. Add the field to the list in "
               "WebObjectDataLayout.h (the shaders follow automatically), keep the "
               "struct 16-byte aligned, and move this number.");
@@ -5634,6 +5648,26 @@ void RenderSystem::Update(f32 deltaTime) {
                 // that needs to know is further down.
                 rd.hasHeight = heightT.IsValid();
 
+                // Terrain splat layers (bit 9) ride four slots a terrain does not
+                // otherwise use: base colour, matcap, scroll reflection, height.
+                // Those three effects are switched off for it below, so nothing
+                // reads a layer as what the slot normally holds.
+                const TerrainComponent* splatTerrain = m_World->GetComponent<TerrainComponent>(entity);
+                rd.hasSplat = splatTerrain && splatTerrain->HasSplatTextures();
+                if (rd.hasSplat) {
+                    auto layerTex = [&](u32 l) {
+                        auto t = WebGetOrLoadTexture(splatTerrain->layers[l].texturePath);
+                        return t.IsValid() ? t : m_WebDefaultWhiteTex;
+                    };
+                    baseColorTex = layerTex(0);
+                    matcapT = layerTex(1);
+                    scrollT = layerTex(2);
+                    heightT = layerTex(3);
+                    rd.hasMatcap = false;
+                    rd.hasScrollRefl = false;
+                    rd.hasHeight = false;
+                }
+
                 // Only create custom bind group if at least one texture loaded
                 if (baseColorTex.IsValid() || normalTex.IsValid() || mrTex.IsValid() ||
                     matcapT.IsValid() || scrollT.IsValid() || heightT.IsValid() || emissiveT.IsValid()) {
@@ -5727,6 +5761,19 @@ void RenderSystem::Update(f32 deltaTime) {
             // vertex shader height-weights the sway so the trunk stays planted. Without
             // this the imported trees rendered but never moved (reported 2026-09-02).
             if (m_CachedVegetationStorage && m_CachedVegetationStorage->Has(entity)) obj.flags |= (1 << 4);
+            // Terrain splat layers: bit 9 (free on web; desktop uses band 700,
+            // since its flags word has no bits left) and the four tile scales
+            if (rd.hasSplat) {
+                if (const TerrainComponent* terr = m_World->GetComponent<TerrainComponent>(entity)) {
+                    obj.flags |= (1 << 9);
+                    obj.splatTile0 = terr->layers[0].tileScale;
+                    obj.splatTile1 = terr->layers[1].tileScale;
+                    obj.splatTile2 = terr->layers[2].tileScale;
+                    obj.splatTile3 = terr->layers[3].tileScale;
+                    obj.matcapBlend = 0.0f;
+                    obj.scrollReflStrength = 0.0f;
+                }
+            }
             // SDF text (bit 6): base-color alpha is a distance field; the shader
             // thresholds it instead of rendering the raw field as a dark box.
             if (mat && mat->sdfText) obj.flags |= (1 << 6);
@@ -11963,6 +12010,10 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
 
 
             // Set wind sway flag for vegetation entities
+            // Terrain splat layers claim band 700 over whatever the material chose
+            ApplyTerrainSplat(entity, pushConstants.surfaceParam1, pushConstants.surfaceParam2,
+                              pushConstants.surfaceParam3);
+
             if (m_World->HasComponent<VegetationComponent>(entity)) {
                 pushConstants.flags |= (1 << 4); // FLAG_WIND_SWAY
             }
@@ -12666,6 +12717,10 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
                 pushConstants.flags = 0;
                 pushConstants.parallaxScale = 0.0f;
             }
+
+            // Terrain splat layers claim band 700 over whatever the material chose
+            ApplyTerrainSplat(entity, pushConstants.surfaceParam1, pushConstants.surfaceParam2,
+                              pushConstants.surfaceParam3);
 
             if (m_World->HasComponent<VegetationComponent>(entity)) {
                 pushConstants.flags |= (1 << 4);
@@ -16291,6 +16346,27 @@ void RenderSystem::BuildMaterialSSBO() {
             }
         }
 
+        // Terrain splat layers: resolve the four layer textures and carry the tile
+        // scales in this row's SSS slots (SSS off: a terrain has none to lose).
+        if (TerrainComponent* terr = m_World->GetComponent<TerrainComponent>(entity);
+            terr && terr->HasSplatTextures()) {
+            std::array<u32, 4> idx{};
+            f32 tile[4];
+            for (u32 l = 0; l < 4; ++l) {
+                Renderer::Texture* tex = nullptr;
+                if (!terr->layers[l].texturePath.empty()) {
+                    auto t = GetOrLoadTexture(terr->layers[l].texturePath);
+                    if (t && t->IsValid()) tex = t.get();
+                }
+                idx[l] = lookupBindless(tex, 0);
+                tile[l] = terr->layers[l].tileScale > 0.01f ? terr->layers[l].tileScale : 0.01f;
+            }
+            materialGPU.sssIntensity = 0.0f;
+            materialGPU.sssColor = Math::Vector3(tile[0], tile[1], tile[2]);
+            materialGPU.sssRadius = tile[3];
+            m_TerrainSplatIndices[EntityIndex(entity)] = idx;
+        }
+
         // Write to aligned offset in staging buffer
         usize offset = static_cast<usize>(m_MaterialSSBOStride) * index;
         std::memcpy(m_MaterialSSBOData.data() + offset, &materialGPU, sizeof(MaterialGPU));
@@ -17276,6 +17352,10 @@ void RenderSystem::RenderEntity(Entity entity) {
             pushConstants.flags |= (1 << 16); // HAS_BASE_COLOR_TEXTURE
         }
     }
+
+    // Terrain splat layers claim band 700 over whatever the material chose
+    ApplyTerrainSplat(entity, pushConstants.surfaceParam1, pushConstants.surfaceParam2,
+                      pushConstants.surfaceParam3);
 
     // Set wind sway flag for vegetation entities
     VegetationComponent* vegComp = m_World->GetComponent<VegetationComponent>(entity);

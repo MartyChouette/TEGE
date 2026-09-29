@@ -2046,7 +2046,7 @@ A grid-based 3D heightmap terrain with multi-layer texture splatting. The terrai
 | `maxHeight` | f32 | 20.0 | Maximum terrain height. |
 | `heightmap` | vector\<f32\> | [] | Height values (`gridWidth * gridHeight`). |
 | `splatmap` | vector\<f32\> | [] | Texture blend weights (`gridWidth * gridHeight * 4`, RGBA per cell). |
-| `layers[0..3]` | TextureLayer | -- | Four texture layers, each with `texturePath` and `tileScale`. |
+| `layers[0..3]` | TextureLayer | -- | Four texture layers, each with `texturePath` and `tileScale` (world units per repeat of the texture). Once any layer has a texture the ground draws the layers blended by the splatmap, tinted by the material's base colour; with none it draws its material as before. Desktop and web. Paint the weights with the terrain brush's Paint mode, or let a Terrain Generator auto-splat them. |
 | `meshDirty` | bool | true | When true, the RenderSystem regenerates the terrain mesh. |
 
 **Methods:**

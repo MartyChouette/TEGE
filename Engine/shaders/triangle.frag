@@ -1412,6 +1412,32 @@ void main() {
         }
     }
 
+    // Band 700: terrain splat layers. Vertex colour holds the four layer
+    // weights (MeshFactory::CreateTerrain), surfaceParam2/3 the four bindless
+    // indices 16 bits each, and this material row's SSS slots the tile scales in
+    // world units per repeat. All four are sampled unconditionally: a branch on a
+    // per-fragment weight would take implicit-LOD samples in non-uniform control
+    // flow. The layers replace any base colour texture and are tinted by the base
+    // colour.
+    bool splatBand = (mat_surfaceParam1 >= 699.5 && mat_surfaceParam1 < 799.5);
+    if (splatBand) {
+        uint splatA = floatBitsToUint(mat_surfaceParam2);
+        uint splatB = floatBitsToUint(mat_surfaceParam3);
+        vec4 tile = max(vec4(materialData.matSSSColor, materialData.matSSSRadius), vec4(0.01));
+        vec2 wxz = fragWorldPos.xz;
+        vec3 l0 = texture(BTEX(splatA & 0xFFFFu), wxz / tile.x).rgb;
+        vec3 l1 = texture(BTEX(splatA >> 16), wxz / tile.y).rgb;
+        vec3 l2 = texture(BTEX(splatB & 0xFFFFu), wxz / tile.z).rgb;
+        vec3 l3 = texture(BTEX(splatB >> 16), wxz / tile.w).rgb;
+        vec4 w = max(fragVertColor, vec4(0.0));
+        float wsum = w.x + w.y + w.z + w.w;
+        w = (wsum > 1e-4) ? w / wsum : vec4(1.0, 0.0, 0.0, 0.0);
+        albedo = mat_baseColor * (l0 * w.x + l1 * w.y + l2 * w.z + l3 * w.w);
+        texAlpha = 1.0;
+    }
+    // Vertex alpha, except where vertex colour is splat weights
+    float vertAlpha = splatBand ? 1.0 : fragVertColor.a;
+
     // Sample metallic-roughness texture if available (bindless or fallback)
     // Palette-indexed: the base colour texture's red channel is an INDEX, and the
     // scene palette supplies the colour. Something else is busy rotating that
@@ -1478,7 +1504,8 @@ void main() {
 
     // Multiply with vertex color (baked shadows / per-vertex lighting)
     // Skip for water surfaces: vertex color G channel stores edge distance, not color
-    if ((mat_flags & FLAG_WATER_SURFACE) == 0) {
+    // Skip for terrain splats too: there the colour is the layer weights.
+    if ((mat_flags & FLAG_WATER_SURFACE) == 0 && !splatBand) {
         albedo *= fragVertColor.rgb;
     }
 
@@ -1490,7 +1517,7 @@ void main() {
         // Gamma correction
         result = pow(result, vec3(1.0 / 2.2));
         // Alpha handling
-        float alpha = mat_opacity * fragVertColor.a * texAlpha;
+        float alpha = mat_opacity * vertAlpha * texAlpha;
         int alphaMode = int(SPEC_ALPHA_MODE);   // adr-0008 phase 4: specialized, not bits 8-9
         if (alphaMode == 1) {
             if (alpha < mat_alphaCutoff) discard;
@@ -1501,7 +1528,7 @@ void main() {
         // and Mask both force to 1.0 two lines earlier, so the flag could never do
         // anything on the very materials it exists for.
         if ((mat_flags & FLAG_STIPPLE_TRANS) != 0) {
-            float stippleAlpha = mat_opacity * fragVertColor.a;
+            float stippleAlpha = mat_opacity * vertAlpha;
             if (stippleAlpha < 1.0) {
                 float threshold = bayerDither4x4(ivec2(gl_FragCoord.xy));
                 if (stippleAlpha < threshold) discard;   // survivors stay fully opaque
@@ -1898,7 +1925,10 @@ void main() {
     // Dithered gradient: quantize lighting into bands with dither transitions
     // Encoded in surfaceParam1 when > 1.0: surfaceParam1 = 100 + bands + pattern * 0.1
     bool isDitherGradient = false;
-    if ((mat_flags & FLAG_FLAT_SHADING) != 0 && mat_surfaceParam1 > 1.5) {
+    // Bounded to its own band: `> 1.5` alone read every higher band (elemental,
+    // noise, palette, lightmap, terrain splat) as a dither gradient on a
+    // flat-shaded material.
+    if ((mat_flags & FLAG_FLAT_SHADING) != 0 && mat_surfaceParam1 > 1.5 && mat_surfaceParam1 < 199.5) {
         isDitherGradient = true;
         float encoded = mat_surfaceParam1 - 100.0;
         float bands = floor(encoded);  // 2-8
@@ -2238,7 +2268,7 @@ void main() {
     }
 
     // Alpha handling
-    float alpha = mat_opacity * fragVertColor.a * texAlpha;
+    float alpha = mat_opacity * vertAlpha * texAlpha;
     int alphaMode = int(SPEC_ALPHA_MODE);   // adr-0008 phase 4: specialized, not bits 8-9
     if (alphaMode == 1) { // Mask mode
         if (alpha < mat_alphaCutoff) {
@@ -2252,7 +2282,7 @@ void main() {
     // and Mask both force to 1.0 two lines earlier, so the flag could never do
     // anything on the very materials it exists for.
     if ((mat_flags & FLAG_STIPPLE_TRANS) != 0) {
-        float stippleAlpha = mat_opacity * fragVertColor.a;
+        float stippleAlpha = mat_opacity * vertAlpha;
         if (stippleAlpha < 1.0) {
             float threshold = bayerDither4x4(ivec2(gl_FragCoord.xy));
             if (stippleAlpha < threshold) discard;   // survivors stay fully opaque

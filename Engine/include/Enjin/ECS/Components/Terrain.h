@@ -69,6 +69,14 @@ struct ENJIN_API TerrainComponent {
 
     bool HasHoles() const { return !holes.empty(); }
 
+    // Any layer with a texture. Only then does the mesh carry the splat
+    // weights (vertex colour) and the draw take band 700; a terrain with no
+    // layer textures draws with its material as before.
+    bool HasSplatTextures() const {
+        for (const auto& l : layers) if (!l.texturePath.empty()) return true;
+        return false;
+    }
+
     bool IsHole(u32 x, u32 z) const {
         if (holes.empty() || x >= gridWidth || z >= gridHeight) return false;
         return holes[static_cast<usize>(z) * gridWidth + x] != 0;

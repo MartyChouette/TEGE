@@ -483,12 +483,15 @@ struct alignas(16) MaterialGPU {
     //   400-499  procedural surface noise
     //   500-599  palette-indexed (+ the palette slot, so 503 is table 3)
     //   600-699  lightmapped / radiosity normal mapping
-    //   700-799  NEXT FREE
+    //   700-799  terrain splat layers (set per draw from TerrainComponent, not
+    //            from the material; see RenderSystem::ApplyTerrainSplat)
+    //   800-899  NEXT FREE
     //
     // A palette material has no water or artistic surface params to lose, which
     // is what makes the slot safe to claim.
     static constexpr f32 SURFACE_PARAM1_PALETTE_INDEXED = 500.0f;
     static constexpr f32 SURFACE_PARAM1_LIGHTMAPPED = 600.0f;
+    static constexpr f32 SURFACE_PARAM1_TERRAIN_SPLAT = 700.0f;
 };
 
 // Multi-material component for entities with sub-meshes.

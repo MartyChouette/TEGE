@@ -51,6 +51,11 @@
     X(f32,                       shoreWidth,         "f32",         {})       \
     X(f32,                       foamIntensity,      "f32",         {})       \
     X(f32,                       foamScale,          "f32",         {})       \
+    /* terrain splat layers (flag bit 9): world units per texture repeat */   \
+    X(f32,                       splatTile0,         "f32",         {})       \
+    X(f32,                       splatTile1,         "f32",         {})       \
+    X(f32,                       splatTile2,         "f32",         {})       \
+    X(f32,                       splatTile3,         "f32",         {})       \
     X(f32,                       layoutCanary,       "f32",                   \
       ENJIN_WEB_OBJECT_LAYOUT_CANARY)
 

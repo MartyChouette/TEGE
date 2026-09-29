@@ -3056,18 +3056,45 @@ void EditorLayer::DrawTerrainComponent(ECS::Entity entity) {
             char label[32];
             std::snprintf(label, sizeof(label), "Layer %d", i);
             if (ImGui::TreeNode(label)) {
+                const std::string pathBefore = terrain->layers[i].texturePath;
+                const f32 tileBefore = terrain->layers[i].tileScale;
+                std::string picked;
                 if (!terrain->layers[i].texturePath.empty()) {
                     ImGui::Text("Texture: %s", terrain->layers[i].texturePath.c_str());
                     if (ImGui::SmallButton("Clear")) {
                         terrain->layers[i].texturePath.clear();
                     }
                 } else {
-                    if (ImGui::Button("Load Texture")) {
-                        std::string path = FileDialog::OpenFile("Texture", {{ "Images", "*.png;*.jpg;*.jpeg;*.bmp;*.tga" }});
-                        if (!path.empty()) terrain->layers[i].texturePath = path;
+                    if (ImGui::Button("Load Texture") && FileDialog::IsAvailable()) {
+                        picked = FileDialog::OpenFile("Texture", {{ "Images", "*.png;*.jpg;*.jpeg;*.bmp;*.tga" }});
                     }
+                    ImGui::SetItemTooltip("Or drop an image from the Asset Browser here.");
+                }
+                if (ImGui::BeginDragDropTarget()) {
+                    if (const ImGuiPayload* pl = ImGui::AcceptDragDropPayload("ASSET_PATH"))
+                        picked = static_cast<const char*>(pl->Data);
+                    ImGui::EndDragDropTarget();
+                }
+                if (!picked.empty()) {
+                    // Project-relative, as an absolute path would not resolve in a packed game
+                    const std::string proj = m_SceneManager.GetProjectPath();
+                    std::string stored = picked;
+                    if (!proj.empty()) {
+                        const std::filesystem::path rel = std::filesystem::path(picked).lexically_relative(
+                            std::filesystem::path(proj).parent_path());
+                        if (!rel.empty() && rel.native()[0] != '.') stored = rel.generic_string();
+                    }
+                    terrain->layers[i].texturePath = stored;
                 }
                 InspectorUndo::DragFloat(m_UndoRedo, "Tile Scale", &terrain->layers[i].tileScale, 0.1f, 0.1f, 100.0f);
+                ImGui::SetItemTooltip("World units per repeat of this layer's texture.");
+                // The layers draw through the mesh's weights and the material row,
+                // so a change rebuilds both
+                if (terrain->layers[i].texturePath != pathBefore || terrain->layers[i].tileScale != tileBefore) {
+                    terrain->meshDirty = true;
+                    if (m_RenderSystem) m_RenderSystem->MarkMaterialsDirty();
+                    MarkDirty();
+                }
                 ImGui::TreePop();
             }
             ImGui::PopID();

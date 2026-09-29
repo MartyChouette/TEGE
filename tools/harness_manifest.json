@@ -993,6 +993,20 @@
         "draws": true,
         "matches": "FilterOrderRef"
       }
+    },
+    {
+      "name": "TerrainSplat",
+      "project": "Examples/TerrainSplat/TerrainSplat.enjinproject",
+      "frames": [
+        30,
+        90,
+        240,
+        500
+      ],
+      "claims": {
+        "draws": true
+      },
+      "animates_off_because": "A still terrain with two painted layers; nothing moves. What to look for: green checker on the left third, red and white stripes on the right third, a blend between. Plain white ground is the failure (band 700 not taken). Built by tools/make_terrain_splat_demo.py, 2026-09-28."
     }
   ]
 }

@@ -1,5 +1,10 @@
-// Terrain texture layers: authored, saved, and still not rendered -- but they
-// no longer tint the ground on their way to nowhere.
+// Terrain texture layers. UPDATE 2026-09-28: they render now. With a layer
+// texture set, the mesh carries the weights in vertex colour again and the
+// draw takes surfaceParam1 band 700, where triangle.frag reads that colour as
+// weights and skips the tint multiply. Without a layer texture everything below
+// still holds: the colour stays white and the ground takes its material. The
+// history that follows is why the transport is gated on the textures.
+//
 //
 // TerrainComponent carries four TextureLayers (a path and a tile scale each)
 // and a splatmap of four weights per cell. The inspector lets you pick the
@@ -203,6 +208,26 @@ ENJIN_TEST(TerrainLayers, LayerPathsAndScalesStillAuthorAndPersist) {
     ENJIN_EXPECT_TRUE(t.layers[0].texturePath == "textures/grass.png");
     ENJIN_EXPECT_TRUE(t.layers[1].texturePath == "textures/rock.png");
     ENJIN_EXPECT_FLOAT_NEAR(t.layers[1].tileScale, 8.0f, 0.001f);
+}
+
+ENJIN_TEST(TerrainLayers, test_terrain_layers_textured_terrain_carries_weights) {
+    // Arrange: the painted terrain, now with layer textures. Band 700 reads
+    // vertex colour as the four weights, so this is the transport it needs.
+    TerrainComponent t = PaintedTerrain();
+    t.layers[0].texturePath = "textures/grass.png";
+    t.layers[1].texturePath = "textures/rock.png";
+
+    // Act
+    const MeshComponent mesh = Renderer::MeshFactory::CreateTerrain(t);
+
+    // Assert: left half layer 0, right half layer 1
+    const auto& left = mesh.vertices[0].color;
+    const auto& right = mesh.vertices[t.gridWidth - 1].color;
+    ENJIN_EXPECT_TRUE(t.HasSplatTextures());
+    ENJIN_EXPECT_FLOAT_NEAR(left.x, 1.0f, 0.001f);
+    ENJIN_EXPECT_FLOAT_NEAR(left.y, 0.0f, 0.001f);
+    ENJIN_EXPECT_FLOAT_NEAR(right.x, 0.0f, 0.001f);
+    ENJIN_EXPECT_FLOAT_NEAR(right.y, 1.0f, 0.001f);
 }
 
 ENJIN_TEST_MAIN()

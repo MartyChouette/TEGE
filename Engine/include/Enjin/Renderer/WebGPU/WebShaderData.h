@@ -721,12 +721,35 @@ fn shadeSurface(in: VertexOutput) -> vec4<f32> {
         alpha = idxSample.a * object.opacity;
     }
 
+    // Terrain splat layers (bit 9), as triangle.frag's band 700. Vertex colour
+    // is the four weights; the layers are bound in the base, matcap, scroll and
+    // height slots; tile scales are world units per repeat. textureSampleGrad
+    // with derivatives taken here, in uniform control flow, is what makes the
+    // per-object branch legal: implicit-derivative sampling may not branch.
+    let splatDx = dpdx(in.world_pos.xz);
+    let splatDy = dpdy(in.world_pos.xz);
+    if ((object.flags & 512) != 0) {
+        let t = max(vec4<f32>(object.splatTile0, object.splatTile1, object.splatTile2, object.splatTile3),
+                    vec4<f32>(0.01));
+        let wxz = in.world_pos.xz;
+        let l0 = textureSampleGrad(baseColorTex, baseColorSmp, wxz / t.x, splatDx / t.x, splatDy / t.x).rgb;
+        let l1 = textureSampleGrad(matcapTex, baseColorSmp, wxz / t.y, splatDx / t.y, splatDy / t.y).rgb;
+        let l2 = textureSampleGrad(scrollReflTex, baseColorSmp, wxz / t.z, splatDx / t.z, splatDy / t.z).rgb;
+        let l3 = textureSampleGrad(heightTex, baseColorSmp, wxz / t.w, splatDx / t.w, splatDy / t.w).rgb;
+        var w = max(in.color, vec4<f32>(0.0));
+        let ws = w.x + w.y + w.z + w.w;
+        if (ws > 1e-4) { w = w / ws; } else { w = vec4<f32>(1.0, 0.0, 0.0, 0.0); }
+        albedo = object.baseColor * (l0 * w.x + l1 * w.y + l2 * w.z + l3 * w.w);
+        alpha = object.opacity;
+    }
+
     // Vertex colour, as desktop multiplies it (triangle.frag: albedo *=
     // fragVertColor). Web never did, so glTF COLOR_0 was lost, a mesh built
     // from vertex colours rendered white, and Gouraud-only lost its lighting
     // (WP-12). Not for water (bit 5: G is the edge distance), SDF text (bit 6:
-    // the glyph colour, used at the tail) or ocean (bit 11).
-    if ((object.flags & (32 | 64 | 2048)) == 0) {
+    // the glyph colour, used at the tail), ocean (bit 11) or terrain splats
+    // (bit 9: the colour is the layer weights).
+    if ((object.flags & (32 | 64 | 2048 | 512)) == 0) {
         albedo *= in.color.rgb;
         alpha *= in.color.a;
     }
