@@ -11797,7 +11797,10 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                 m_LastPipelineWasCustom = false;
                 targetPipeline->Bind(commandBuffer);
             }
-            if (pass == TargetPass::OpaqueOnly && rtIsBlended) continue;
+            // A blended entity with a custom shader graph cannot go through OIT
+            // (below), so it stays in the opaque pass, sorted after the opaque
+            // geometry, instead of being skipped by both passes and vanishing.
+            if (pass == TargetPass::OpaqueOnly && rtIsBlended && !GetEntityCustomPipeline(entity, false)) continue;
             if (pass == TargetPass::TransparentOIT && !rtIsBlended) continue;
 
             // adr-0008: which pipeline this entity is actually drawn with.
