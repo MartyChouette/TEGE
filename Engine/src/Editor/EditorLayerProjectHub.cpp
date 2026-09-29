@@ -1340,7 +1340,6 @@ static const char* GetTemplateSymbol(const char* templateId) {
     if (id == "webdemo")       return "WWW";
     if (id == "planetgravity") return "@";
     if (id == "isometric")     return "ISO";
-    if (id == "teamsports")    return "VS";
     if (id == "flower")        return "*";
     if (id == "stresstest")    return "STR";
     // 2D templates
@@ -2207,7 +2206,9 @@ static void LoadExampleTemplates() {
             std::ifstream ifs(projFile.string());
             if (ifs.is_open()) {
                 nlohmann::json j = nlohmann::json::parse(ifs);
-                t.name = j.value("name", t.name);
+                // Examples write "name" or "projectName"; reading only the first
+                // showed the folder name on every card that used the second
+                t.name = j.value("name", j.value("projectName", t.name));
                 t.description = j.value("description", std::string());
             }
         } catch (const std::exception&) {
@@ -2803,7 +2804,7 @@ void EditorLayer::ApplyTemplateLayout(const std::string& templateId) {
         m_Layout.gameViewW = 680.0f;
         m_Layout.gameViewH = 440.0f;
     }
-    else if (templateId == "thirdperson" || templateId == "teamsports" || templateId == "coinrush" ||
+    else if (templateId == "thirdperson" || templateId == "coinrush" ||
              templateId == "webdemo") {
         m_Layout.leftWidth = 0.16f;
         m_Layout.rightWidth = 0.23f;
@@ -3502,20 +3503,16 @@ void EditorLayer::DrawTemplateCreatorWindow() {
         ImGui::TextDisabled("These templates ship with the engine and cannot be modified.");
         ImGui::Spacing();
 
-        // List the builtin template names (same ones used in the Project Hub wizard)
-        const char* builtinNames[] = {
-            "empty", "platformer", "topdown2d", "thirdperson", "firstperson",
-            "isometric", "rpg_village", "narrative", "savesystem", "visualscript",
-            "uicanvas", "bullethell", "idleclicker", "pointclick", "ps1rpg",
-            "visualnovel", "gamemanager", "citybuilder", "fpsarena", "teamsports",
-            "towerdefense", "runner", "flower", "fixedcam", "metroidvania",
-            "vampsurvivor", "roguelike", "soulslike", "couchcoop", "justtwo", "shadowtest", "stresstest",
-            "flash_td", "flash_dress", "flash_escape", "flash_rhythm"
-        };
-
-        for (const char* name : builtinNames) {
-            ImGui::BulletText("%s", name);
+        // The templates actually on disk, as the Project Hub lists them. This
+        // was a hand-written list of 36 names, most of them templates that no
+        // longer exist (teamsports, rpg_village, ps1rpg, ...).
+        int shown = 0;
+        for (const auto& t : s_BuiltinTemplates) {
+            if (!t.examplePath.empty()) continue;   // examples share the list; these are templates
+            ImGui::BulletText("%s", t.name.c_str());
+            ++shown;
         }
+        if (shown == 0) ImGui::TextDisabled("Open the Project Hub once to load the list.");
     }
 
     ImGui::End();
