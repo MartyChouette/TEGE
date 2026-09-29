@@ -2299,18 +2299,15 @@ void EditorLayer::DrawSettingsWindow() {
                 }
             }
 
-            // GPU Particles
-            if (m_RenderSystem && m_RenderSystem->m_GPUParticleSystem) {
+            // GPU Particles. The scene-wide system is dormant: nothing spawns into
+            // it and it has no draw path, so its panel stays hidden until
+            // something does (Marty, 2026-09-28). GPU Particle Emitter
+            // components are a separate path and keep working.
+            if (m_RenderSystem && m_RenderSystem->m_GPUParticleSystem &&
+                m_RenderSystem->m_GPUParticleSystem->GetAliveCount() > 0) {
                 auto& gpu = *m_RenderSystem->m_GPUParticleSystem;
                 auto& cfg = gpu.GetConfig();
                 if (ImGui::TreeNode("GPU Particle System")) {
-                    ImGui::TextDisabled("Dormant: no spawn source or render path is wired yet.");
-                    if (ImGui::IsItemHovered()) {
-                        ImGui::SetTooltip("The compute simulation is complete and correct, but nothing spawns GPU "
-                                          "particles and there is no draw path, so the system stays idle (no wasted "
-                                          "dispatch). These settings apply once a spawn source and renderer land. "
-                                          "The CPU ParticleEmitterComponent path works today.");
-                    }
                     ImGui::Text("Max particles: %u | Alive: %u", gpu.GetMaxParticles(), gpu.GetAliveCount());
                     ImGui::SliderFloat("Spawn Rate", &cfg.spawnRate, 0.0f, 10000.0f);
                     ImGui::SliderFloat("Max Lifetime", &cfg.maxLifetime, 0.1f, 30.0f);
