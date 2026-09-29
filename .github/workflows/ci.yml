@@ -221,7 +221,7 @@ jobs:
 
       - name: Capture harness (exported games, on lavapipe)
         shell: pwsh
-        timeout-minutes: 25
+        timeout-minutes: 60
         env:
           VK_DRIVER_FILES: ${{ github.workspace }}\mesa\x64\lvp_icd.x86_64.json
           VK_ICD_FILENAMES: ${{ github.workspace }}\mesa\x64\lvp_icd.x86_64.json
@@ -236,10 +236,13 @@ jobs:
         # cycling had never run in an exported game and every check in this file
         # was green throughout.
         #
-        # Three projects, not the 26 in the manifest: CI renders in software and
-        # a gate that takes an hour is a gate nobody waits for. Each is marked in
+        # Seven projects, not the whole manifest: CI renders in software and a
+        # gate that takes an hour is a gate nobody waits for. The seven are
+        # Marty's choice (2026-09-28): PaletteCycling, Water2D, WaterVolume,
+        # Playground, Potions, Lightmap and LightCookies. Each is marked "ci" in
         # the manifest with the reason it earns a slot. The full sweep is a thing
-        # a person runs locally.
+        # a person runs locally. The timeout was 25 minutes for three; it has not
+        # been measured for seven on a runner.
         #
         # The window is hidden during a capture, so this needs no desktop
         # session, and the simulation advances by a fixed step, so a frame number
