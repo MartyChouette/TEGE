@@ -3500,15 +3500,29 @@ void EditorLayer::UpdateGameViewSims(f32 simDt) {
         }
         m_RenderSystem->SetSnowIntensity(snowAccum);
     } else {
-        m_WeatherSystem.SetWeather(Effects::WeatherType::Clear, 0.5f);
+        // While playing, script weather (Weather_ calls, no zone) is the game's,
+        // as in the player, which leaves it alone. Forcing Clear every frame
+        // here meant scripted rain never fell in editor play. Out of play, a
+        // camera that left a zone still returns to clear skies.
+        if (!m_PlayMode.IsPlaying()) m_WeatherSystem.SetWeather(Effects::WeatherType::Clear, 0.5f);
         m_WeatherSystem.SetRainTextureIndex(-1);
         m_WeatherSystem.SetSnowTextureIndex(-1);
         m_WindSystem.ClearZoneOverride();
         // No weather zone: put the SCENE's fog back. This used to write
         // hardcoded defaults, which meant an authored fog was overwritten on
         // every frame and could never be seen - the same way authored snow was.
-        m_RenderSystem->RestoreAuthoredFog();
-        m_RenderSystem->SetSnowIntensity(0.0f);
+        // The player lets scripted weather (no zone) drive fog and snow; this
+        // forced snow to 0, so a Weather_ script's snow settled in a build and
+        // never in the editor
+        if (m_WeatherSystem.GetRainIntensity() > 0.01f || m_WeatherSystem.GetSnowIntensity() > 0.01f ||
+            m_WeatherSystem.GetFogDensity() > 0.0f) {
+            m_RenderSystem->SetFogParams(m_WeatherSystem.GetFogDensity(), m_WeatherSystem.GetFogStart(),
+                                         m_WeatherSystem.GetFogEnd(), 0.1f);
+            m_RenderSystem->SetFogColor(m_WeatherSystem.GetFogColor());
+        } else {
+            m_RenderSystem->RestoreAuthoredFog();
+        }
+        m_RenderSystem->SetSnowIntensity(m_WeatherSystem.GetSnowIntensity());
     }
 
     // Weather SIM step - two fixes in one (Marty 2026-08-30):
