@@ -5915,6 +5915,37 @@ void EditorLayer::DrawTilemapComponent(ECS::Entity entity) {
         if (InspectorUndo::InputText(m_UndoRedo, "Tileset Path", pathBuffer, sizeof(pathBuffer), [tilemap](const std::string& val) { tilemap->tilesetPath = val; })) {
             tilemap->tilesetPath = pathBuffer;
         }
+        // Drop an image from the Asset Browser onto the field, or browse for
+        // one. Typing the path was the only way in. Stored project-relative, as
+        // an absolute path would not resolve in a packed game.
+        {
+            std::string picked;
+            if (ImGui::BeginDragDropTarget()) {
+                if (const ImGuiPayload* pl = ImGui::AcceptDragDropPayload("ASSET_PATH"))
+                    picked = static_cast<const char*>(pl->Data);
+                ImGui::EndDragDropTarget();
+            }
+            if (FileDialog::IsAvailable()) {
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Browse...##Tileset")) {
+                    picked = FileDialog::OpenFile("Tileset Image", {{ "Images", "*.png;*.jpg;*.jpeg;*.bmp;*.tga" }});
+                }
+            }
+            if (!picked.empty()) {
+                namespace fs = std::filesystem;
+                const std::string proj = m_SceneManager.GetProjectPath();
+                std::string stored = picked;
+                if (!proj.empty()) {
+                    const fs::path rel = fs::path(picked).lexically_relative(fs::path(proj).parent_path());
+                    if (!rel.empty() && rel.native()[0] != '.') stored = rel.generic_string();
+                }
+                if (stored != tilemap->tilesetPath) {
+                    m_UndoRedo.Execute(std::make_unique<PropertyEditCommand<std::string>>(
+                        "Tileset Path", tilemap->tilesetPath, stored,
+                        [tilemap](const std::string& v) { tilemap->tilesetPath = v; }));
+                }
+            }
+        }
 
         // Tile size
         InspectorUndo::DragFloat(m_UndoRedo, "Tile Width (px)", &tilemap->tileWidth, 1.0f, 1.0f, 256.0f);
