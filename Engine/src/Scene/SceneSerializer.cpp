@@ -2665,6 +2665,9 @@ static bool IsRetiredField(std::string_view component, std::string_view field) {
         // SD-27: three controller features hidden until they are built
         {"platformer2D", "enableWallJump"}, {"platformer2D", "wallJumpForce"},
         {"topDown3D", "enableClickToMove"}, {"topDown3D", "arrivalThreshold"},
+        // SD-15 leftovers: read by nothing, and the camera's angle is the one
+        // Height and Distance already make; landing is decided by planet radius
+        {"topDown3D", "cameraAngle"}, {"surfaceAligned", "groundCheckDistance"},
         {"thirdPerson", "enableLockOn"}, {"thirdPerson", "lockOnRange"},
         // SD-27: one parallax algorithm; the mode and its second height scale were never read
         {"material", "parallaxMode"}, {"material", "pomHeightScale"},
@@ -3351,7 +3354,6 @@ json SerializeTopDown3D(const ECS::TopDown3DController& ctrl) {
     j["deceleration"] = RF(ctrl.deceleration);
     j["rotateToFaceMovement"] = ctrl.rotateToFaceMovement;
     j["rotationSpeed"] = RF(ctrl.rotationSpeed);
-    j["cameraAngle"] = RF(ctrl.cameraAngle);
     j["cameraDistance"] = RF(ctrl.cameraDistance);
     j["cameraHeight"] = RF(ctrl.cameraHeight);
     j["lockCameraToPlayer"] = ctrl.lockCameraToPlayer;
@@ -3369,7 +3371,6 @@ ECS::TopDown3DController DeserializeTopDown3D(const json& j) {
     if (j.contains("deceleration")) ctrl.deceleration = j["deceleration"].get<f32>();
     if (j.contains("rotateToFaceMovement")) ctrl.rotateToFaceMovement = JB(j["rotateToFaceMovement"]);
     if (j.contains("rotationSpeed")) ctrl.rotationSpeed = j["rotationSpeed"].get<f32>();
-    if (j.contains("cameraAngle")) ctrl.cameraAngle = j["cameraAngle"].get<f32>();
     if (j.contains("cameraDistance")) ctrl.cameraDistance = j["cameraDistance"].get<f32>();
     if (j.contains("cameraHeight")) ctrl.cameraHeight = j["cameraHeight"].get<f32>();
     if (j.contains("lockCameraToPlayer")) ctrl.lockCameraToPlayer = JB(j["lockCameraToPlayer"]);
@@ -3659,7 +3660,6 @@ json SerializeSurfaceAligned(const ECS::SurfaceAlignedController& ctrl) {
     j["cameraSensitivity"] = RF(ctrl.cameraSensitivity);
     j["cameraLerpSpeed"] = RF(ctrl.cameraLerpSpeed);
     j["alignSpeed"] = RF(ctrl.alignSpeed);
-    j["groundCheckDistance"] = RF(ctrl.groundCheckDistance);
     return j;
 }
 
@@ -3678,7 +3678,6 @@ ECS::SurfaceAlignedController DeserializeSurfaceAligned(const json& j) {
     if (j.contains("cameraSensitivity")) ctrl.cameraSensitivity = j["cameraSensitivity"].get<f32>();
     if (j.contains("cameraLerpSpeed")) ctrl.cameraLerpSpeed = j["cameraLerpSpeed"].get<f32>();
     if (j.contains("alignSpeed")) ctrl.alignSpeed = j["alignSpeed"].get<f32>();
-    if (j.contains("groundCheckDistance")) ctrl.groundCheckDistance = j["groundCheckDistance"].get<f32>();
     return ctrl;
 }
 

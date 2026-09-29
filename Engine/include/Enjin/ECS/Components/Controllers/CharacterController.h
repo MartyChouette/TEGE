@@ -157,8 +157,9 @@ struct TopDown3DController : public CharacterControllerBase {
     bool rotateToFaceMovement = true;
     f32 rotationSpeed = 720.0f;
 
-    // Camera settings (for fixed camera angle)
-    f32 cameraAngle = 45.0f;    // Angle from horizontal
+    // Camera: sits Height above and Distance behind (+Z) the player, looking at
+    // it. There was also a Camera Angle, read by nothing: the angle IS the one
+    // these two make, so it could only ever disagree with them.
     f32 cameraDistance = 15.0f;
     f32 cameraHeight = 10.0f;
     bool lockCameraToPlayer = true;
@@ -333,7 +334,7 @@ struct VehicleController : public CharacterControllerBase {
     f32 cameraLerpSpeed = 5.0f;     // Smooth follow speed
     f32 cameraLookAhead = 2.0f;     // Look ahead based on velocity
     f32 cameraYaw = 0.0f;
-    f32 cameraPitch = 15.0f;
+    // (No camera pitch: the chase camera's angle is set by Height and Distance.)
 
     // Visuals
     f32 bodyRollAmount = 5.0f;      // Degrees of body roll in turns
@@ -499,10 +500,13 @@ struct SurfaceAlignedController : public CharacterControllerBase {
 
     // Surface alignment
     f32 alignSpeed = 8.0f;             // Slerp rate toward surface normal
-    f32 groundCheckDistance = 1.5f;     // Distance to check for ground
+    // (No ground check distance: landing is decided by the planet's radius, so
+    // the field had nothing to check.)
 
     // State
     Math::Vector3 localUp = Math::Vector3(0.0f, 1.0f, 0.0f);
+    f32 groundSpeed = 0.0f;            // runtime: ramps by acceleration / deceleration
+    Math::Vector3 lastMoveDir = Math::Vector3(0.0f, 0.0f, 0.0f);   // runtime: coasting direction
     Math::Quaternion surfaceRotation;
     bool isJumping = false;
     bool isFalling = false;

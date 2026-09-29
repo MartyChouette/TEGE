@@ -1209,9 +1209,9 @@ void ControllerSystem::UpdateTopDown3D(Entity entity, TopDown3DController& ctrl,
 
     // The follow camera sits behind the player at +Z looking toward -Z with no
     // yaw, so camera-relative movement is a direct mapping: up input = -Z (away
-    // from camera), right input = +X. cameraAngle is the camera's pitch from
-    // horizontal, NOT a yaw — it must not rotate movement input (doing so was
-    // the isometric template's "controls don't match camera" bug).
+    // from camera), right input = +X. The camera's tilt comes from its height
+    // and distance and is never a yaw -- rotating movement input by it was the
+    // isometric template's "controls don't match camera" bug.
     Math::Vector3 targetVelocity(input.x * speed, 0.0f, -input.y * speed);
 
     // Apply acceleration/deceleration
@@ -1777,14 +1777,34 @@ void ControllerSystem::UpdateThirdPerson(Entity entity, ThirdPersonController& c
         // Compute camera right vector from yaw to offset horizontally
         Math::Vector3 camRight(Math::Cos(yawRad2), 0.0f, -Math::Sin(yawRad2));
 
-        Math::Vector3 cameraPos = transform.position + cameraOffset + camRight * hBias;
-        Math::Vector3 lookTarget = transform.position + Math::Vector3(0, ctrl.cameraHeight * 0.5f, 0) + camRight * hBias * 0.3f;
+        // Camera Lerp Speed eases the point the camera orbits, not the orbit, so
+        // mouse look stays immediate while the follow loses its jitter. It used
+        // to act only in grid mode; here the camera was nailed to the player.
+        const Math::Vector3 pivot = SmoothFollowPivot(entity, transform.position, ctrl.cameraLerpSpeed, dt);
+        Math::Vector3 cameraPos = pivot + cameraOffset + camRight * hBias;
+        Math::Vector3 lookTarget = pivot + Math::Vector3(0, ctrl.cameraHeight * 0.5f, 0) + camRight * hBias * 0.3f;
 
         cameraPos = ResolveCameraCollision(lookTarget, cameraPos,
                                            ctrl.enableCameraCollision,
                                            ctrl.cameraCollisionRadius, entity);
         UpdateGameCameraTransform(cameraPos, lookTarget, Math::Vector3(0, 1, 0));
     }
+}
+
+// The point an orbit camera circles, eased toward the player at `rate` per
+// second (exponential, so frame-rate independent). A jump of more than
+// kFollowSnapDistance is a teleport or a respawn and snaps.
+Math::Vector3 ControllerSystem::SmoothFollowPivot(Entity entity, const Math::Vector3& target, f32 rate, f32 dt) {
+    constexpr f32 kFollowSnapDistance = 10.0f;
+    auto it = m_FollowPivots.find(entity);
+    if (it == m_FollowPivots.end() || rate <= 0.0f ||
+        (it->second - target).LengthSquared() > kFollowSnapDistance * kFollowSnapDistance) {
+        m_FollowPivots[entity] = target;
+        return target;
+    }
+    const f32 t = 1.0f - std::exp(-rate * dt);
+    it->second = it->second + (target - it->second) * t;
+    return it->second;
 }
 
 void ControllerSystem::NoteBlockedOrMoving(Entity entity, const Math::Vector2& input,
@@ -2922,12 +2942,22 @@ void ControllerSystem::UpdateSurfaceAligned(Entity entity, SurfaceAlignedControl
     f32 standRadius = planetRadius + capsuleOffset;
 
     if (ctrl.isGrounded && hasZone) {
-        // GROUNDED: slide along sphere surface at fixed radius
-        if (moveMag > 0.01f) {
-            f32 arcSpeed = speed * dt / standRadius;
+        // GROUNDED: slide along sphere surface at fixed radius. Speed ramps up by
+        // Acceleration and down by Deceleration, coasting in the last direction
+        // moved; both were authored and read by nothing, so movement started and
+        // stopped dead.
+        const f32 targetSpeed = moveMag > 0.01f ? speed * moveMag : 0.0f;
+        const f32 rate = targetSpeed > ctrl.groundSpeed ? ctrl.acceleration : ctrl.deceleration;
+        ctrl.groundSpeed = Math::MoveTowards(ctrl.groundSpeed, targetSpeed, rate * dt);
+        if (moveMag > 0.01f) ctrl.lastMoveDir = moveDir * (1.0f / moveMag);
+        // Keep the coasting direction on the tangent plane as the up turns
+        Math::Vector3 slideDir = ctrl.lastMoveDir - ctrl.localUp * ctrl.localUp.Dot(ctrl.lastMoveDir);
+        if (ctrl.groundSpeed > 0.001f && slideDir.LengthSquared() > 1e-6f) {
+            slideDir = slideDir.Normalized();
+            f32 arcSpeed = ctrl.groundSpeed * dt / standRadius;
             Math::Vector3 pos = transform.position - planetCenter;
             Math::Vector3 posN = pos.Normalized();
-            Math::Vector3 rotAxis = posN.Cross(moveDir);
+            Math::Vector3 rotAxis = posN.Cross(slideDir);
             f32 axisLen = rotAxis.Length();
             if (axisLen > 0.001f) {
                 rotAxis = rotAxis * (1.0f / axisLen);
@@ -3011,8 +3041,10 @@ void ControllerSystem::UpdateSurfaceAligned(Entity entity, SurfaceAlignedControl
         // Transform offset to world space using surface rotation (Rotate() avoids full ToMatrix)
         Math::Vector3 worldOffset = ctrl.surfaceRotation.Rotate(localOffset);
 
-        Math::Vector3 cameraPos = transform.position + worldOffset;
-        Math::Vector3 lookTarget = transform.position + ctrl.localUp * ctrl.cameraHeight * 0.5f;
+        // Camera Lerp Speed eases the orbit's centre (read by nothing before)
+        const Math::Vector3 pivot = SmoothFollowPivot(entity, transform.position, ctrl.cameraLerpSpeed, dt);
+        Math::Vector3 cameraPos = pivot + worldOffset;
+        Math::Vector3 lookTarget = pivot + ctrl.localUp * ctrl.cameraHeight * 0.5f;
 
         UpdateGameCameraTransform(cameraPos, lookTarget, ctrl.localUp);
     }

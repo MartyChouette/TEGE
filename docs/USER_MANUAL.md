@@ -695,7 +695,6 @@ Isometric or overhead 3D movement, similar to Diablo-style games. Includes optio
 | `deceleration` | f32 | 25.0 | Movement deceleration. |
 | `rotateToFaceMovement` | bool | true | Entity rotates to face movement direction. |
 | `rotationSpeed` | f32 | 720.0 | Degrees per second rotation. |
-| `cameraAngle` | f32 | 45.0 | Fixed camera angle from horizontal. |
 | `cameraDistance` | f32 | 15.0 | Camera distance from player. |
 | `cameraHeight` | f32 | 10.0 | Camera height above player. |
 | `lockCameraToPlayer` | bool | true | Camera follows the player. |

@@ -4947,7 +4947,6 @@ void EditorLayer::DrawTopDown3DController(ECS::Entity entity) {
         }
 
         if (ImGui::TreeNode("Camera")) {
-            InspectorUndo::DragFloat(m_UndoRedo, "Camera Angle", &ctrl->cameraAngle, 1.0f, 0.0f, 90.0f);
             InspectorUndo::DragFloat(m_UndoRedo, "Camera Distance", &ctrl->cameraDistance, 0.5f, 5.0f, 50.0f);
             InspectorUndo::DragFloat(m_UndoRedo, "Camera Height", &ctrl->cameraHeight, 0.5f, 1.0f, 30.0f);
             InspectorUndo::Checkbox(m_UndoRedo, "Lock Camera To Player", &ctrl->lockCameraToPlayer);
@@ -9064,7 +9063,6 @@ void EditorLayer::DrawVehicleController(ECS::Entity entity) {
         if (ImGui::TreeNode("Camera")) {
             InspectorUndo::DragFloat(m_UndoRedo, "Camera Distance", &ctrl->cameraDistance, 0.1f, 1.0f, 30.0f);
             InspectorUndo::DragFloat(m_UndoRedo, "Camera Height", &ctrl->cameraHeight, 0.1f, 0.0f, 20.0f);
-            InspectorUndo::DragFloat(m_UndoRedo, "Camera Pitch##veh", &ctrl->cameraPitch, 1.0f, -89.0f, 89.0f);
             InspectorUndo::DragFloat(m_UndoRedo, "Camera Lerp Speed", &ctrl->cameraLerpSpeed, 0.1f, 0.1f, 20.0f);
             InspectorUndo::DragFloat(m_UndoRedo, "Camera Look Ahead", &ctrl->cameraLookAhead, 0.1f, 0.0f, 10.0f);
             ImGui::TreePop();
@@ -9080,7 +9078,8 @@ void EditorLayer::DrawVehicleController(ECS::Entity entity) {
         }
 
         if (ImGui::TreeNode("Base Controller")) {
-            InspectorUndo::DragFloat(m_UndoRedo, "Move Speed", &ctrl->moveSpeed, 0.1f, 0.1f, 50.0f);
+            // No Move Speed here: a vehicle's speed is Max Speed and Acceleration
+            // above, and the base controller's field was never read for one.
                 InspectorUndo::Checkbox(m_UndoRedo, "Ignore Time Scale (bullet time)", &ctrl->ignoreGlobalTimeScale);
                 if (ImGui::IsItemHovered()) ImGui::SetTooltip(
                     "Run this controller at normal speed while Time_SetScale slows\n"
@@ -9148,7 +9147,6 @@ void EditorLayer::DrawSurfaceAlignedController(ECS::Entity entity) {
         if (ImGui::TreeNode("Surface Alignment")) {
             InspectorUndo::DragFloat(m_UndoRedo, "Align Speed", &ctrl->alignSpeed, 0.5f, 0.1f, 30.0f);
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("How fast the character aligns to surface normal");
-            InspectorUndo::DragFloat(m_UndoRedo, "Ground Check Distance", &ctrl->groundCheckDistance, 0.1f, 0.1f, 10.0f);
             ImGui::Text("Local Up: (%.2f, %.2f, %.2f)", ctrl->localUp.x, ctrl->localUp.y, ctrl->localUp.z);
             ImGui::TreePop();
         }

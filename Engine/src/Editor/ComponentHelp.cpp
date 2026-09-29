@@ -202,7 +202,7 @@ static const std::unordered_map<std::string, ComponentHelp>& Registry() {
             };
             r["platformer2D"] = { "Side-scrolling movement: run and jump (2D).",        "Tune speed, jump height and gravity. Reads player input.", nullptr, moveRel };
             r["topDown2D"]    = { "Top-down 8-way movement (2D).",                        "Tune move speed. Reads player input.",                     nullptr, moveRel };
-            r["topDown3D"]    = { "Top-down movement with a follow camera (3D).",         "cameraAngle is pitch, not yaw. Reads player input.",       nullptr, moveRel };
+            r["topDown3D"]    = { "Top-down movement with a follow camera (3D).",         "The camera sits Camera Height above and Camera Distance behind. Reads player input.",       nullptr, moveRel };
             r["thirdPerson"]  = { "Third-person character movement (3D).",                "Walk, run and jump behind a follow camera.",               nullptr, moveRel };
             r["firstPerson"]  = { "First-person character movement + look (3D).",         "Mouse look plus WASD. Reads player input.",                nullptr, moveRel };
             r["vehicle"]      = { "Drives a vehicle: steering, throttle, brake.",         "Tune handling. Reads player input.",                       nullptr, moveRel };

@@ -132,6 +132,9 @@ private:
     static constexpr f32 kBlockedGracePeriod   = 0.75f;
     static constexpr f32 kBlockedReportInterval = 5.0f;
     std::unordered_map<Entity, BlockedWatch> m_BlockedWatch;
+    // Orbit cameras' eased follow point, per controlled entity (SmoothFollowPivot)
+    std::unordered_map<Entity, Math::Vector3> m_FollowPivots;
+    Math::Vector3 SmoothFollowPivot(Entity entity, const Math::Vector3& target, f32 rate, f32 dt);
 
     void NoteBlockedOrMoving(Entity entity, const Math::Vector2& input,
                              const Math::Vector3& velocity,

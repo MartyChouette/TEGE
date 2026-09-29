@@ -83,7 +83,7 @@ A symptom shows up in a project, so the project is where you look, and project d
 ### UI / Scenes
 - **UICanvas anchors are Unity-style:** `edge = anchor*parent + offset`. A centered 200-wide element needs `offsetLeft=-100, offsetRight=+100` — writing `+100/-100` produces negative width and falls into a legacy center-on-anchor fallback that puts top-anchored elements off-screen
 - **`isStartScene` is the only start-scene authority** — `SceneEntry.buildIndex` is ordering/inclusion only (`-1` = not in build). `SceneManager::NormalizeSceneList()` repairs invariants on project load/save
-- **TopDown3D camera:** `cameraAngle` is pitch from horizontal, NOT yaw — never rotate movement input by it. The follow camera sits at +Z looking -Z, so up input = -Z
+- **TopDown3D camera:** its tilt comes from `cameraHeight`/`cameraDistance` and is pitch, NOT yaw — never rotate movement input by it (the old `cameraAngle` field was unread and is retired). The follow camera sits at +Z looking -Z, so up input = -Z
 
 ### Physics
 - **STRICT 2D/3D separation:** Box2D for 2D scenes only, Jolt for 3D only. Never mix. 2D controllers use `CheckGround2D`/`CheckWall2D`, 3D use `CheckGround`/`CharacterVirtual`
