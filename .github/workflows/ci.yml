@@ -208,6 +208,17 @@ jobs:
           python tools/field_coverage.py --strict
           if ($LASTEXITCODE -ne 0) { throw "field coverage got worse than the baseline" }
 
+      - name: Bare editor widgets (scene state outside InspectorUndo)
+        shell: pwsh
+        timeout-minutes: 5
+        # A bare ImGui edit widget in a file that edits scene state gets no
+        # named undo step; outside the inspector and the Scene tab it gets no
+        # undo at all. A baseline, not a target: it fails when a file's count
+        # goes UP. Static text scan, runs in a second.
+        run: |
+          python tools/raw_widget_lint.py --strict
+          if ($LASTEXITCODE -ne 0) { throw "a scene-state panel gained a bare ImGui widget" }
+
       - name: Capture claim tests
         shell: pwsh
         timeout-minutes: 5

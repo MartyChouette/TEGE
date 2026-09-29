@@ -1,0 +1,7 @@
+# Recorded by tools/raw_widget_lint.py: bare ImGui edit widgets per file.
+# --strict fails if any number goes UP. Wrap some, then re-record.
+EditorLayerComponents.cpp 205
+EditorLayerComponents_Audio.cpp 43
+EditorLayerComponents_Physics.cpp 40
+EditorLayerInspector.cpp 336
+EditorLayerRendering.cpp 351
