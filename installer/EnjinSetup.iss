@@ -84,6 +84,11 @@ Source: "{#SourceRoot}\build\bin\Release\scripts\*"; DestDir: "{app}\scripts"; C
 ; Built-in templates. The editor reads these from disk; without them a fresh
 ; install has no templates to start a project from.
 Source: "{#SourceRoot}\builtin_templates\*"; DestDir: "{app}\builtin_templates"; Components: editor; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
+; The example projects. The hub lists them beside the templates (it looks for
+; Examples next to builtin_templates) and makes a project by copying one; the
+; installer shipped none, so an installed hub had no examples. Build output and
+; packed games are left out, as in CMake's install rule.
+Source: "{#SourceRoot}\Examples\*"; DestDir: "{app}\Examples"; Components: editor; Excludes: "Build\*,build\*,bin\*,__pycache__\*,*.zip"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
 Source: "{#SourceRoot}\installer\enjin.ico";     DestDir: "{app}"; Components: editor; Flags: ignoreversion
 Source: "{#SourceRoot}\LICENSE";                DestDir: "{app}"; Components: editor; Flags: ignoreversion
 Source: "{#SourceRoot}\docs\USER_MANUAL.md";   DestDir: "{app}\docs"; Components: docs; Flags: ignoreversion

@@ -238,7 +238,8 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/Examples")
             PATTERN "Build" EXCLUDE
             PATTERN "build" EXCLUDE
             PATTERN "bin" EXCLUDE
-            PATTERN "__pycache__" EXCLUDE)
+            PATTERN "__pycache__" EXCLUDE
+            PATTERN "*.zip" EXCLUDE)
 endif()
 
 # A user template folder, if one was shipped alongside.
