@@ -14,7 +14,6 @@ UITheme UITheme::Light() {
     t.name = "Light";
 
     t.primary    = Math::Vector3(0.20f, 0.47f, 0.85f);
-    t.secondary  = Math::Vector3(0.50f, 0.50f, 0.55f);
     t.background = Math::Vector3(0.93f, 0.93f, 0.95f);
     t.surface    = Math::Vector3(1.00f, 1.00f, 1.00f);
     t.error      = Math::Vector3(0.85f, 0.20f, 0.20f);
@@ -51,7 +50,6 @@ UITheme UITheme::RetroGreen() {
     t.name = "RetroGreen";
 
     t.primary    = Math::Vector3(0.20f, 0.80f, 0.20f);
-    t.secondary  = Math::Vector3(0.15f, 0.50f, 0.15f);
     t.background = Math::Vector3(0.02f, 0.06f, 0.02f);
     t.surface    = Math::Vector3(0.04f, 0.12f, 0.04f);
     t.error      = Math::Vector3(0.80f, 0.20f, 0.10f);
@@ -90,7 +88,6 @@ UITheme UITheme::Fantasy() {
     t.name = "Fantasy";
 
     t.primary    = Math::Vector3(0.72f, 0.55f, 0.25f);
-    t.secondary  = Math::Vector3(0.50f, 0.35f, 0.18f);
     t.background = Math::Vector3(0.12f, 0.08f, 0.05f);
     t.surface    = Math::Vector3(0.18f, 0.13f, 0.08f);
     t.error      = Math::Vector3(0.80f, 0.15f, 0.10f);
@@ -130,7 +127,6 @@ UITheme UITheme::HighContrastDark() {
 
     // WCAG AAA 7:1+ contrast — pure white text on near-black backgrounds
     t.primary    = Math::Vector3(0.20f, 0.60f, 1.00f);
-    t.secondary  = Math::Vector3(0.50f, 0.50f, 0.55f);
     t.background = Math::Vector3(0.00f, 0.00f, 0.00f);
     t.surface    = Math::Vector3(0.05f, 0.05f, 0.05f);
     t.error      = Math::Vector3(1.00f, 0.30f, 0.30f);
@@ -171,7 +167,6 @@ UITheme UITheme::HighContrastLight() {
 
     // WCAG AAA 7:1+ contrast — pure black text on pure white backgrounds
     t.primary    = Math::Vector3(0.00f, 0.30f, 0.70f);
-    t.secondary  = Math::Vector3(0.40f, 0.40f, 0.45f);
     t.background = Math::Vector3(1.00f, 1.00f, 1.00f);
     t.surface    = Math::Vector3(0.97f, 0.97f, 0.97f);
     t.error      = Math::Vector3(0.80f, 0.00f, 0.00f);
@@ -212,7 +207,6 @@ UITheme UITheme::ColorblindSafe() {
 
     // Blue/Orange palette — universally distinguishable across all color vision types
     t.primary    = Math::Vector3(0.00f, 0.45f, 0.70f); // Blue
-    t.secondary  = Math::Vector3(0.90f, 0.60f, 0.00f); // Orange
     t.background = Math::Vector3(0.10f, 0.10f, 0.12f);
     t.surface    = Math::Vector3(0.16f, 0.16f, 0.19f);
     t.error      = Math::Vector3(0.90f, 0.60f, 0.00f); // Orange (not red)

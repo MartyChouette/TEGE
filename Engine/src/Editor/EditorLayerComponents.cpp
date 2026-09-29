@@ -1680,7 +1680,6 @@ void EditorLayer::DrawCameraComponent(ECS::Entity entity) {
         // Clear settings
         if (ImGui::TreeNode("Clear Settings")) {
             InspectorUndo::Checkbox(m_UndoRedo, "Clear Color", &camera->clearColor);
-            InspectorUndo::Checkbox(m_UndoRedo, "Clear Depth", &camera->clearDepth);
             if (camera->clearColor) {
                 f32 bgColor[3] = { camera->backgroundColor.x, camera->backgroundColor.y, camera->backgroundColor.z };
                 if (InspectorUndo::ColorEdit3(m_UndoRedo, "Background Color", bgColor,
@@ -2452,11 +2451,6 @@ void EditorLayer::DrawWaterVolumeComponent(ECS::Entity entity) {
             InspectorUndo::SliderFloat(m_UndoRedo, "Shore Width", &volume->shoreWidth, 0.0f, 0.5f, "%.2f");
             InspectorUndo::SliderFloat(m_UndoRedo, "Foam Intensity", &volume->foamIntensity, 0.0f, 1.0f, "%.2f");
             InspectorUndo::DragFloat(m_UndoRedo, "Foam Scale", &volume->foamScale, 0.5f, 1.0f, 50.0f, "%.1f");
-            f32 shoreCol[3] = { volume->shoreColor.x, volume->shoreColor.y, volume->shoreColor.z };
-            if (InspectorUndo::ColorEdit3(m_UndoRedo, "Shore Color", shoreCol,
-                    [volume](f32 r, f32 g, f32 b) { volume->shoreColor = Math::Vector3(r, g, b); })) {
-                volume->shoreColor = Math::Vector3(shoreCol[0], shoreCol[1], shoreCol[2]);
-            }
         }
 
         ImGui::Separator();
@@ -10634,8 +10628,6 @@ void EditorLayer::DrawUICanvasComponent(ECS::Entity entity) {
 
         InspectorUndo::ColorEdit3(m_UndoRedo, "Primary", &theme.primary.x,
                               [c = &theme.primary](f32 r, f32 g, f32 b) { c->x = r; c->y = g; c->z = b; });
-        InspectorUndo::ColorEdit3(m_UndoRedo, "Secondary", &theme.secondary.x,
-                              [c = &theme.secondary](f32 r, f32 g, f32 b) { c->x = r; c->y = g; c->z = b; });
         InspectorUndo::ColorEdit3(m_UndoRedo, "Background", &theme.background.x,
                               [c = &theme.background](f32 r, f32 g, f32 b) { c->x = r; c->y = g; c->z = b; });
         InspectorUndo::ColorEdit3(m_UndoRedo, "Surface", &theme.surface.x,
@@ -11419,7 +11411,6 @@ void EditorLayer::DrawBehaviorTreeComponent(ECS::Entity entity) {
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("0 = every frame");
 
-    InspectorUndo::Checkbox(m_UndoRedo, "Debug##bt", &bt->debugEnabled);
 
     // Blackboard summary
     if (!bt->blackboardDefaults.empty()) {

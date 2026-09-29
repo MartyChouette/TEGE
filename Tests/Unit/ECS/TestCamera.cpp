@@ -44,7 +44,6 @@ ENJIN_TEST(CameraDefaults, Priority) {
 
 ENJIN_TEST(CameraDefaults, ClearSettings) {
     CameraComponent cam;
-    ENJIN_EXPECT_TRUE(cam.clearDepth);
     ENJIN_EXPECT_TRUE(cam.clearColor);
 }
 

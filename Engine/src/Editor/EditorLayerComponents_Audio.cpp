@@ -266,7 +266,6 @@ void EditorLayer::DrawAudioSourceComponent(ECS::Entity entity) {
         }
 
         if (audio->is3D && !channelForces2D) {
-            InspectorUndo::DragFloat(m_UndoRedo, "Spatial Blend", &audio->spatialBlend, 0.05f, 0.0f, 1.0f);
             InspectorUndo::DragFloat(m_UndoRedo, "Min Distance", &audio->minDistance, 0.5f, 0.1f, 100.0f);
             InspectorUndo::DragFloat(m_UndoRedo, "Max Distance", &audio->maxDistance, 5.0f, audio->minDistance, 1000.0f);
             {
@@ -626,8 +625,6 @@ void EditorLayer::DrawAudioOcclusionComponent(ECS::Entity entity) {
         DrawComponentHelp("audioOcclusion", m_World, entity);
 
         InspectorUndo::Checkbox(m_UndoRedo, "Enabled##Occ", &occ->enabled);
-        InspectorUndo::DragFloat(m_UndoRedo, "LowPass Cutoff##Occ", &occ->lowPassCutoff, 10.0f, 100.0f, 20000.0f);
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Frequency cutoff when fully occluded (Hz). Lower = more muffled.");
         InspectorUndo::DragFloat(m_UndoRedo, "Volume Reduction##Occ", &occ->volumeReduction, 0.05f, 0.0f, 1.0f);
         InspectorUndo::DragFloat(m_UndoRedo, "Update Rate##Occ", &occ->updateRate, 1.0f, 1.0f, 60.0f);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Raycast check frequency (Hz). Lower = cheaper, less responsive.");

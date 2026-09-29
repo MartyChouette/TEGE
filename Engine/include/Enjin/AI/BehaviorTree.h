@@ -129,7 +129,6 @@ struct BehaviorTreeComponent {
     // Settings — serialized
     bool enabled = true;
     f32 tickInterval = 0.0f;  // 0 = every frame
-    bool debugEnabled = false;
 
     // ========== Runtime state (not serialized) ==========
 

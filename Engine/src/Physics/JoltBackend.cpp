@@ -1382,6 +1382,9 @@ void JoltBackend::CreateJointForEntity(ECS::Entity entity, u8 jointType) {
 
         bool useMotor = joint->useMotor;
         f32 motorSpeed = joint->motorSpeed;
+        // Motor Max Force was authored and never reached Jolt, so a hinge motor
+        // had unlimited torque and turned anything. It is the torque limit now.
+        settings.mMotorSettings.SetTorqueLimit(std::max(joint->motorMaxForce, 0.0f));
         constraint = createConstraint(bodyA, bodyB, settings,
             [useMotor, motorSpeed](JPH::Constraint* c, auto&, auto&) {
                 if (useMotor) {
@@ -1511,6 +1514,9 @@ void JoltBackend::CreateJointForEntity(ECS::Entity entity, u8 jointType) {
 
         bool useMotor = joint->useMotor;
         f32 motorSpeed = joint->motorSpeed;
+        // Motor Max Force, never read before: the slider motor pushed with
+        // unlimited force. It is the force limit now.
+        settings.mMotorSettings.SetForceLimit(std::max(joint->motorMaxForce, 0.0f));
         constraint = createConstraint(bodyA, bodyB, settings,
             [useMotor, motorSpeed](JPH::Constraint* c, auto&, auto&) {
                 if (useMotor) {

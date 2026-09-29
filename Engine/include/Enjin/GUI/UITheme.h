@@ -25,7 +25,6 @@ struct UITheme {
 
     // Palette
     Math::Vector3 primary    = Math::Vector3(0.26f, 0.59f, 0.98f);
-    Math::Vector3 secondary  = Math::Vector3(0.45f, 0.45f, 0.50f);
     Math::Vector3 background = Math::Vector3(0.08f, 0.08f, 0.10f);
     Math::Vector3 surface    = Math::Vector3(0.14f, 0.14f, 0.17f);
     Math::Vector3 error      = Math::Vector3(0.90f, 0.25f, 0.25f);

@@ -66,7 +66,8 @@ struct ENJIN_API CameraComponent {
     bool isActive = true;         // Whether this camera is eligible for activation
 
     // Clear settings
-    bool clearDepth = true;
+    // (No Clear Depth: every camera clears depth; there is no camera stacking
+    // for a camera that keeps the last one's depth to draw over.)
     bool clearColor = true;
     Math::Vector3 backgroundColor = Math::Vector3(0.68f, 0.75f, 0.72f); // Soft teal/sage
 

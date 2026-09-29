@@ -743,7 +743,6 @@ json SerializeCameraComponent(const ECS::CameraComponent& camera) {
     j["orthoSize"] = RF(camera.orthoSize);
     j["priority"] = camera.priority;
     j["isActive"] = camera.isActive;
-    j["clearDepth"] = camera.clearDepth;
     j["clearColor"] = camera.clearColor;
     j["backgroundColor"] = SerializeVector3(camera.backgroundColor);
     j["viewportX"] = RF(camera.viewportX);
@@ -1138,7 +1137,6 @@ ECS::CameraComponent DeserializeCameraComponent(const json& j) {
     camera.orthoSize = j.value("orthoSize", 10.0f);
     camera.priority = j.value("priority", 0);
     camera.isActive = j.contains("isActive") ? JB(j["isActive"]) : true;
-    camera.clearDepth = j.contains("clearDepth") ? JB(j["clearDepth"]) : true;
     camera.clearColor = j.contains("clearColor") ? JB(j["clearColor"]) : true;
     if (j.contains("backgroundColor")) camera.backgroundColor = DeserializeVector3(j["backgroundColor"]);
     camera.viewportX = j.value("viewportX", 0.0f);
@@ -1206,7 +1204,6 @@ json SerializeWaterVolumeComponent(const ECS::WaterVolumeComponent& volume) {
     j["shoreWidth"] = RF(volume.shoreWidth);
     j["foamIntensity"] = RF(volume.foamIntensity);
     j["foamScale"] = RF(volume.foamScale);
-    j["shoreColor"] = SerializeVector3(volume.shoreColor);
     j["enableBuoyancy"] = volume.enableBuoyancy;
     j["buoyancyStrength"] = RF(volume.buoyancyStrength);
     j["buoyancyDrag"] = RF(volume.buoyancyDrag);
@@ -1231,7 +1228,6 @@ ECS::WaterVolumeComponent DeserializeWaterVolumeComponent(const json& j) {
     if (j.contains("shoreWidth")) volume.shoreWidth = j["shoreWidth"].get<f32>();
     if (j.contains("foamIntensity")) volume.foamIntensity = j["foamIntensity"].get<f32>();
     if (j.contains("foamScale")) volume.foamScale = j["foamScale"].get<f32>();
-    if (j.contains("shoreColor")) volume.shoreColor = DeserializeVector3(j["shoreColor"]);
     if (j.contains("enableBuoyancy")) volume.enableBuoyancy = JB(j["enableBuoyancy"]);
     if (j.contains("buoyancyStrength")) volume.buoyancyStrength = j["buoyancyStrength"].get<f32>();
     if (j.contains("buoyancyDrag")) volume.buoyancyDrag = j["buoyancyDrag"].get<f32>();
@@ -2668,6 +2664,8 @@ static bool IsRetiredField(std::string_view component, std::string_view field) {
         // SD-15 leftovers: read by nothing, and the camera's angle is the one
         // Height and Distance already make; landing is decided by planet radius
         {"topDown3D", "cameraAngle"}, {"surfaceAligned", "groundCheckDistance"},
+        {"waterVolume", "shoreColor"}, {"camera", "clearDepth"}, {"audioSource", "spatialBlend"},
+        {"audioOcclusion", "lowPassCutoff"}, {"behaviorTree", "debugEnabled"},
         {"thirdPerson", "enableLockOn"}, {"thirdPerson", "lockOnRange"},
         // SD-27: one parallax algorithm; the mode and its second height scale were never read
         {"material", "parallaxMode"}, {"material", "pomHeightScale"},
@@ -3735,7 +3733,6 @@ json SerializeAudioSourceComponent(const ECS::AudioSourceComponent& audio) {
     j["playOnAwake"] = RF(audio.playOnAwake);
     j["loop"] = audio.loop;
     j["is3D"] = RF(audio.is3D);
-    j["spatialBlend"] = RF(audio.spatialBlend);
     j["rolloff"] = static_cast<u8>(audio.rolloff);
     j["channel"] = static_cast<u8>(audio.channel);
     j["voicePriority"] = audio.voicePriority;
@@ -3759,7 +3756,6 @@ ECS::AudioSourceComponent DeserializeAudioSourceComponent(const json& j) {
     if (j.contains("playOnAwake")) audio.playOnAwake = JB(j["playOnAwake"]);
     if (j.contains("loop")) audio.loop = JB(j["loop"]);
     if (j.contains("is3D")) audio.is3D = JB(j["is3D"]);
-    if (j.contains("spatialBlend")) audio.spatialBlend = j["spatialBlend"].get<f32>();
     if (j.contains("rolloff")) { u8 v = j["rolloff"].get<u8>(); if (v <= 2) audio.rolloff = static_cast<ECS::AudioSourceComponent::Rolloff>(v); }
     if (j.contains("channel")) { u8 v = j["channel"].get<u8>(); if (v < static_cast<u8>(ECS::AudioChannel::Count)) audio.channel = static_cast<ECS::AudioChannel>(v); }
     // "priority" (the old field) was saved and read by nothing, so every scene
@@ -4795,7 +4791,6 @@ ECS::AudioSnapshotTriggerComponent DeserializeAudioSnapshotTriggerComponent(cons
 json SerializeAudioOcclusionComponent(const ECS::AudioOcclusionComponent& oc) {
     json j;
     j["enabled"] = oc.enabled;
-    j["lowPassCutoff"] = RF(oc.lowPassCutoff);
     j["volumeReduction"] = RF(oc.volumeReduction);
     j["updateRate"] = RF(oc.updateRate);
     return j;
@@ -4803,7 +4798,6 @@ json SerializeAudioOcclusionComponent(const ECS::AudioOcclusionComponent& oc) {
 ECS::AudioOcclusionComponent DeserializeAudioOcclusionComponent(const json& j) {
     ECS::AudioOcclusionComponent oc;
     if (j.contains("enabled")) oc.enabled = JB(j["enabled"]);
-    if (j.contains("lowPassCutoff")) oc.lowPassCutoff = j["lowPassCutoff"].get<f32>();
     if (j.contains("volumeReduction")) oc.volumeReduction = j["volumeReduction"].get<f32>();
     if (j.contains("updateRate")) oc.updateRate = j["updateRate"].get<f32>();
     return oc;
@@ -6345,7 +6339,6 @@ json SerializeBehaviorTreeComponent(const ECS::BehaviorTreeComponent& bt) {
     j["rootNodeId"] = bt.rootNodeId;
     j["enabled"] = bt.enabled;
     j["tickInterval"] = RF(bt.tickInterval);
-    j["debugEnabled"] = RF(bt.debugEnabled);
 
     // Node meta
     json metaArr = json::array();
@@ -6387,7 +6380,6 @@ ECS::BehaviorTreeComponent DeserializeBehaviorTreeComponent(const json& j) {
     if (j.contains("rootNodeId")) bt.rootNodeId = j["rootNodeId"].get<Editor::NodeId>();
     if (j.contains("enabled")) bt.enabled = JB(j["enabled"]);
     if (j.contains("tickInterval")) bt.tickInterval = j["tickInterval"].get<f32>();
-    if (j.contains("debugEnabled")) bt.debugEnabled = JB(j["debugEnabled"]);
 
     if (j.contains("nodeMeta") && j["nodeMeta"].is_array()) {
         for (const auto& m : j["nodeMeta"]) {
@@ -8421,7 +8413,6 @@ json SerializeUITheme(const GUI::UITheme& t) {
     json j;
     j["name"] = t.name;
     j["primary"] = SerializeVector3(t.primary);
-    j["secondary"] = SerializeVector3(t.secondary);
     j["background"] = SerializeVector3(t.background);
     j["surface"] = SerializeVector3(t.surface);
     j["error"] = SerializeVector3(t.error);
@@ -8477,7 +8468,6 @@ GUI::UITheme DeserializeUITheme(const json& j) {
     GUI::UITheme t;
     if (j.contains("name")) t.name = j["name"].get<std::string>();
     if (j.contains("primary")) t.primary = DeserializeVector3(j["primary"]);
-    if (j.contains("secondary")) t.secondary = DeserializeVector3(j["secondary"]);
     if (j.contains("background")) t.background = DeserializeVector3(j["background"]);
     if (j.contains("surface")) t.surface = DeserializeVector3(j["surface"]);
     if (j.contains("error")) t.error = DeserializeVector3(j["error"]);

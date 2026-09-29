@@ -286,8 +286,8 @@ struct AudioSourceComponent {
     // Music and UI channels force non-diegetic playback (2D, no spatialization)
     AudioChannel channel = AudioChannel::SFX;
 
-    // Spatial blend (0 = 2D, 1 = 3D)
-    f32 spatialBlend = 1.0f;
+    // (No spatial blend: a sound is 2D or 3D by the 3D Sound switch, and nothing
+    // could blend between them.)
 
     // How a 3D sound fades with distance between Min and Max Distance
     // (AudioEngine::SetRolloff). Exponential was called Custom and had no
@@ -468,7 +468,8 @@ struct LipSyncComponent {
 // Sound occlusion — muffle audio behind walls via low-pass filter.
 struct AudioOcclusionComponent {
     bool enabled = true;
-    f32 lowPassCutoff = 800.0f;      // Frequency cutoff when fully occluded
+    // (No low-pass cutoff: occlusion muffles by volume and a slight pitch drop;
+    // there is no per-sound filter to set a cutoff on.)
     f32 volumeReduction = 0.3f;      // Additional volume reduction when occluded
     f32 updateRate = 10.0f;          // Raycast check frequency (Hz)
 

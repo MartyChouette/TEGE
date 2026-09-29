@@ -51,7 +51,8 @@ struct ENJIN_API WaterVolumeComponent {
     f32 shoreWidth = 0.15f;       // 0-0.5, normalized edge distance for foam
     f32 foamIntensity = 0.6f;     // 0-1
     f32 foamScale = 8.0f;         // Noise scale for foam pattern
-    Math::Vector3 shoreColor = Math::Vector3(0.3f, 0.6f, 0.7f);  // Shallow water tint
+    // (No shore colour: both shaders derive it from the base colour, and there
+    // is no room in the draw data to carry one.)
 
     // Buoyancy: dynamic rigidbodies inside the volume and below the surface get pushed
     // up so they float. On by default so "things float in water" works out of the box.

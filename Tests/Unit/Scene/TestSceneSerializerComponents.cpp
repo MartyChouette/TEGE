@@ -192,7 +192,6 @@ ENJIN_TEST(AudioSource, FieldsRoundTrip) {
     a.playOnAwake = true;
     a.loop = true;
     a.is3D = false;
-    a.spatialBlend = 0.25f;
     a.voicePriority = 64;
     a.pitchMin = 0.9f;
     a.pitchMax = 1.1f;
@@ -210,7 +209,6 @@ ENJIN_TEST(AudioSource, FieldsRoundTrip) {
     ENJIN_EXPECT_TRUE(g->playOnAwake);
     ENJIN_EXPECT_TRUE(g->loop);
     ENJIN_EXPECT_FALSE(g->is3D);
-    ENJIN_EXPECT_FLOAT_EQ(g->spatialBlend, 0.25f);
     ENJIN_EXPECT_EQ(g->voicePriority, 64);
     ENJIN_EXPECT_FLOAT_EQ(g->pitchMin, 0.9f);   // regression: was not serialized
     ENJIN_EXPECT_FLOAT_EQ(g->pitchMax, 1.1f);
