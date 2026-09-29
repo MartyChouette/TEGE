@@ -20,6 +20,9 @@
 #include "Enjin/Animation/Timeline.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Transform.h"
+#include "Enjin/ECS/Components/Name.h"
+#include "Enjin/Scene/SceneSerializer.h"
+#include <nlohmann/json.hpp>
 #include <string>
 
 using namespace Enjin;
@@ -283,6 +286,49 @@ ENJIN_TEST(FlashTimelineConvert, ConvertingTwiceDoesNotStackDuplicateTracks) {
 
     ENJIN_ASSERT_EQ(afterFirst, static_cast<usize>(1));
     ENJIN_EXPECT_EQ(afterSecond, static_cast<usize>(1));
+}
+
+// The timeline document saves with the scene and comes back after a reload,
+// pointing at the reloaded entity. It lived only in editor memory, so a reload
+// left baked tracks that could not be edited as a timeline again.
+ENJIN_TEST(FlashTimelinePersist, test_flash_timeline_saved_scene_reloads_same_document) {
+    // Arrange: a layer on a named entity with rotation, a label and a script,
+    // which the baked tracks cannot carry
+    ECS::World world;
+    const ECS::Entity e = world.CreateEntity();
+    world.AddComponent<ECS::TransformComponent>(e);
+    world.AddComponent<ECS::NameComponent>(e, "Mover");
+    FlashTimelineData tl;
+    tl.frameRate = 12.0f;
+    tl.totalFrames = 48;
+    tl.layers.push_back(MakeAnimatedLayer(e, "Mover layer"));
+    tl.layers[0].keyframes[0].rotation = Math::Vector3(0.0f, 45.0f, 0.0f);
+    tl.layers[0].keyframes[0].label = "start";
+    tl.layers[0].keyframes[0].script = "Log(\"hi\");";
+    Scene::SceneSerializer out(&world);
+    out.SetEditorData(nlohmann::json{{"flashTimeline", nlohmann::json::parse(FlashTimelineToJson(tl, &world))}}.dump());
+    const std::string sceneText = out.SaveToString();
+
+    // Act: load into a fresh world, as reopening the scene does
+    ECS::World world2;
+    Scene::SceneSerializer in(&world2);
+    const bool loaded = in.LoadFromString(sceneText).success;
+    const nlohmann::json ed = nlohmann::json::parse(in.GetEditorData(), nullptr, false);
+    FlashTimelineData back;
+    const bool parsed = ed.is_object() && ed.contains("flashTimeline") &&
+                        FlashTimelineFromJson(ed["flashTimeline"].dump(), back, &world2);
+
+    // Assert
+    ENJIN_ASSERT_TRUE(loaded && parsed);
+    ENJIN_EXPECT_FLOAT_EQ(back.frameRate, 12.0f);
+    ENJIN_EXPECT_EQ(back.totalFrames, 48u);
+    ENJIN_ASSERT_TRUE(back.layers.size() == 1);
+    ENJIN_EXPECT_TRUE(back.layers[0].entity == world2.FindEntityByName("Mover"));
+    ENJIN_EXPECT_TRUE(back.layers[0].entity != 0);
+    ENJIN_ASSERT_TRUE(back.layers[0].keyframes.size() == tl.layers[0].keyframes.size());
+    ENJIN_EXPECT_FLOAT_EQ(back.layers[0].keyframes[0].rotation.y, 45.0f);
+    ENJIN_EXPECT_TRUE(back.layers[0].keyframes[0].label == "start");
+    ENJIN_EXPECT_TRUE(back.layers[0].keyframes[0].script == "Log(\"hi\");");
 }
 
 ENJIN_TEST_MAIN()

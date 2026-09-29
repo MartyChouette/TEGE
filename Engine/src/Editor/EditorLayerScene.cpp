@@ -525,6 +525,10 @@ bool EditorLayer::SaveScene(const std::string& path) {
     // picture.
     if (m_PostProcessing) renderSettings.lutPath = m_PostProcessing->GetLUTPath();
     serializer.SetRenderSettings(renderSettings);
+    // The Flash timeline document saves with the scene, so it can be edited again after a reload
+    if (!m_FlashTimelineData.layers.empty())
+        serializer.SetEditorData(nlohmann::json{{"flashTimeline", nlohmann::json::parse(
+            FlashTimelineToJson(m_FlashTimelineData, m_World))}}.dump());
 
     SwapWorldTimeSun();                      // the scene's own sun, not world time's (EP-4)
     auto result = serializer.Save(path);
@@ -843,6 +847,14 @@ void EditorLayer::OpenSceneImmediate(const std::string& path, const std::string&
     // Adopt the scene's content warning flags (authored in Settings > Scene)
     if (result.success) {
         m_SceneContentFlags = serializer.GetContentFlags();
+        // The scene's Flash timeline, or none: a timeline belongs to the scene
+        // it was saved with, and its layers point at that scene's entities
+        m_FlashTimelineData = FlashTimelineData{};
+        if (!serializer.GetEditorData().empty()) {
+            const nlohmann::json ed = nlohmann::json::parse(serializer.GetEditorData(), nullptr, false);
+            if (ed.is_object() && ed.contains("flashTimeline"))
+                FlashTimelineFromJson(ed["flashTimeline"].dump(), m_FlashTimelineData, m_World);
+        }
     }
 
     // Apply loaded render settings
@@ -1378,6 +1390,10 @@ void EditorLayer::AutoSave() {
     // picture.
     if (m_PostProcessing) renderSettings.lutPath = m_PostProcessing->GetLUTPath();
     serializer.SetRenderSettings(renderSettings);
+    // The Flash timeline document saves with the scene, so it can be edited again after a reload
+    if (!m_FlashTimelineData.layers.empty())
+        serializer.SetEditorData(nlohmann::json{{"flashTimeline", nlohmann::json::parse(
+            FlashTimelineToJson(m_FlashTimelineData, m_World))}}.dump());
 
     SwapWorldTimeSun();
     auto result = serializer.Save(autoSavePath);

@@ -247,6 +247,12 @@ public:
     void SetRenderSettings(const Renderer::SceneRenderSettings& s) { m_RenderSettings = s; }
     const Renderer::SceneRenderSettings& GetRenderSettings() const { return m_RenderSettings; }
 
+    // Editor-only documents that belong to this scene (the Flash timeline), as
+    // a JSON object string. Saved under "editorData" and read back on load;
+    // players never look at it. Empty = nothing, and the block is left out.
+    void SetEditorData(std::string json) { m_EditorData = std::move(json); }
+    const std::string& GetEditorData() const { return m_EditorData; }
+
     // True when the last file load read a scene whose formatVersion is NEWER
     // than this engine understands, and `path` is that same file.
     //
@@ -284,6 +290,7 @@ private:
     Renderer::SkyboxConfig m_SkyboxConfig;
     Renderer::Water2DConfig m_Water2DConfig;
     Renderer::SceneRenderSettings m_RenderSettings;
+    std::string m_EditorData;
 };
 
 } // namespace Scene

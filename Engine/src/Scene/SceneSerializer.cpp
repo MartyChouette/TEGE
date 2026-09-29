@@ -10630,6 +10630,12 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
         // Serialize render settings
         sceneJson["renderSettings"] = Renderer::SerializeRenderSettings(m_RenderSettings);
 
+        // Editor-only documents (SetEditorData)
+        if (!m_EditorData.empty()) {
+            json ed = json::parse(m_EditorData, nullptr, /*allow_exceptions=*/false);
+            if (ed.is_object() && !ed.empty()) sceneJson["editorData"] = std::move(ed);
+        }
+
         // Atomic file save: write to temp file, then rename
         std::string tmpPath = filepath + ".tmp";
         {
@@ -11251,6 +11257,8 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
         } else {
             m_RenderSettings = Renderer::SceneRenderSettings{};
         }
+        m_EditorData = (sceneJson.contains("editorData") && sceneJson["editorData"].is_object())
+            ? sceneJson["editorData"].dump() : std::string();
 
         // Check version
         std::string version = sceneJson.value("version", "1.0");
@@ -11445,6 +11453,12 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
         // Serialize render settings
         sceneJson["renderSettings"] = Renderer::SerializeRenderSettings(m_RenderSettings);
 
+        // Editor-only documents (SetEditorData)
+        if (!m_EditorData.empty()) {
+            json ed = json::parse(m_EditorData, nullptr, /*allow_exceptions=*/false);
+            if (ed.is_object() && !ed.empty()) sceneJson["editorData"] = std::move(ed);
+        }
+
         if (options.prettyPrint) {
             return sceneJson.dump(static_cast<int>(options.indentSize));
         } else {
@@ -11562,6 +11576,8 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
         } else {
             m_RenderSettings = Renderer::SceneRenderSettings{};
         }
+        m_EditorData = (sceneJson.contains("editorData") && sceneJson["editorData"].is_object())
+            ? sceneJson["editorData"].dump() : std::string();
 
         // Check version
         std::string version = sceneJson.value("version", "1.0");

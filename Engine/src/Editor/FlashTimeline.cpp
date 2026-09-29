@@ -1,4 +1,7 @@
 #include "Enjin/Editor/FlashTimeline.h"
+#include "Enjin/ECS/Components/StableId.h"
+#include <nlohmann/json.hpp>
+#include <algorithm>
 #include "Enjin/Editor/EditorTheme.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Gameplay.h"
@@ -1128,6 +1131,120 @@ void FlashTimelineEditor::CaptureKeyframe(ECS::World* world, ECS::Entity entity)
 
 void FlashTimelineEditor::ImportFromSWFSprite(const std::string& /*swfPath*/) {
     ENJIN_LOG_INFO(Editor, "SWF sprite import not yet implemented in timeline editor");
+}
+
+std::string FlashTimelineToJson(const FlashTimelineData& t, ECS::World* world) {
+    nlohmann::json j;
+    j["name"] = t.name;
+    j["totalFrames"] = t.totalFrames;
+    j["frameRate"] = t.frameRate;
+    j["loop"] = t.loop;
+    j["stageWidth"] = t.stageWidth;
+    j["stageHeight"] = t.stageHeight;
+    j["backgroundColor"] = t.backgroundColor;
+    j["symbolLibrary"] = t.symbolLibrary;
+    auto v3 = [](const Math::Vector3& v) { return nlohmann::json::array({v.x, v.y, v.z}); };
+    nlohmann::json layers = nlohmann::json::array();
+    for (const auto& layer : t.layers) {
+        nlohmann::json lj;
+        lj["name"] = layer.name;
+        lj["visible"] = layer.visible;
+        lj["locked"] = layer.locked;
+        lj["isGuide"] = layer.isGuide;
+        lj["isMask"] = layer.isMask;
+        u64 stable = 0;
+        if (world && layer.entity != 0 && world->IsValid(layer.entity)) {
+            if (!world->HasComponent<ECS::StableIdComponent>(layer.entity))
+                world->AddComponent<ECS::StableIdComponent>(layer.entity, ECS::StableIdComponent{ECS::GenerateStableId()});
+            stable = world->GetComponent<ECS::StableIdComponent>(layer.entity)->id;
+        }
+        lj["entity"] = stable;
+        nlohmann::json kfs = nlohmann::json::array();
+        for (const auto& kf : layer.keyframes) {
+            nlohmann::json k;
+            k["frame"] = kf.frameIndex;
+            k["type"] = static_cast<int>(kf.type);
+            k["position"] = v3(kf.position);
+            k["rotation"] = v3(kf.rotation);
+            k["scale"] = v3(kf.scale);
+            k["alpha"] = kf.alpha;
+            k["visible"] = kf.visible;
+            k["tweenMotion"] = kf.tweenMotion;
+            k["tweenEasing"] = static_cast<int>(kf.tweenEasing);
+            if (!kf.label.empty()) k["label"] = kf.label;
+            if (!kf.script.empty()) k["script"] = kf.script;
+            if (!kf.soundPath.empty()) k["soundPath"] = kf.soundPath;
+            kfs.push_back(std::move(k));
+        }
+        lj["keyframes"] = std::move(kfs);
+        layers.push_back(std::move(lj));
+    }
+    j["layers"] = std::move(layers);
+    return j.dump();
+}
+
+bool FlashTimelineFromJson(const std::string& json, FlashTimelineData& t, ECS::World* world) {
+    const nlohmann::json j = nlohmann::json::parse(json, nullptr, /*allow_exceptions=*/false);
+    if (!j.is_object()) return false;
+    FlashTimelineData out;
+    out.name = j.value("name", out.name);
+    out.totalFrames = std::max(1u, j.value("totalFrames", out.totalFrames));
+    out.frameRate = std::max(1.0f, j.value("frameRate", out.frameRate));
+    out.loop = j.value("loop", out.loop);
+    out.stageWidth = j.value("stageWidth", out.stageWidth);
+    out.stageHeight = j.value("stageHeight", out.stageHeight);
+    out.backgroundColor = j.value("backgroundColor", out.backgroundColor);
+    if (j.contains("symbolLibrary") && j["symbolLibrary"].is_object())
+        out.symbolLibrary = j["symbolLibrary"].get<std::unordered_map<std::string, std::string>>();
+
+    // Stable id -> this load's entity
+    std::unordered_map<u64, ECS::Entity> byStable;
+    if (world) {
+        for (ECS::Entity e : world->GetEntitiesWithComponent<ECS::StableIdComponent>())
+            byStable[world->GetComponent<ECS::StableIdComponent>(e)->id] = e;
+    }
+    auto v3 = [](const nlohmann::json& a, const Math::Vector3& d) {
+        return (a.is_array() && a.size() == 3)
+            ? Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>()) : d;
+    };
+    if (j.contains("layers") && j["layers"].is_array()) {
+        for (const auto& lj : j["layers"]) {
+            if (!lj.is_object()) continue;
+            FlashTimelineLayer layer;
+            layer.name = lj.value("name", layer.name);
+            layer.visible = lj.value("visible", true);
+            layer.locked = lj.value("locked", false);
+            layer.isGuide = lj.value("isGuide", false);
+            layer.isMask = lj.value("isMask", false);
+            const u64 stable = lj.value("entity", u64{0});
+            auto it = byStable.find(stable);
+            layer.entity = (stable != 0 && it != byStable.end()) ? it->second : 0;
+            if (lj.contains("keyframes") && lj["keyframes"].is_array()) {
+                for (const auto& k : lj["keyframes"]) {
+                    if (!k.is_object()) continue;
+                    FlashKeyframe kf;
+                    kf.frameIndex = k.value("frame", 0u);
+                    kf.type = static_cast<FlashFrameType>(std::clamp(k.value("type", 1), 0, 4));
+                    kf.position = v3(k.value("position", nlohmann::json()), kf.position);
+                    kf.rotation = v3(k.value("rotation", nlohmann::json()), kf.rotation);
+                    kf.scale = v3(k.value("scale", nlohmann::json()), kf.scale);
+                    kf.alpha = k.value("alpha", 1.0f);
+                    kf.visible = k.value("visible", true);
+                    kf.tweenMotion = k.value("tweenMotion", false);
+                    kf.tweenEasing = static_cast<ECS::EasingType>(std::max(0, k.value("tweenEasing", 0)));
+                    kf.label = k.value("label", std::string());
+                    kf.script = k.value("script", std::string());
+                    kf.soundPath = k.value("soundPath", std::string());
+                    layer.keyframes.push_back(std::move(kf));
+                }
+                std::sort(layer.keyframes.begin(), layer.keyframes.end(),
+                          [](const FlashKeyframe& a, const FlashKeyframe& b) { return a.frameIndex < b.frameIndex; });
+            }
+            out.layers.push_back(std::move(layer));
+        }
+    }
+    t = std::move(out);
+    return true;
 }
 
 } // namespace Editor

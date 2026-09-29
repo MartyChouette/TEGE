@@ -159,6 +159,17 @@ struct FlashTimelineData {
     void DeleteFrames(u32 atFrame, u32 count);
 };
 
+// The timeline document as JSON, saved with the scene (SceneSerializer's
+// editor data). It lived only in editor memory, so after a reload the keyframes
+// were gone and the baked TimelineComponent tracks could not be edited as a
+// timeline again; baking also drops rotation, labels, frame scripts, sounds and
+// most easing, so rebuilding from the tracks would not have been the same
+// document. Layer entities are referenced by StableIdComponent, assigned here
+// if missing, since the runtime handle changes on every load.
+ENJIN_API std::string FlashTimelineToJson(const FlashTimelineData& timeline, ECS::World* world);
+// A layer whose entity is no longer in the scene keeps its keyframes with no entity.
+ENJIN_API bool FlashTimelineFromJson(const std::string& json, FlashTimelineData& timeline, ECS::World* world);
+
 // ============================================================================
 // Flash Timeline Editor Widget
 // ============================================================================
