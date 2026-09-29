@@ -281,6 +281,32 @@ void EditorLayer::DrawLightmapBakerWindow() {
         ImGui::Spacing();
     }
 
+    // The bake this scene uses. Strength and turning it off had no control:
+    // once baked, the only way back to no baked light was editing the scene file.
+    if (m_RenderSystem) {
+        bool on = false;
+        std::string b0, b1, b2;
+        f32 strength = 1.0f;
+        m_RenderSystem->GetSceneLightmap(on, b0, b1, b2, strength);
+        if (!b0.empty()) {
+            ImGui::SeparatorText("This scene's bake");
+            ImGui::TextDisabled("%s", std::filesystem::path(b0).parent_path().filename().string().c_str());
+            if (ImGui::Checkbox("Use baked light", &on)) {
+                m_RenderSystem->SetLightmapEnabled(on);
+                MarkDirty();
+            }
+            if (on) {
+                ImGui::PushItemWidth(180.0f);
+                if (ImGui::SliderFloat("Strength##Lightmap", &strength, 0.0f, 4.0f, "%.2f")) {
+                    m_RenderSystem->SetLightmapStrength(strength);
+                    MarkDirty();
+                }
+                ImGui::PopItemWidth();
+            }
+            ImGui::Spacing();
+        }
+    }
+
     ImGui::PushItemWidth(180.0f);
     char nameBuf[64];
     std::snprintf(nameBuf, sizeof(nameBuf), "%s", m_LightmapBakeName.c_str());

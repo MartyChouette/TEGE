@@ -3174,6 +3174,14 @@ void EditorLayer::DrawSettingsSection_RayTracing() {
                                     if (ImGui::IsItemHovered()) ImGui::SetTooltip(
                                         "Minimum number of lights to trigger BVH construction.\n"
                                         "Below this threshold, uniform random selection is used.");
+                                    int maxLights = static_cast<int>(cfg.maxLights);
+                                    if (ImGui::DragInt("Max Lights##LightBVH", &maxLights, 64.0f, 16, 65536)) {
+                                        cfg.maxLights = static_cast<u32>(maxLights < 16 ? 16 : maxLights);
+                                    }
+                                    ImGui::SetItemTooltip("Lights beyond this count are left out of the hierarchy.");
+                                    ImGui::Checkbox("Rebuild Every Frame##LightBVH", &cfg.rebuildEveryFrame);
+                                    ImGui::SetItemTooltip("Rebuild even when no light changed. Only needed for lights moved by\n"
+                                                          "something the change check cannot see; it costs a rebuild per frame.");
                                     if (lightBVH->IsValid()) {
                                         ImGui::Text("BVH Nodes: %u", lightBVH->GetNodeCount());
                                     } else {

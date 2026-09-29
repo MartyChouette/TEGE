@@ -479,6 +479,10 @@ public:
         // one, and the texture cache is keyed by path.
         for (u32 i = 0; i < 3; ++i) m_LightmapBindless[i] = UINT32_MAX;
     }
+    // Strength and on/off without touching the paths, so neither reloads the
+    // atlases. Turning it back on loads them if they were never resident.
+    void SetLightmapStrength(f32 strength) { m_LightmapStrength = strength < 0.0f ? 0.0f : strength; }
+    void SetLightmapEnabled(bool enabled) { m_LightmapEnabled = enabled; }
     void GetSceneLightmap(bool& enabled, std::string& b0, std::string& b1,
                           std::string& b2, f32& strength) const {
         enabled = m_LightmapEnabled;

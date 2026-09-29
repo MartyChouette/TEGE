@@ -1798,6 +1798,35 @@ void EditorLayer::DrawSettingsSection_CollisionGroups() {
 
 void EditorLayer::DrawSettingsSection_Environment() {
     if (UI::SectionHeader("Environment")) {
+        // === THE SCENE'S OWN FOG AND SNOW COVER ===
+        // Both were saved and loaded and had no control, so a scene could only
+        // get them by editing its file. A Weather Zone the camera is inside
+        // replaces this fog while it is inside.
+        if (m_RenderSystem && ImGui::TreeNode("Fog and Snow Cover")) {
+            f32 density = 0.0f, start = 0.0f, end = 0.0f, falloff = 0.0f;
+            Math::Vector3 color;
+            m_RenderSystem->GetAuthoredFog(density, start, end, falloff, color);
+            bool fogChanged = false;
+            fogChanged |= ImGui::SliderFloat("Fog Density", &density, 0.0f, 0.2f, "%.4f");
+            ImGui::SetItemTooltip("0 is no fog.");
+            fogChanged |= ImGui::DragFloat("Fog Start", &start, 0.5f, 0.0f, end);
+            fogChanged |= ImGui::DragFloat("Fog End", &end, 0.5f, start, 10000.0f);
+            fogChanged |= ImGui::SliderFloat("Fog Height Falloff", &falloff, 0.0f, 1.0f);
+            fogChanged |= ImGui::ColorEdit3("Fog Colour", &color.x);
+            if (fogChanged) {
+                m_RenderSystem->SetAuthoredFog(density, start, end, falloff, color);
+                m_RenderSystem->RestoreAuthoredFog();   // shows at once when no zone is driving it
+                MarkDirty();
+            }
+            ImGui::TextDisabled("A Weather Zone the camera is inside replaces this fog.");
+            f32 snow = m_RenderSystem->GetAuthoredSnowIntensity();
+            if (ImGui::SliderFloat("Snow Cover", &snow, 0.0f, 1.0f)) {
+                m_RenderSystem->SetAuthoredSnowIntensity(snow);
+                MarkDirty();
+            }
+            ImGui::SetItemTooltip("Snow lying on upward faces, whatever the weather is doing.");
+            ImGui::TreePop();
+        }
         // === WORLD TIME / DAY-NIGHT CYCLE ===
         if (ImGui::TreeNode("World Time / Day-Night")) {
             ImGui::Checkbox("Enable World Time", &m_WorldTimeEnabled);
@@ -2246,10 +2275,23 @@ void EditorLayer::DrawSettingsWindow() {
                         s_VoxRes = kVoxResolutions[voxIdx];
                         gridCommit = true;   // a combo has no drag to wait out
                     }
+                    // Texels per probe on each side of its octahedral map. Part of
+                    // the grid shape, since it sizes the atlas.
+                    u32 octRes = cfg.octResolution;
+                    {
+                        static const u32 kOct[] = { 4, 6, 8, 12, 16 };
+                        int octIdx = 2;
+                        for (int i = 0; i < 5; ++i) if (kOct[i] == octRes) { octIdx = i; break; }
+                        if (ImGui::Combo("Probe Resolution", &octIdx, "4\0006\0008\00012\00016\0")) {
+                            octRes = kOct[octIdx];
+                            gridCommit = true;
+                        }
+                        ImGui::SetItemTooltip("Texels per probe side. Higher keeps sharper light direction and costs atlas size.");
+                    }
                     s_GridEditing = gridActive;
                     if (gridCommit) {
                         ddgi.RequestGridRebuild(s_GridX, s_GridY, s_GridZ,
-                                                s_VoxRes, cfg.octResolution);
+                                                s_VoxRes, octRes);
                     }
                     if (ImGui::IsItemHovered() || gridActive) {
                         ImGui::SetTooltip("Changing the grid rebuilds the probe atlas. "
@@ -2261,15 +2303,24 @@ void EditorLayer::DrawSettingsWindow() {
                     i32 raysPerProbe = static_cast<i32>(cfg.raysPerProbe);
                     f32 maxTrace = cfg.maxTraceDistance;
                     f32 hysteresis = cfg.hysteresis;
+                    Math::Vector3 origin = cfg.gridOrigin;
+                    f32 voxelExtent = cfg.voxelWorldExtent;
+                    i32 amortization = static_cast<i32>(cfg.amortizationRate);
                     bool tuned = false;
+                    tuned |= ImGui::DragFloat3("Grid Origin", &origin.x, 0.25f);
+                    ImGui::SetItemTooltip("World position of the grid's first probe corner. The grid extends from here by Grid Spacing.");
                     tuned |= ImGui::SliderFloat("Grid Spacing", &gridSpacing, 0.5f, 16.0f);
+                    tuned |= ImGui::SliderFloat("Voxel Extent", &voxelExtent, 5.0f, 500.0f, "%.0f");
+                    ImGui::SetItemTooltip("World size of the voxelized scene the probes trace against.");
                     tuned |= ImGui::SliderInt("Rays Per Probe", &raysPerProbe, 16, 256);
                     tuned |= ImGui::SliderFloat("Max Trace Distance", &maxTrace, 5.0f, 100.0f);
+                    tuned |= ImGui::SliderInt("Amortization", &amortization, 1, 32);
+                    ImGui::SetItemTooltip("Update one probe in N each frame. Higher is cheaper and slower to react to light changes.");
                     tuned |= ImGui::SliderFloat("Hysteresis", &hysteresis, 0.8f, 0.99f, "%.3f");
                     if (tuned) {
-                        ddgi.SetRuntimeTunables(gridSpacing, cfg.gridOrigin, cfg.voxelWorldExtent,
+                        ddgi.SetRuntimeTunables(gridSpacing, origin, voxelExtent,
                                                 static_cast<u32>(raysPerProbe), maxTrace,
-                                                cfg.amortizationRate, hysteresis);
+                                                static_cast<u32>(amortization < 1 ? 1 : amortization), hysteresis);
                     }
 
                     // Read from the system, so it reports what was ALLOCATED
