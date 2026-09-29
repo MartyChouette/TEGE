@@ -6867,26 +6867,31 @@ void EditorLayer::ExportReplayToProject() {
 
 // Load the newest .tegereplay from <project>/replays/, restore its scene
 // snapshot, and replay the input stream deterministically.
-void EditorLayer::PlayLatestReplay() {
+std::vector<std::filesystem::path> EditorLayer::ListProjectReplays() const {
     std::filesystem::path root =
         std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path();
     if (root.empty()) root = std::filesystem::current_path();
-    std::filesystem::path dir = root / "replays";
-    std::filesystem::path newest;
-    std::filesystem::file_time_type newestTime{};
+    std::vector<std::pair<std::filesystem::file_time_type, std::filesystem::path>> found;
     std::error_code ec;
-    for (const auto& e : std::filesystem::directory_iterator(dir, ec)) {
-        if (e.path().extension() == ".tegereplay") {
-            auto wt = std::filesystem::last_write_time(e.path(), ec);
-            if (newest.empty() || wt > newestTime) { newest = e.path(); newestTime = wt; }
-        }
+    for (const auto& e : std::filesystem::directory_iterator(root / "replays", ec)) {
+        if (e.path().extension() == ".tegereplay")
+            found.emplace_back(std::filesystem::last_write_time(e.path(), ec), e.path());
     }
-    if (newest.empty()) {
+    std::sort(found.begin(), found.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
+    std::vector<std::filesystem::path> out;
+    out.reserve(found.size());
+    for (auto& f : found) out.push_back(std::move(f.second));
+    return out;
+}
+
+void EditorLayer::PlayLatestReplay() {
+    const auto replays = ListProjectReplays();
+    if (replays.empty()) {
         ShowNotification("No replays found in replays/ - play a session, then Export Replay",
                          NotificationType::Warning);
         return;
     }
-    PlayReplayFile(newest);
+    PlayReplayFile(replays.front());
 }
 
 // Replay one .tegereplay: restore its scene snapshot and replay the input

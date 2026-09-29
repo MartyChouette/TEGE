@@ -1353,10 +1353,23 @@ void EditorLayer::DrawMenuBar() {
                     ? "Save the last play session (inputs + scene) as a shareable replay file"
                     : "Nothing recorded yet - press Play, do something, then Stop");
                 ImGui::SameLine(0.0f, 4.0f);
-                if (ImGui::SmallButton("Play Replay")) {
-                    PlayLatestReplay();
+                // A list, newest first: the button used to play only the newest,
+                // so an older replay could be reached only from the Asset Browser
+                if (ImGui::SmallButton("Play Replay")) ImGui::OpenPopup("PlayReplayList");
+                ImGui::SetItemTooltip("Pick a .tegereplay from this project's replays folder");
+                if (ImGui::BeginPopup("PlayReplayList")) {
+                    const auto replays = ListProjectReplays();
+                    if (replays.empty()) {
+                        ImGui::TextDisabled("No replays yet - play a session, then Export Replay");
+                    }
+                    for (size_t i = 0; i < replays.size() && i < 30; ++i) {
+                        const std::string name = replays[i].filename().string();
+                        if (ImGui::MenuItem(name.c_str(), i == 0 ? "newest" : nullptr)) {
+                            PlayReplayFile(replays[i]);
+                        }
+                    }
+                    ImGui::EndPopup();
                 }
-                ImGui::SetItemTooltip("Replay the newest .tegereplay from this project's replays folder");
 
                 ImGui::SameLine(0.0f, 4.0f);
                 if (ImGui::SmallButton("...##recset")) ImGui::OpenPopup("RecorderSettingsPopup");

@@ -2105,6 +2105,8 @@ private:
     // is preserved here and restored when the replay session stops.
     void ExportReplayToProject();
     void PlayLatestReplay();
+    // The project's replays folder, newest first (the Play Replay list)
+    std::vector<std::filesystem::path> ListProjectReplays() const;
     std::string m_PreReplaySceneJson;
     bool m_WasReplaying = false;
     // Free camera during replay playback: the fly cam takes the game view
