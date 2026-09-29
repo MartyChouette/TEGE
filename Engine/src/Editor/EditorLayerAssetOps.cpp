@@ -80,7 +80,11 @@ void EditorLayer::OpenAssetFromBrowser(const std::string& path) {
         SetPanelVisibility(EditorPanel::Dialogue, true);
         ShowNotification("Select the entity with the dialogue, then use Import in the Dialogue Editor",
                          NotificationType::Info);
-    } else if (ext == ".as" || ext == ".angelscript" || ext == ".vert" || ext == ".frag" ||
+    } else if (ext == ".as" || ext == ".angelscript") {
+        // The in-editor Script window, so a machine with no IDE can still edit
+        // a script; its Open in IDE button is one click away
+        PeekScriptAtLine(path, 0);
+    } else if (ext == ".vert" || ext == ".frag" ||
                ext == ".glsl" || ext == ".comp" || ext == ".json" || ext == ".txt" || ext == ".md" ||
                ext == ".csv" || ext == ".srt") {
         OpenInExternalIDE(path);

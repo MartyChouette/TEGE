@@ -340,15 +340,31 @@ bool EditorLayer::PeekScriptAtLine(const std::string& path, int line) {
 
     for (const auto& c : candidates) {
         if (c.empty() || !fs::is_regular_file(c, ec)) continue;
-        std::ifstream f(c);
+        // Unsaved edits are never thrown away by opening something: the same
+        // file just jumps, another file waits until these are saved or reverted
+        if (m_ScriptPeekOpen && m_ScriptPeekText != m_ScriptPeekSaved) {
+            if (fs::absolute(c, ec).string() == m_ScriptPeekPath) {
+                m_ScriptPeekLine = line;
+                m_ScriptPeekScrollPending = line > 0;
+                m_ScriptPeekFocusPending = true;
+                return true;
+            }
+            ShowNotification("The Script window has unsaved edits. Save or revert them first.",
+                             NotificationType::Warning);
+            m_ScriptPeekFocusPending = true;
+            return false;
+        }
+        std::ifstream f(c, std::ios::binary);
         if (!f.is_open()) continue;
 
-        m_ScriptPeekLines.clear();
-        std::string ln;
-        while (std::getline(f, ln)) {
-            if (!ln.empty() && ln.back() == '\r') ln.pop_back();
-            m_ScriptPeekLines.push_back(ln);
-        }
+        std::string raw((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+        m_ScriptPeekCRLF = raw.find("\r\n") != std::string::npos;
+        std::string text;
+        text.reserve(raw.size());
+        for (char ch : raw) if (ch != '\r') text.push_back(ch);
+        m_ScriptPeekText = text;
+        m_ScriptPeekSaved = std::move(text);
+        m_ScriptPeekDiskChanged = false;
         m_ScriptPeekPath = fs::absolute(c, ec).string();
         m_ScriptPeekLabel = path;
         m_ScriptPeekLine = line;
@@ -364,15 +380,85 @@ bool EditorLayer::PeekScriptAtLine(const std::string& path, int line) {
     return false;
 }
 
+namespace {
+// Grows the std::string behind an InputTextMultiline as it is typed into, and
+// on the frame a jump was asked for, puts the cursor on that line and selects
+// it, which also scrolls the box to it.
+struct ScriptEditCallbackData {
+    std::string* text = nullptr;
+    int jumpLine = 0;   // 1-based, 0 = none
+};
+int ScriptEditCallback(ImGuiInputTextCallbackData* data) {
+    auto* d = static_cast<ScriptEditCallbackData*>(data->UserData);
+    if (data->EventFlag == ImGuiInputTextFlags_CallbackResize) {
+        d->text->resize(static_cast<size_t>(data->BufTextLen));
+        data->Buf = d->text->data();
+    } else if (data->EventFlag == ImGuiInputTextFlags_CallbackAlways && d->jumpLine > 0) {
+        int line = 1, start = 0;
+        for (int i = 0; i < data->BufTextLen && line < d->jumpLine; ++i)
+            if (data->Buf[i] == '\n') { ++line; start = i + 1; }
+        int end = start;
+        while (end < data->BufTextLen && data->Buf[end] != '\n') ++end;
+        data->CursorPos = start;
+        data->SelectionStart = start;
+        data->SelectionEnd = end;
+        d->jumpLine = 0;
+    }
+    return 0;
+}
+} // namespace
+
+bool EditorLayer::SaveScriptPeek() {
+    if (m_ScriptPeekPath.empty()) return false;
+    std::string out;
+    if (m_ScriptPeekCRLF) {
+        out.reserve(m_ScriptPeekText.size() + m_ScriptPeekText.size() / 32);
+        for (char ch : m_ScriptPeekText) {
+            if (ch == '\n') out.push_back('\r');
+            out.push_back(ch);
+        }
+    } else {
+        out = m_ScriptPeekText;
+    }
+    std::ofstream f(m_ScriptPeekPath, std::ios::binary | std::ios::trunc);
+    if (!f.is_open() || !(f << out)) {
+        ShowNotification("Could not save " + m_ScriptPeekPath, NotificationType::Error);
+        return false;
+    }
+    f.close();
+    m_ScriptPeekSaved = m_ScriptPeekText;
+    m_ScriptPeekDiskChanged = false;
+    ShowNotification("Saved " + std::filesystem::path(m_ScriptPeekPath).filename().string(),
+                     NotificationType::Success);
+    return true;
+}
+
+void EditorLayer::ReloadScriptPeek() {
+    std::ifstream f(m_ScriptPeekPath, std::ios::binary);
+    if (!f.is_open()) return;
+    std::string raw((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    m_ScriptPeekCRLF = raw.find("\r\n") != std::string::npos;
+    std::string text;
+    text.reserve(raw.size());
+    for (char ch : raw) if (ch != '\r') text.push_back(ch);
+    m_ScriptPeekText = text;
+    m_ScriptPeekSaved = std::move(text);
+    m_ScriptPeekDiskChanged = false;
+}
+
 void EditorLayer::DrawScriptPeekWindow() {
     if (!m_ScriptPeekOpen) return;
 
+    const bool dirty = m_ScriptPeekText != m_ScriptPeekSaved;
     ImGui::SetNextWindowSize(ImVec2(720, 420), ImGuiCond_FirstUseEver);
     if (m_ScriptPeekFocusPending) {
         ImGui::SetNextWindowFocus();
         m_ScriptPeekFocusPending = false;
     }
-    if (!ImGui::Begin("Script", &m_ScriptPeekOpen)) {
+    // The title carries the unsaved marker; "###" keeps the window's identity
+    // the same with or without it
+    const std::string title = std::string("Script") + (dirty ? " *" : "") + "###ScriptPeek";
+    if (!ImGui::Begin(title.c_str(), &m_ScriptPeekOpen)) {
         ImGui::End();
         return;
     }
@@ -380,9 +466,24 @@ void EditorLayer::DrawScriptPeekWindow() {
     ImGui::TextUnformatted(m_ScriptPeekLabel.c_str());
     if (m_ScriptPeekLine > 0) {
         ImGui::SameLine();
-        ImGui::TextDisabled("line %d", m_ScriptPeekLine);
+        ImGui::TextDisabled("error at line %d", m_ScriptPeekLine);
     }
     ImGui::SameLine(0.0f, 16.0f);
+    if (!dirty) ImGui::BeginDisabled();
+    const bool saveClicked = ImGui::SmallButton("Save");
+    if (!dirty) ImGui::EndDisabled();
+    ImGui::SetItemTooltip("Write the file (Ctrl+S while editing). A running game picks it up as it does an IDE save.");
+    if (dirty) {
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Revert")) m_ScriptPeekText = m_ScriptPeekSaved;
+        ImGui::SetItemTooltip("Throw away the edits since the last save");
+    }
+    if (m_ScriptPeekLine > 0) {
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Go to error")) m_ScriptPeekScrollPending = true;
+        ImGui::SetItemTooltip("Put the cursor on the line the error named");
+    }
+    ImGui::SameLine();
     if (ImGui::SmallButton("Open in IDE")) {
         // The IDE jump already exists (the inspector's "Open at error" uses it)
         // and takes the line with it. This window is what answers when there is
@@ -390,10 +491,9 @@ void EditorLayer::DrawScriptPeekWindow() {
         OpenScriptAtLine(m_ScriptPeekPath, m_ScriptPeekLine);
     }
     ImGui::SetItemTooltip("Open the file in the external IDE, at this line");
-    // No Reload button. Its tooltip used to read "this is a viewer, so an
-    // external edit does not show until you do", which is the confession in one
-    // sentence: the panel knew it went stale and handed the user the job. It
-    // watches the file instead, and re-reads within a second of an IDE saving it.
+
+    // Watch the file rather than offer Reload. With no unsaved edits an IDE
+    // save simply shows up; with some, it is said, and nothing is thrown away.
     if (!m_ScriptPeekPath.empty()) {
         if (m_ScriptPeekWatchPath != m_ScriptPeekPath) {
             if (m_ScriptPeekWatch != 0) m_Watch.Unwatch(m_ScriptPeekWatch);
@@ -402,56 +502,43 @@ void EditorLayer::DrawScriptPeekWindow() {
             m_ScriptPeekWatchSeen = m_Watch.Version(m_ScriptPeekWatch);
         } else if (m_Watch.Version(m_ScriptPeekWatch) != m_ScriptPeekWatchSeen) {
             m_ScriptPeekWatchSeen = m_Watch.Version(m_ScriptPeekWatch);
-            PeekScriptAtLine(m_ScriptPeekLabel, m_ScriptPeekLine);
+            std::ifstream f(m_ScriptPeekPath, std::ios::binary);
+            std::string raw((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+            std::string text;
+            for (char ch : raw) if (ch != '\r') text.push_back(ch);
+            if (text != m_ScriptPeekSaved) {       // not just our own save coming back
+                if (dirty) m_ScriptPeekDiskChanged = true;
+                else ReloadScriptPeek();
+            }
         }
+    }
+    if (m_ScriptPeekDiskChanged) {
+        ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "The file changed on disk. Save overwrites it.");
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Load the disk version")) ReloadScriptPeek();
     }
     ImGui::Separator();
 
-    ImGui::BeginChild("ScriptPeekBody", ImVec2(0, 0), true, ImGuiWindowFlags_HorizontalScrollbar);
     ImFont* mono = m_ImGuiLayer ? m_ImGuiLayer->GetMonoFont() : nullptr;
     if (mono) ImGui::PushFont(mono);
-
-    const int total = static_cast<int>(m_ScriptPeekLines.size());
-    for (int i = 0; i < total; ++i) {
-        const bool isErrorLine = (i + 1 == m_ScriptPeekLine);
-
-        if (isErrorLine) {
-            // Full-width band behind the line, so it is findable at a glance
-            // rather than by reading the gutter.
-            ImVec2 p = ImGui::GetCursorScreenPos();
-            f32 w = ImGui::GetContentRegionAvail().x + ImGui::GetScrollX();
-            ImGui::GetWindowDrawList()->AddRectFilled(
-                p, ImVec2(p.x + w, p.y + ImGui::GetTextLineHeight()),
-                ImGui::GetColorU32(ImVec4(0.55f, 0.12f, 0.12f, 0.55f)));
-        }
-
-        ImGui::TextDisabled("%5d", i + 1);
-        ImGui::SameLine(0.0f, 12.0f);
-        if (isErrorLine) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.80f, 0.80f, 1.0f));
-        ImGui::TextUnformatted(m_ScriptPeekLines[i].c_str());
-        if (isErrorLine) ImGui::PopStyleColor();
-
-        // Scroll on the frame the line is actually laid out, not on open: the
-        // window has no scroll range until its content has been through a frame.
-        if (isErrorLine && m_ScriptPeekScrollPending) {
-            ImGui::SetScrollHereY(0.35f);
-            m_ScriptPeekScrollPending = false;
-        }
+    ScriptEditCallbackData cb;
+    cb.text = &m_ScriptPeekText;
+    if (m_ScriptPeekScrollPending && m_ScriptPeekLine > 0) {
+        // Focus the box so the selection shows and the box scrolls to it
+        ImGui::SetKeyboardFocusHere();
+        cb.jumpLine = m_ScriptPeekLine;
     }
-
-    if (total == 0) {
-        ImGui::TextDisabled("(empty file)");
-    } else if (m_ScriptPeekLine > total) {
-        // The error named a line past the end of the file on disk. Usually the
-        // file has been edited since the error was logged; saying so beats
-        // showing an unhighlighted file and letting it look like a miss.
-        ImGui::Separator();
-        ImGui::TextDisabled("line %d is past the end of this file (%d lines) - edited since the error?",
-                            m_ScriptPeekLine, total);
-    }
-
+    m_ScriptPeekScrollPending = false;
+    ImGui::InputTextMultiline("##ScriptEdit", m_ScriptPeekText.data(), m_ScriptPeekText.capacity() + 1,
+        ImVec2(-1.0f, -1.0f),
+        ImGuiInputTextFlags_AllowTabInput | ImGuiInputTextFlags_CallbackResize | ImGuiInputTextFlags_CallbackAlways,
+        ScriptEditCallback, &cb);
+    const bool boxFocused = ImGui::IsItemFocused() || ImGui::IsItemActive();
     if (mono) ImGui::PopFont();
-    ImGui::EndChild();
+
+    const bool ctrlS = boxFocused && ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_S, false);
+    if ((saveClicked || ctrlS) && m_ScriptPeekText != m_ScriptPeekSaved) SaveScriptPeek();
+
     ImGui::End();
 }
 

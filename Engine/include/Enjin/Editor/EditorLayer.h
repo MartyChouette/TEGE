@@ -1340,15 +1340,22 @@ private:
     // compiler, "... at scripts/Player.as:31:9" from a thrown exception -- and
     // until now reading that meant finding the file yourself and counting to the
     // line. Nothing else in the editor can show a line of script.
-    // Reads the file from disk on open; it is a viewer, not an editor.
+    // A basic editor: edit, save, and jump to the error line. Enough to fix a
+    // script with no IDE on the machine; Open in IDE is there for the rest.
     bool ParseScriptLocation(const std::string& message, std::string& outPath, int& outLine) const;
     bool PeekScriptAtLine(const std::string& path, int line);
     void DrawScriptPeekWindow();
+    bool SaveScriptPeek();
+    // Re-read the file after it changed on disk, keeping the cursor
+    void ReloadScriptPeek();
 
     bool m_ScriptPeekOpen = false;
     std::string m_ScriptPeekPath;         // resolved absolute path on disk
     std::string m_ScriptPeekLabel;        // what the message called it
-    std::vector<std::string> m_ScriptPeekLines;
+    std::string m_ScriptPeekText;         // the edit buffer, LF line endings
+    std::string m_ScriptPeekSaved;        // what is on disk, to tell unsaved edits
+    bool m_ScriptPeekCRLF = false;        // the file's own line endings, kept on save
+    bool m_ScriptPeekDiskChanged = false; // changed on disk while there were unsaved edits
     int  m_ScriptPeekLine = 0;            // 1-based, 0 = no line highlighted
     bool m_ScriptPeekScrollPending = false;
     // Opening has to raise the window, not just set the flag: a window that is
