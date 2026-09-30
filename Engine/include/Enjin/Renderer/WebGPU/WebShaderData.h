@@ -2019,10 +2019,16 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // LOD is kept because this target has one mip and level 0 is what implicit
     // sampling resolves to anyway, not because the branch requires it. What is
     // genuinely illegal is branching on per-fragment data.
+    // Scaled as postprocess.frag scales it: the shift is centre * intensity *
+    // distance from centre, so it grows toward the edges and is small in the
+    // middle, with red pushed out and blue pulled in. This used centre *
+    // intensity * 4, up to about 13x desktop's shift mid-screen and reversed,
+    // so a value tuned on desktop split a browser frame into colour bands.
     if (params.chromaticAberration > 0.0) {
-        let dir = (uv - vec2<f32>(0.5)) * params.chromaticAberration * 4.0;
-        let r = textureSampleLevel(sceneTexture, sceneSampler, uv - dir, 0.0).r;
-        let b = textureSampleLevel(sceneTexture, sceneSampler, uv + dir, 0.0).b;
+        let caCentre = uv - vec2<f32>(0.5);
+        let dir = caCentre * (params.chromaticAberration * length(caCentre));
+        let r = textureSampleLevel(sceneTexture, sceneSampler, uv + dir, 0.0).r;
+        let b = textureSampleLevel(sceneTexture, sceneSampler, uv - dir, 0.0).b;
         color = vec3<f32>(r, color.g, b);
     }
 
@@ -2158,7 +2164,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     if (params.filmGrain > 0.0) {
         let seed = uv * vec2<f32>(1024.0, 768.0) + vec2<f32>(params.timeSec * 60.0, params.timeSec * 37.0);
         let n = fract(sin(dot(seed, vec2<f32>(12.9898, 78.233))) * 43758.5453);
-        color = color + (n - 0.5) * params.filmGrain;
+        // -1..1 times the intensity, as postprocess.frag: (n - 0.5) was half
+        // desktop's grain for the same setting
+        color = color + (n * 2.0 - 1.0) * params.filmGrain;
     }
 
     // Ordered dither on real pixels, with the chosen Bayer pattern, scaled to
