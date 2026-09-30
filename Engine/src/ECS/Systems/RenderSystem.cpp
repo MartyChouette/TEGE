@@ -5519,7 +5519,18 @@ void RenderSystem::Update(f32 deltaTime) {
             u64 meshKey;        // vertex+index buffer identity, groups instancing batches
             f32 distSq;         // to the camera
             bool transparent;
+            // Multi-material: the first of this entity's per-slot rows, and how
+            // many (slotRows below until the reorder, the object buffer after).
+            u32 slotFirst = UINT32_MAX;
+            u32 slotCount = 0;
         };
+        // Per-slot ObjectData rows for multi-material entities, appended to the
+        // frame buffer after the reorder. Every sub-mesh used to draw with the
+        // entity's single row, so each slot's colour, metallic, roughness,
+        // emissive and opacity were lost and every slot looked like the entity's
+        // own material.
+        static std::vector<u8> slotRows;
+        slotRows.clear();
         // Reused across frames (render = single thread) — avoids re-allocating these two vectors
         // every frame. (#4: the per-frame heap alloc is gone; the sort below still runs each frame
         // because it depends on camera position — skipping it would need movement dirty-tracking.)
@@ -5950,7 +5961,28 @@ void RenderSystem::Update(f32 deltaTime) {
                 }
             }
             const f32 distSq = (xf->position - sortCamPos).LengthSquared();
-            drawCmds.push_back({entity, offset, meshKey, distSq, alphaBlend});
+            DrawCmd dc{entity, offset, meshKey, distSq, alphaBlend};
+            if (const auto* slots = m_CachedMaterialSlotsStorage ? m_CachedMaterialSlotsStorage->Get(entity) : nullptr) {
+                const MeshComponent* smesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity) : nullptr;
+                if (smesh && smesh->HasSubMeshes() && !slots->slots.empty()) {
+                    dc.slotFirst = static_cast<u32>(slotRows.size() / OBJ_STRIDE);
+                    dc.slotCount = static_cast<u32>(slots->slots.size());
+                    for (const auto& sm : slots->slots) {
+                        WebObjectDataUBO row = obj;   // model, flags and effects from the entity
+                        row.baseColor = sm.baseColor;
+                        row.metallic = sm.metallic;
+                        row.roughness = sm.roughness;
+                        row.emissiveColor = sm.emissiveColor;
+                        row.emissiveStrength = sm.emissiveStrength;
+                        row.opacity = sm.opacity;
+                        row.alphaCutoff = (sm.alphaMode == MaterialComponent::AlphaMode::Mask) ? sm.alphaCutoff : 0.0f;
+                        const usize at = slotRows.size();
+                        slotRows.resize(at + OBJ_STRIDE, 0);
+                        std::memcpy(slotRows.data() + at, &row, sizeof(row));
+                    }
+                }
+            }
+            drawCmds.push_back(dc);
         }
 
         // Sort draw commands: opaque grouped by mesh+texture (for instancing), then front-to-back
@@ -5993,6 +6025,15 @@ void RenderSystem::Update(f32 deltaTime) {
                 drawCmds[k].offset = static_cast<u32>(k * OBJ_STRIDE);
             }
             objDataBuf.swap(objSorted);   // downstream reads it in draw order
+
+            // The per-slot rows go after the sorted ones; point each command at its own
+            if (!slotRows.empty()) {
+                const u32 slotBase = static_cast<u32>(objDataBuf.size() / OBJ_STRIDE);
+                objDataBuf.insert(objDataBuf.end(), slotRows.begin(), slotRows.end());
+                for (auto& dcmd : drawCmds) {
+                    if (dcmd.slotFirst != UINT32_MAX) dcmd.slotFirst += slotBase;
+                }
+            }
 
             const usize needBytes = objDataBuf.empty() ? OBJ_STRIDE : objDataBuf.size();
             if (!m_WebObjectArrayBuf.IsValid() || m_WebObjectArrayCapacity < needBytes) {
@@ -6178,6 +6219,10 @@ void RenderSystem::Update(f32 deltaTime) {
                             if (subMesh.indexCount == 0) continue;
                             auto* slotMat = (subMesh.materialSlot >= 0 && subMesh.materialSlot < static_cast<i32>(matSlots->slots.size()))
                                 ? &matSlots->slots[subMesh.materialSlot] : nullptr;
+                            // This slot's own row (colour, metallic, opacity...), or the entity's
+                            const u32 slotInstance = (cmd.slotFirst != UINT32_MAX && subMesh.materialSlot >= 0 &&
+                                                      static_cast<u32>(subMesh.materialSlot) < cmd.slotCount)
+                                ? cmd.slotFirst + static_cast<u32>(subMesh.materialSlot) : firstInstance;
                             Renderer::GPUBindGroupHandle subTexBG;
                             if (slotMat) {
                                 auto bc = WebGetOrLoadTexture(slotMat->baseColorTexturePath);
@@ -6200,7 +6245,7 @@ void RenderSystem::Update(f32 deltaTime) {
                                 auto cached = m_WebSubMeshTexCache.find(texKey);
                                 if (cached != m_WebSubMeshTexCache.end()) {
                                     encoder->SetBindGroup(2, cached->second);
-                                    encoder->DrawIndexed(subMesh.indexCount, 1, subMesh.indexOffset, 0, firstInstance);
+                                    encoder->DrawIndexed(subMesh.indexCount, 1, subMesh.indexOffset, 0, slotInstance);
                                     m_DrawCallCount++;
                                     m_TriangleCount += subMesh.indexCount / 3;
                                     continue;
@@ -6233,7 +6278,7 @@ void RenderSystem::Update(f32 deltaTime) {
                                 if (subTexBG.IsValid()) m_WebSubMeshTexCache[texKey] = subTexBG;
                             }
                             encoder->SetBindGroup(2, subTexBG.IsValid() ? subTexBG : m_WebDefaultTexBindGroup);
-                            encoder->DrawIndexed(subMesh.indexCount, 1, subMesh.indexOffset, 0, firstInstance);
+                            encoder->DrawIndexed(subMesh.indexCount, 1, subMesh.indexOffset, 0, slotInstance);
                             m_DrawCallCount++;
                             m_TriangleCount += subMesh.indexCount / 3;
                         }
