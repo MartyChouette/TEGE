@@ -18,7 +18,9 @@ This document is the contract. For every capability it says one of three things:
 **Absent is the row that matters.** A maker who knows a feature is absent designs
 around it in ten seconds. A maker who finds out at the end has built on sand.
 
-Last verified against the tree 2026-09-15.
+Rows carry the date they were last checked. The table as a whole was last verified against the tree
+2026-09-15; the rows changed on 2026-09-30 were checked that day against the research in
+`_docs_internal/software-design/research/web_gaps.md`.
 
 ---
 
@@ -34,17 +36,16 @@ Last verified against the tree 2026-09-15.
 | Tilemaps | Same | Fixed 2026-09-13. It had never worked: mesh generation lived only in the Vulkan `RenderSystem::Update` body. |
 | Sprites, 2D | Same | |
 | Compute | Same | |
-| CPU particle emitters | Same | `ParticleEmitterComponent` renders through the web particle pipeline (`RenderSystem.cpp`, the web `Update` body), capped at 8192 instances shared between emitters. The Vulkan `ParticleRenderer` CLASS is absent, which is what this row used to say -- and it read as the capability being gone, which it is not. What IS missing is the emitter `texturePath`: web particles are untextured coloured billboards. Use a GPU emitter for textured particles. |
-| Decals, trails, line renderers | **Absent** | |
-| 3D text | **Absent** | Use a UI canvas label positioned in screen space. |
-| Terrain auto-mesh | **Absent** | Author the mesh and ship it. |
+| CPU particle emitters | Same | `ParticleEmitterComponent` renders through the web particle pipeline (`RenderSystem.cpp`, the web `Update` body), capped at 8192 instances shared between emitters, and draws its `texturePath` since ccc13ca8. Still missing: sheet animation and velocity stretch. |
+| 3D text | Same | SDF text meshes and text-on-surface rasters both draw on web (`WebEnsureTextMeshes`). Checked 2026-09-30. |
+| Terrain auto-mesh | Same | The terrain mesh rebuild is shared (`RegenerateDirtyTerrainMeshes`), and texture layers draw since 6da29275 (web flag bit 9). |
 | Morph targets | **Absent** | |
 | Custom shader graphs | **Absent** | |
 | Reflection systems (probes, planar, SSR) | **Absent** | Includes the water-surface reflection on `WaterVolumeComponent` and Water3D's Reflective/Refractive styles: the mirror is real geometry redrawn through the Vulkan ghost path, so a browser draws none of it. The surface itself is unaffected. |
 | Water volumes (surface, waves, translucency) | Same | Verified in a browser 2026-09-15 by capture, not by reading guards. Surface draws, an authored opacity blends over the bed, and the Gerstner-lite wave displacement runs. The waves needed fixing to get there: PBR_WGSL had carried the displacement all along but nothing on the web path set `FLAG_WATER_SURFACE`, so frames 60 and 400 of the same scene were byte-identical while desktop differed. Bit 5 means the same thing on both backends; bits 6 and 7 do NOT. |
 | Water shore foam | Same | Shipped 2026-09-15 and verified in a browser. It needed both halves: the three parameters (`shoreWidth`, `foamIntensity`, `foamScale`) are `surfaceParam1/2/3` push constants on Vulkan and had no home in `WebObjectDataUBO` at all, so the struct grew 144 -> 160 bytes in lockstep with both WGSL `ObjectData` declarations (now guarded by a `static_assert`). Gated on the parameters rather than a flag bit, because the web flags word does not share bits 6 and 7 with Vulkan. |
 | Shadows in a static scene | Same | Fixed 2026-09-15. The web shadow map caches and redraws only when its caster signature moves. Entity GPU buffers are created lazily in the main draw loop, which runs AFTER the shadow pass, so on the first frame every caster was skipped for having no buffers yet -- and the empty map was then cached. A scene where nothing moves kept it for the life of the process. It only looked fine in ShadowCheck because the player moves and dirtied the signature a frame later. |
-| Dynamic lights | **Capped** | Per frame: 4 directional, 16 point, 8 spot. The point and spot lights that make the cut are the ones nearest the camera, measured to the edge of their range; shadow-casting ones take the first slots so their shadow stays on them. Fire and other transient lights count against the point cap. Desktop shades 4 directional, 64 point and 32 spot in the forward pass, and clustered lighting takes up to 1024. Before 2026-09-27 web took 4 of each in entity order, so the fifth lamp was dark however close you stood to it. |
+| Dynamic lights | **Capped** | Per frame: 4 directional, 16 point, 8 spot. The point and spot lights that make the cut are the ones nearest the camera, measured to the edge of their range; shadow-casting ones take the first slots so their shadow stays on them. Fire and other transient lights count against the point cap. Desktop surfaces shade 4 directional, 64 point and 32 spot in the forward pass; its cluster grid feeds volumetric fog, not surface shading (triangle.frag's clustered path is behind a define the shader build does not set). Before 2026-09-27 web took 4 of each in entity order, so the fifth lamp was dark however close you stood to it. |
 | 2D scene water | Same | Shipped 2026-09-16, ported from `water2d.frag` and verified in a browser: wavy foam line, depth tint, caustics, and it animates. It needed three things, not one: the shader, a config path (the web player never called `SetWater2D`, and the member was declared in the Vulkan-only half so there was nowhere to put it), and an orthographic camera. |
 | Baked fluid playback | Same | Shipped 2026-09-17. `FluidPlaybackComponent` decodes a recorded take and hands it to the simulation, so the existing web billboard path draws it with no change. A recording is a file the pak carries like any other asset; resolution costs nothing at runtime here, which makes a browser the tier that benefits MOST from baking. |
 | Fluid simulation and rendering | Same | Shipped 2026-09-16. The simulation was not running here at all -- it was deliberately left unwired while `SetFluidSimulation` was a no-op stub, since ticking a sim nothing can draw is pure cost. Cells are camera-facing billboards, so the existing web sprite pipeline draws them; no new shader or pipeline. Cell selection mirrors `FluidRenderer::Render` (same density threshold, same sizing) so both backends pick the same cells, capped at 20,000 per frame. |
@@ -52,44 +53,46 @@ Last verified against the tree 2026-09-15.
 | Frustum culling | Same | CPU, shared with desktop since 2026-09-14. Desktop ALSO has GPU culling (compute + indirect draw) for very large object counts; web has the test, not the dispatch. |
 | Mesh LOD | Same | Shared since 2026-09-14. Web previously used plain camera distance and had neither `useScreenSize`, `lodBias` nor `forceLowestLOD`. |
 | Animation LOD | Same | Shared since 2026-09-14. Web previously refreshed every animator every frame; the flag was declared inside `#if !ENJIN_RENDERER_WEBGPU` and did not exist in a web build. |
-| Ray tracing, path tracing, DDGI | **Absent** | Not a gap: no browser exposes the hardware. Use the substitutions below. |
+| Ray tracing, path tracing, DDGI | **Absent** | Hardware ray tracing and path tracing: no browser exposes the hardware. DDGI is software and portable, but has no web path; the baked substitute is below. |
 
 ### Substituted, and why the substitute is the right answer
 
 | Desktop | Web | Why |
 |---|---|---|
-| DDGI / realtime GI | Baked radiosity normal mapping (`surfaceParam1` band 600) | Baked light is authored light. It looks *better* than realtime GI for a fixed scene and costs nothing per frame. |
-| RT reflections | Light cookies, flipped-floor and matcap reflection styles | Hand-crafted reflections do not break the fiction at the frame edge, which is why they are preferred on desktop too. |
+| DDGI / realtime GI | Baked radiosity normal mapping (band 600 on desktop, flag bit 8 on web) | Baked light is authored light. It looks *better* than realtime GI for a fixed scene and costs nothing per frame. |
+| RT reflections | An environment dome derived from the scene's ambient and sky, plus the matcap and scrolling reflection styles | Hand-crafted reflections do not break the fiction at the frame edge. The flipped-floor mirror is the planar ghost pass, which web does not have. |
 | Realtime lit set-dressing | Pre-rendered backgrounds with a depth plate | Fixed-camera scenes get more image quality this way on any platform. |
-| Colour grading LUTs at cost | Palette cycling and indexed palettes | Cheaper AND a distinct look, rather than a compromise. |
+| Volumetric (froxel) fog | Analytic height fog | The same authored density, colour and falloff, evaluated per pixel instead of marched. |
+| Ray-traced shadows | Cascaded shadow maps | The shadow maps desktop uses when RT is off. |
 
-**This table is the point of the whole document.** Four of the five things a
-browser cannot do have a web-native answer that is not a worse version of the
-desktop one. Anything added to the Absent list should get a row here or an
+**This table is the point of the whole document.** Most of the things a browser
+cannot do have a web-native answer that is not a worse version of the desktop
+one. (Colour grading LUTs used to be a row here; they run on web.) Anything added to the Absent list should get a row here or an
 explicit "no substitute exists".
 
 ---
 
 ## Materials
 
-Roughly a quarter of `MaterialGPU`'s feature set is honoured on web. The
-material struct is 144 bytes and shared, so a field always *serializes*; whether
-the web shader reads it is the question, and today most do not.
+The material struct is 144 bytes and shared, so a field always *serializes*;
+whether the web shader reads it is the question. The list below is what does.
 
 Known-working on web: base colour, metallic/roughness, normal maps, emissive,
-alpha modes, vertex snapping, dither modes, palette-indexed, lightmapped,
-height maps (parallax occlusion), affine texturing, stipple, and the three retro
+alpha modes, vertex snapping, stipple transparency (and the post-process
+dither), palette-indexed, lightmapped, per-slot values on multi-material meshes
+(since 2026-09-30), height maps (parallax occlusion), affine texturing, and the three retro
 shading modes (`flatShading`, `uvQuantize`, `gouraudOnly`).
 
-**There is no longer any capability in the Vulkan material flag word that WebGPU
-lacks** (closed 2026-09-18, bit 10 last). The two flag words still do not mean
+The dither gradient and dithered-transparency bands, rain ripples, shadow dither
+and the rest of the `surfaceParam` band family are desktop only unless listed
+above. The two flag words do not mean
 the same thing bit for bit: 3, 4, 5, 11, 21, 22 and 23 agree, and bits 6 and 7
 are different capabilities per backend, which is a trap and not a gap. Web
 parallax bounds its march at 32 steps where desktop loops unbounded, because a
 runaway on a browser GPU hangs the device rather than dropping a frame.
 
-**Everything else on a material should be assumed absent on web until it has a
-row in this table.** That is deliberately pessimistic, because the failure is
+**Everything else on a material should be assumed absent on web until it is in
+the list above.** That is deliberately pessimistic, because the failure is
 silent: the field saves, the scene loads, the look is wrong, and nothing says so.
 
 ---
@@ -117,8 +120,13 @@ silent: the field saves, the scene loads, the look is wrong, and nothing says so
 | Built-in dialogue box | Same | 2026-09-28. A dialogue with no `DialogueBoxComponent` gets the engine's own box on both players (`GUI::DrawFallbackDialogueBox`). Web used to show nothing. |
 | Water freezing, seasonal trees, fire heat into wind | Same | 2026-09-28. One shared implementation each (`Effects::UpdateWaterFreeze`, `Effects::ComputeSeasonalCanopy`, heat sources registered with the wind), called by the desktop player, the editor and the web player. |
 | MIDI input | Same, after a prompt | 2026-09-28. Web MIDI through the browser's MIDIAccess. The browser asks the player first, so access is requested on the first MIDI call, not at boot, and the device list is empty until the player allows it. An `MIDI_OpenDevice` made before that returns true and opens once access arrives. Desktop Linux has no MIDI backend. |
-| Texture filtering settings | **Absent, silently** | Discarded on web; pixel art blurs in a browser. This one is a bug, not a tier decision. |
-| Particle textures | **Absent** | Web particles are procedural soft circles: PARTICLE_WGSL's fragment stage computes a radial falloff and samples no texture at all, so an emitter's `texturePath` -- and with it the sprite sheet -- does nothing in a browser. Desktop binds the texture and animates the sheet per particle. Tint, size, lifetime and motion are the same on both. |
+| `PostProcess_` script calls | Same | 2026-09-30. They change the scene's post settings, the base a post-process volume blends on; the web player pushes them when they change. Chromatic aberration and film grain use desktop's scale (9379301f). |
+| Alpha-cutout shadow casters | Same for the sun | 2026-09-30. Mask casters cast their cutout in the directional cascades (a masked depth pass with a discard). Spot and point shadows still cast them solid. |
+| Procedural textures | Same | 2026-09-30. `ProceduralTextureComponent` pixels are uploaded as the entity's base colour, updated in place when the size is unchanged. |
+| JellyMesh | Same | 2026-09-30. The flower wobble re-uploads its deformed vertices, as on desktop. |
+| GPU particle one-shots | Same | 2026-09-30. Script presets, `SpawnGPUParticles` and footstep/impact surface bursts go to the web particle system; the burst look is shared with desktop. |
+| Texture filtering settings | Same, except per material | The scene's filter, anisotropy, mipmap and wrap settings apply on web (`SetDefaultSamplerConfig`). A material's own filter override is not read on web. |
+| Particle textures | Same for CPU emitters | CPU emitters draw their texture on web (ccc13ca8). A GPU emitter's texture sprite (`sprite == 5`) falls back to the procedural soft circle. |
 | Hand IK, LookAt, Interaction and TwoBone IK | Same | Fixed 2026-09-27. The solves lived in the Vulkan half of `RenderSystem.cpp`, so a browser played the animation unmodified. `RenderSystem::ApplyPoseEdits` runs them in the desktop loop, the editor and the web player (6eda8daa), and hand IK has its surface query on web too (93a6581f). |
 
 ---
@@ -134,6 +142,7 @@ silent: the field saves, the scene loads, the look is wrong, and nothing says so
 3. **Prefer a substitution to a gap.** The four rows above are all cases where
    the web answer turned out to be the better answer.
 4. **Verify in a browser**, not in a green build. WGSL is compiled by the
-   browser: `cd tools && npm install && node check_wgsl.mjs` compiles all 16
-   shaders through Dawn, and `tools/web_capture.mjs` renders a build in headless
+   browser: `cd tools && npm install && node check_wgsl.mjs` compiles every
+   shader in the header through Dawn (it prints how many; this line does not
+   state a count, because every count written here went stale), and `tools/web_capture.mjs` renders a build in headless
    Chrome.
