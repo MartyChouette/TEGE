@@ -79,6 +79,11 @@ constexpr u32 kMaxImpactEvents = 64;
 
 // The canonical look for each preset.
 ParticleSpawnParams PresetSpawnParams(GPUParticlePreset preset);
+
+// A footstep or impact burst for a surface's particle type (PhysicsMaterial
+// surfaceParticle: 1 dust, 2 grass, 3 spark, 4 splash, 5 smoke, 6 snow). Short
+// lived and non-colliding. Shared by both backends so a burst looks the same.
+ParticleSpawnParams SurfaceBurstSpawnParams(u8 surfaceParticle);
 const char* GPUParticlePresetName(GPUParticlePreset preset);
 
 // Per-particle spawn position offset for an emission shape (see ECS::EmitShape):

@@ -934,11 +934,29 @@ public:
         // Plants have no MeshComponent for the shadow pass to walk, so without
         // this a whole grove is lit and shadowless while every crate beside it
         // casts. Depth only, from the light's point of view, same scatter.
+        // Script presets, SpawnGPUParticles and footstep/impact bursts, into the
+        // same particle system the emitters use. They were "inert on web".
+        m_RenderSystem->SetWebParticleSpawnHook(
+            [this](Enjin::u32 count, const Enjin::Math::Vector3& pos, const Enjin::Math::Vector3& dir,
+                   const Enjin::Effects::ParticleSpawnParams& params, bool useConfigLook) {
+                if (!m_Particles) return;
+                if (useConfigLook) {
+                    const auto& cfg = m_Particles->GetConfig();
+                    Enjin::Effects::ParticleSpawnParams p;
+                    p.color = cfg.startColor;
+                    p.size = cfg.startSize;
+                    p.lifetime = cfg.maxLifetime;
+                    m_Particles->SpawnWithParams(count, pos, dir, p);
+                } else {
+                    m_Particles->SpawnWithParams(count, pos, dir, params);
+                }
+            });
+
         m_RenderSystem->SetWebShadowPassHook(
-            [this](void* shadowPass, const Enjin::Math::Matrix4& lightViewProj) {
+            [this](void* shadowPass, const Enjin::Math::Matrix4& lightViewProj, Enjin::u32 cascade) {
                 if (m_Vegetation) {
                     m_Vegetation->RenderShadow(static_cast<WGPURenderPassEncoder>(shadowPass),
-                                               lightViewProj, m_World.get());
+                                               lightViewProj, cascade, m_World.get());
                 }
             });
 

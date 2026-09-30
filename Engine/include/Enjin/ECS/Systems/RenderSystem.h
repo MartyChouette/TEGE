@@ -78,6 +78,7 @@ namespace ECS { struct HandIKComponent; struct AnimatorComponent; }
     class ElementalSystem;
     class GPUParticleSystem;
     struct GPUEmitterConfig;      // defined in Effects/GPUParticleTypes.h
+    struct ParticleSpawnParams;   // defined in Effects/GPUParticleTypes.h
     class SplatRenderer;
     enum class GPUParticlePreset : unsigned char; // defined in Effects/GPUParticleTypes.h
     class SpriteBatchRenderer;
@@ -939,7 +940,17 @@ public:
     // includes it again. Feed anything here that should force a redraw.
     void SetWebShadowExtraSignature(u64 sig) { m_WebShadowExtraSig = sig; }
 
-    void SetWebShadowPassHook(std::function<void(void*, const Math::Matrix4&)> hook) {
+    // One-shot GPU particle spawns (script presets, SpawnGPUParticles, surface
+    // bursts) on web go to the player's WebGPUParticleSystem. `useConfigLook`
+    // asks for the emitter config's plain look instead of `params`.
+    using WebParticleSpawnHook = std::function<void(u32 count, const Math::Vector3& position,
+        const Math::Vector3& direction, const Effects::ParticleSpawnParams& params, bool useConfigLook)>;
+    void SetWebParticleSpawnHook(WebParticleSpawnHook hook) { m_WebParticleSpawnHook = std::move(hook); }
+    WebParticleSpawnHook m_WebParticleSpawnHook;
+
+    // Called once per cascade with that cascade's index, so a contributor can
+    // keep per-cascade state (the four cascades share one command buffer).
+    void SetWebShadowPassHook(std::function<void(void*, const Math::Matrix4&, u32)> hook) {
         m_WebShadowPassHook = std::move(hook);
     }
 #endif
@@ -2196,6 +2207,11 @@ private:
     std::unordered_set<Entity> m_WebTextTextures;    // text-on-surface entities with a raster text texture
     Renderer::FontAtlas* WebGetOrBuildFontAtlas(const std::string& fontPath, std::string& outCacheKey);
     void WebEnsureTextMeshes();
+    // ProceduralTextureComponent on web: the desktop EnsureProceduralTextures is
+    // Vulkan-only, so CPU-generated pixels never reached a browser. Same shape
+    // as the text raster path: a texture in m_WebTextureCache under a synthetic
+    // key, bound as the entity's base colour.
+    void WebEnsureProceduralTextures();
 
     // Web scene-pass hook: invoked with the scene WGPURenderPassEncoder (as void*)
     // right before the scene pass ends. The web player uses it to draw GPU particles

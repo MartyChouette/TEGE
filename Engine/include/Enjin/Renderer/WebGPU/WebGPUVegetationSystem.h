@@ -39,8 +39,13 @@ public:
     // point of view, so a grove casts a shadow. The scene shadow pass walks
     // entities with a MeshComponent and these have none -- they are a volume
     // plus a scatter hash -- so without this every tree was lit but shadowless.
+    // One call per cascade. Each cascade has its own matrix buffer: the four
+    // cascades are recorded into one command buffer and the queue writes all
+    // land before it runs, so a single shared buffer drew every cascade with
+    // the last cascade's matrix.
     void RenderShadow(WGPURenderPassEncoder pass, const Math::Matrix4& lightViewProj,
-                      ECS::World* world);
+                      u32 cascade, ECS::World* world);
+    static constexpr u32 kShadowCascades = 4;
 
     // Settled snow, 0..1, from the scene's weather. Fed in per frame like the
     // wind and the sun: this system is owned by the player, not the render
@@ -125,8 +130,8 @@ private:
     // Depth-only twin of the above, so the grove casts a shadow. Separate UBO
     // and bind group because both passes run in one frame.
     GPUPipelineHandle m_ShadowPipeline;
-    GPUBufferHandle m_ShadowUBO;
-    GPUBindGroupHandle m_ShadowBindGroup;
+    GPUBufferHandle m_ShadowUBO[kShadowCascades];
+    GPUBindGroupHandle m_ShadowBindGroup[kShadowCascades];
 
     GPUBufferHandle m_ViewProjUBO;      // 128B: view + (Y-flipped) proj
     GPUBufferHandle m_TemplateVerts;    // storage: concatenated VegVertex (5 f32 each)

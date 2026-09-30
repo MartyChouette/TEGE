@@ -103,6 +103,27 @@ const char* GPUParticlePresetName(GPUParticlePreset p) {
 // than guessed: the old magnitude was between 1.93x and 2.01x the field across
 // the whole spread range 0.3 to 1.6, flat enough that one factor of 2 is more
 // honest than twelve slightly different numbers. Worst-case drift is under 4%.
+ParticleSpawnParams SurfaceBurstSpawnParams(u8 surfaceParticle) {
+    ParticleSpawnParams p;
+    switch (surfaceParticle) {
+        case 1: p = PresetSpawnParams(GPUParticlePreset::Dust); break;
+        case 2: // Grass: dust motion with a leafy green tint
+            p = PresetSpawnParams(GPUParticlePreset::Dust);
+            p.color = {0.35f, 0.55f, 0.2f, 0.6f};
+            break;
+        case 3: p = PresetSpawnParams(GPUParticlePreset::Sparks); break;
+        case 4: p = PresetSpawnParams(GPUParticlePreset::Liquid); break;
+        case 5: p = PresetSpawnParams(GPUParticlePreset::Smoke); break;
+        case 6: p = PresetSpawnParams(GPUParticlePreset::Snow); break;
+        default: p = PresetSpawnParams(GPUParticlePreset::Dust); break;
+    }
+    // Small and near the ground: short lived and non-colliding, so a burst never
+    // fights the surface it came from.
+    p.lifetime *= 0.5f;
+    p.collide = false;
+    return p;
+}
+
 ParticleSpawnParams PresetSpawnParams(GPUParticlePreset preset) {
     ParticleSpawnParams p;
     switch (preset) {

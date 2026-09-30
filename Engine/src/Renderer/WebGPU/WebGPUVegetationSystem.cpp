@@ -381,23 +381,26 @@ bool WebGPUVegetationSystem::Initialize(WebGPURenderer* renderer) {
     // Its own frame UBO because both passes run in the same frame and one
     // buffer would have the shadow's light matrices overwrite the camera's.
     {
-        GPUBufferDesc sd;
-        sd.size = sizeof(VegFrameUBO);
-        sd.usage = GPUBufferUsage::Uniform | GPUBufferUsage::CopyDst;
-        sd.label = "veg-shadow-viewproj";
-        m_ShadowUBO = bufMgr->CreateBuffer(sd);
+        // One matrix buffer and bind group per cascade (see RenderShadow)
+        for (u32 c = 0; c < kShadowCascades; ++c) {
+            GPUBufferDesc sd;
+            sd.size = sizeof(VegFrameUBO);
+            sd.usage = GPUBufferUsage::Uniform | GPUBufferUsage::CopyDst;
+            sd.label = "veg-shadow-viewproj";
+            m_ShadowUBO[c] = bufMgr->CreateBuffer(sd);
 
-        GPUBindGroupDesc sg;
-        sg.layout = m_Layout;
-        GPUBindGroupEntry s0; s0.binding = 0; s0.buffer = m_ShadowUBO;
-        s0.bufferSize = sizeof(VegFrameUBO);
-        GPUBindGroupEntry s1; s1.binding = 1; s1.buffer = m_TemplateVerts; s1.bufferSize = vd.size;
-        GPUBindGroupEntry s2; s2.binding = 2; s2.buffer = m_TemplateIndices; s2.bufferSize = id.size;
-        GPUBindGroupEntry s3; s3.binding = 3; s3.buffer = m_VolumeParams; s3.bufferSize = pd.size;
-        sg.entries.push_back(s0); sg.entries.push_back(s1);
-        sg.entries.push_back(s2); sg.entries.push_back(s3);
-        sg.label = "veg-shadow-bindgroup";
-        m_ShadowBindGroup = bgMgr->CreateBindGroup(sg);
+            GPUBindGroupDesc sg;
+            sg.layout = m_Layout;
+            GPUBindGroupEntry s0; s0.binding = 0; s0.buffer = m_ShadowUBO[c];
+            s0.bufferSize = sizeof(VegFrameUBO);
+            GPUBindGroupEntry s1; s1.binding = 1; s1.buffer = m_TemplateVerts; s1.bufferSize = vd.size;
+            GPUBindGroupEntry s2; s2.binding = 2; s2.buffer = m_TemplateIndices; s2.bufferSize = id.size;
+            GPUBindGroupEntry s3; s3.binding = 3; s3.buffer = m_VolumeParams; s3.bufferSize = pd.size;
+            sg.entries.push_back(s0); sg.entries.push_back(s1);
+            sg.entries.push_back(s2); sg.entries.push_back(s3);
+            sg.label = "veg-shadow-bindgroup";
+            m_ShadowBindGroup[c] = bgMgr->CreateBindGroup(sg);
+        }
 
         GPURenderPipelineDesc sp;
         sp.vertexShader = m_Shader;
@@ -596,8 +599,9 @@ void WebGPUVegetationSystem::RenderScene(WGPURenderPassEncoder pass, const Math:
 
 void WebGPUVegetationSystem::RenderShadow(WGPURenderPassEncoder pass,
                                           const Math::Matrix4& lightViewProj,
-                                          ECS::World* world) {
+                                          u32 cascade, ECS::World* world) {
     if (!m_Initialized || !pass || !world || !m_ShadowPipeline.IsValid()) return;
+    if (cascade >= kShadowCascades) return;
 
     // Rebuild the volume table exactly as the scene pass does, so the shadow
     // scatters the identical plants to the identical places. It also re-uploads
@@ -618,12 +622,12 @@ void WebGPUVegetationSystem::RenderShadow(WGPURenderPassEncoder pass,
     VegFrameUBO vp{};
     vp.view = Math::Matrix4::Identity();
     vp.proj = lightViewProj;
-    bufMgr->UploadData(m_ShadowUBO, &vp, sizeof(vp));
+    bufMgr->UploadData(m_ShadowUBO[cascade], &vp, sizeof(vp));
 
     auto* pipeMgrN = static_cast<WebGPUPipelineManager*>(m_Renderer->GetPipelineManager());
     auto* bgMgrN = static_cast<WebGPUBindGroupManager*>(m_Renderer->GetBindGroupManager());
     WGPURenderPipeline pipeline = pipeMgrN->GetNativePipeline(m_ShadowPipeline);
-    WGPUBindGroup bindGroup = bgMgrN->GetNativeGroup(m_ShadowBindGroup);
+    WGPUBindGroup bindGroup = bgMgrN->GetNativeGroup(m_ShadowBindGroup[cascade]);
     if (!pipeline || !bindGroup) return;
 
     wgpuRenderPassEncoderSetPipeline(pass, pipeline);

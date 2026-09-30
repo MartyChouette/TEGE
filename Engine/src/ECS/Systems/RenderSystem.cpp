@@ -1567,6 +1567,8 @@ void RenderSystem::ApplyAdaptiveQualityLevel(Renderer::QualityLevel level) {
 #include "Enjin/ECS/Components/BoundaryPolygon.h"
 #include "Enjin/ECS/Components/ProceduralMesh.h"  // generic runtime-generated geometry upload
 #include "Enjin/ECS/Components/ProceduralTexture.h"  // generic CPU-generated texture upload
+#include "Enjin/ECS/Components/Flower.h"             // JellyMesh re-upload on web
+#include "Enjin/Effects/GPUParticleTypes.h"          // web particle spawn hook (preset / surface burst looks)
 #include "Enjin/ECS/Components/Rope.h"
 #include "Enjin/ECS/Components/Text.h"    // web SDF text generation
 #include "Enjin/Effects/Weather.h"        // weather particle draw
@@ -3943,6 +3945,54 @@ void RenderSystem::EnsureWater3DMeshes() {
 // quads sampling the shared font atlas, rendered UNLIT through the PBR pipeline
 // with the sdfText flag. Runs at the top of the web Update, before the storage
 // cache refresh, so the new meshes render the same frame.
+void RenderSystem::WebEnsureProceduralTextures() {
+    if (!m_World || !m_Renderer) return;
+    auto* texMgr = m_Renderer->GetTextureManager();
+    if (!texMgr) return;
+    for (Entity entity : m_World->GetEntitiesWithComponent<ProceduralTextureComponent>()) {
+        auto* pt = m_World->GetComponent<ProceduralTextureComponent>(entity);
+        if (!pt || !pt->dirty) continue;
+        auto* mat = m_World->GetComponent<MaterialComponent>(entity);
+        if (!mat) continue;   // the pixels land on the material, as on desktop
+        if (!pt->Valid()) {
+            printf("[PROCTEX] entity %llu is %ux%u but holds %zu bytes\n",
+                   static_cast<unsigned long long>(entity), pt->width, pt->height, pt->pixels.size());
+            pt->dirty = false;
+            continue;
+        }
+        const std::string key = "__proc__" + std::to_string(static_cast<unsigned long long>(EntityIndex(entity)));
+        auto it = m_WebTextureCache.find(key);
+        if (it != m_WebTextureCache.end() && texMgr->GetWidth(it->second) == pt->width &&
+            texMgr->GetHeight(it->second) == pt->height) {
+            // Same size: replace the pixels in place; every bind group stays valid
+            texMgr->UploadData(it->second, pt->pixels.data(), pt->width, pt->height);
+        } else {
+            if (it != m_WebTextureCache.end()) {
+                texMgr->DestroyTexture(it->second);
+                m_WebTextureCache.erase(it);
+            }
+            Renderer::GPUTextureDesc desc;
+            desc.width = pt->width;
+            desc.height = pt->height;
+            desc.format = Renderer::GPUTextureFormat::RGBA8Unorm;   // colour ramps already baked
+            desc.label = "ProceduralTexture";
+            auto h = texMgr->CreateTextureWithData(desc, pt->pixels.data());
+            if (h.IsValid()) m_WebTextureCache[key] = h;
+            mat->baseColorTexturePath = key;
+            const u64 eid = EntityIndex(entity);
+            if (eid < m_EntityRenderData.size()) {
+                auto& rd = m_EntityRenderData[eid];
+                if (rd.texBindGroup.IsValid()) {
+                    if (auto* bm = m_Renderer->GetBindGroupManager()) bm->DestroyBindGroup(rd.texBindGroup);
+                    rd.texBindGroup = {};
+                }
+                rd.texBindGroupValid = false;
+            }
+        }
+        pt->dirty = false;
+    }
+}
+
 void RenderSystem::WebEnsureTextMeshes() {
     if (!m_World) return;
     auto* bufMgr = m_Renderer ? m_Renderer->GetBufferManager() : nullptr;
@@ -4142,6 +4192,7 @@ void RenderSystem::Update(f32 deltaTime) {
     // (Vulkan does this in FlushPendingChanges; web has no such split, and this
     // runs before any pass is encoded, so the world mutation is frame-safe.)
     WebEnsureTextMeshes();
+    WebEnsureProceduralTextures();
 
     // And tilemap meshes, for the same reason and in the same window.
     //
@@ -4884,7 +4935,7 @@ void RenderSystem::Update(f32 deltaTime) {
                     shadowDrawCount++;
                 }
                 // Procedural geometry with no MeshComponent (grass, shrubs, trees)
-                if (m_WebShadowPassHook) m_WebShadowPassHook(shadowPass, cascadeVP[c]);
+                if (m_WebShadowPassHook) m_WebShadowPassHook(shadowPass, cascadeVP[c], static_cast<u32>(c));
                 wgpuRenderPassEncoderEnd(shadowPass);
                 wgpuRenderPassEncoderRelease(shadowPass);
             }
@@ -5558,6 +5609,11 @@ void RenderSystem::Update(f32 deltaTime) {
                 // Water3D animates by rewriting its mesh on the CPU each frame.
                 auto* w3d = m_World->HasComponent<Water3DComponent>(entity)
                                 ? m_World->GetComponent<Water3DComponent>(entity) : nullptr;
+                // JellyMesh (the flower wobble) deforms vertices on the CPU too; it
+                // was on the desktop re-upload list and not this one, so a browser
+                // drew the rest shape and nothing ever wobbled.
+                auto* jelly = m_World->HasComponent<JellyMeshComponent>(entity)
+                                ? m_World->GetComponent<JellyMeshComponent>(entity) : nullptr;
                 bool topo = (cloth && cloth->topologyDirty) || (rope && rope->topologyDirty)
                             || (proc && proc->topologyDirty);
                 if (topo) {
@@ -5574,13 +5630,15 @@ void RenderSystem::Update(f32 deltaTime) {
                     if (proc) { proc->topologyDirty = false; proc->meshDirty = true; }
                 } else if (rd.valid && rd.owner == entity &&
                            ((cloth && cloth->meshDirty) || (rope && rope->meshDirty)
-                            || (proc && proc->meshDirty) || (w3d && w3d->meshDirty))) {
+                            || (proc && proc->meshDirty) || (w3d && w3d->meshDirty)
+                            || (jelly && jelly->meshDirty))) {
                     bufMgr->UploadData(rd.vertexBuffer, mesh->vertices.data(),
                                        mesh->vertices.size() * sizeof(MeshComponent::Vertex));
                     if (cloth) cloth->meshDirty = false;
                     if (rope)  rope->meshDirty = false;
                     if (proc)  proc->meshDirty = false;
                     if (w3d)   w3d->meshDirty = false;
+                    if (jelly) jelly->meshDirty = false;
                 }
             }
 
@@ -7378,15 +7436,20 @@ u32  RenderSystem::GetTextureWrap() const { return 0; }
 void RenderSystem::RequestPipelineRecreation() {}  // Vulkan-only heal; WebGPU rebuilds per-frame
 f32  RenderSystem::GetShadowStrength() const { return m_WebShadowStrength; }
 void RenderSystem::SetShadowStrength(f32 s) { m_WebShadowStrength = (s < 0.0f) ? 0.0f : (s > 1.0f ? 1.0f : s); }
-void RenderSystem::SpawnGPUParticlePreset(u32, const Math::Vector3&, const Math::Vector3&,
-                                          Effects::GPUParticlePreset) {
-    // Called from a SCRIPT binding, so a game can ask for this on web and get
-    // nothing. Said out loud once rather than never.
+// The one-shot spawns go to the web player's WebGPUParticleSystem through a
+// hook (web_main owns it, not this class). They were stubs that warned "inert
+// on web" while the web player had a working GPU particle system all along.
+void RenderSystem::SpawnGPUParticlePreset(u32 count, const Math::Vector3& position,
+                                          const Math::Vector3& direction,
+                                          Effects::GPUParticlePreset preset) {
+    if (m_WebParticleSpawnHook) {
+        m_WebParticleSpawnHook(count, position, direction, Effects::PresetSpawnParams(preset), false);
+        return;
+    }
     static bool warned = false;
     if (!warned) {
         warned = true;
-        ENJIN_LOG_WARN(Renderer,
-            "Particles_SpawnPreset is inert on web (no GPU compute path yet)");
+        ENJIN_LOG_WARN(Renderer, "Particles_SpawnPreset: no GPU particle system in this web player");
     }
 }
 // Remember it. This was an empty stub, so a browser ticked the whole fluid
@@ -7419,20 +7482,31 @@ void RenderSystem::RenderSplats() {}       // Vulkan-only
 // say it once now, the way the networking bindings already do ("Net_* script
 // calls are inert on web"), because a stated limitation can be worked around
 // and a silent one gets debugged as an art problem.
-void RenderSystem::SpawnGPUParticles(u32, const Math::Vector3&, const Math::Vector3&) {
+void RenderSystem::SpawnGPUParticles(u32 count, const Math::Vector3& position, const Math::Vector3& direction) {
+    // The emitter config's plain look, as desktop's GPUParticleSystem::Spawn
+    if (m_WebParticleSpawnHook) {
+        m_WebParticleSpawnHook(count, position, direction, Effects::ParticleSpawnParams{}, true);
+        return;
+    }
     static bool warned = false;
     if (!warned) {
         warned = true;
-        ENJIN_LOG_WARN(Renderer, "SpawnGPUParticles is inert on web (no GPU compute path yet)");
+        ENJIN_LOG_WARN(Renderer, "SpawnGPUParticles: no GPU particle system in this web player");
     }
 }
-void RenderSystem::SpawnSurfaceBurst(u32, const Math::Vector3&, const Math::Vector3&, u8) {
+void RenderSystem::SpawnSurfaceBurst(u32 count, const Math::Vector3& position,
+                                     const Math::Vector3& direction, u8 surfaceParticle) {
     // Reached from SurfaceResponseSystem: footstep and impact particles.
+    if (m_WebParticleSpawnHook) {
+        m_WebParticleSpawnHook(count, position, direction,
+                               Effects::SurfaceBurstSpawnParams(surfaceParticle), false);
+        return;
+    }
     static bool warned = false;
     if (!warned) {
         warned = true;
         ENJIN_LOG_WARN(Renderer,
-            "Surface bursts are inert on web: footstep and impact particles will not appear");
+            "Surface bursts: no GPU particle system in this web player; footstep and impact particles will not appear");
     }
 }
 void RenderSystem::TickGPUEmitters(f32) {}
@@ -20385,24 +20459,8 @@ void RenderSystem::RenderSplats(VkRenderPass pass, u32 colorAttachments,
 void RenderSystem::SpawnSurfaceBurst(u32 count, const Math::Vector3& position,
                                      const Math::Vector3& direction, u8 surfaceParticle) {
     if (!m_GPUParticleSystem) return;
-    Effects::ParticleSpawnParams p;
-    switch (surfaceParticle) {
-        case 1: p = Effects::PresetSpawnParams(Effects::GPUParticlePreset::Dust); break;
-        case 2: // Grass: dust motion with a leafy green tint
-            p = Effects::PresetSpawnParams(Effects::GPUParticlePreset::Dust);
-            p.color = {0.35f, 0.55f, 0.2f, 0.6f};
-            break;
-        case 3: p = Effects::PresetSpawnParams(Effects::GPUParticlePreset::Sparks); break;
-        case 4: p = Effects::PresetSpawnParams(Effects::GPUParticlePreset::Liquid); break;
-        case 5: p = Effects::PresetSpawnParams(Effects::GPUParticlePreset::Smoke); break;
-        case 6: p = Effects::PresetSpawnParams(Effects::GPUParticlePreset::Snow); break;
-        default: p = Effects::PresetSpawnParams(Effects::GPUParticlePreset::Dust); break;
-    }
-    // Surface bursts are small and near the ground: keep them shortlived and
-    // non-colliding so they never fight the surface they came from.
-    p.lifetime *= 0.5f;
-    p.collide = false;
-    m_GPUParticleSystem->SpawnWithParams(count, position, direction, p);
+    m_GPUParticleSystem->SpawnWithParams(count, position, direction,
+                                         Effects::SurfaceBurstSpawnParams(surfaceParticle));
 }
 
 void RenderSystem::SpawnGPUParticles(u32 count, const Math::Vector3& position,
