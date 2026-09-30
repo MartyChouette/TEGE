@@ -90,6 +90,19 @@ ENJIN_API void SetTouchPlayerLayout(u32 hand, u32 size);
 ENJIN_API f32 TouchButtonScaleForSize(u32 size);   // 0 for "the game's default"
 ENJIN_API void ClearScriptTouchButtons();
 
+// The stick and the look region a script asked for (Touch_SetStick,
+// Touch_SetStickActions, Touch_SetLookRegion). Same trap as the buttons: they
+// were written into the current scheme only, and adding a script button forces
+// a rebuild from the preset, so a script that added its buttons and then set
+// its stick lost the stick on the next frame. Twister could not turn its
+// steering stick on and FoliageDemo could not turn its look region on. Kept
+// here, laid over every rebuild, and cleared with the rest of a scene's script
+// touch state.
+ENJIN_API void SetScriptTouchStick(bool enabled, const int keys[4], const int actions[4]);
+ENJIN_API void SetScriptTouchLook(bool enabled);
+// Buttons, stick and look together, for a scene's scripts starting or ending.
+ENJIN_API void ClearScriptTouchState();
+
 // ---- UI pointer routing ------------------------------------------------------
 // Give Core the UI's hit test, so a touch landing on an interactive element
 // (button, slider, scroll area, modal) reaches the UI as a real pointer with

@@ -25,6 +25,15 @@ namespace {
     GUI::UISystem* s_UISystem = nullptr;
     u64 s_LastFingerprint = 0;
     std::vector<Input::TouchButtonDef> s_ScriptButtons;
+    // What a script asked of the stick and the look region, or unset.
+    struct ScriptStick {
+        bool set = false;
+        bool enabled = false;
+        int keys[4] = { -1, -1, -1, -1 };
+        int actions[4] = { -1, -1, -1, -1 };
+    };
+    ScriptStick s_ScriptStick;
+    int s_ScriptLook = -1;   // -1 unset, 0 off, 1 on
     u32 s_PlayerHand = 0;   // 0 game default, 1 right, 2 left
     u32 s_PlayerSize = 0;   // 0 game default, 1..4 small..huge
     bool s_HasFingerprint = false;
@@ -296,6 +305,17 @@ namespace {
             s.leftHanded = p.touchLeftHanded;
             s.buttonScale = p.touchButtonScale;
         }
+        // What the game's scripts asked for, over the preset and the project:
+        // the script is the game saying how it is played right now.
+        if (s_ScriptStick.set) {
+            s.moveStick = s_ScriptStick.enabled;
+            for (int i = 0; i < 4; ++i) {
+                s.stickKeys[i] = s_ScriptStick.keys[i];
+                s.stickActions[i] = s_ScriptStick.actions[i];
+            }
+        }
+        if (s_ScriptLook >= 0) s.lookRegion = s_ScriptLook == 1;
+
         // The player's choice last: a project sets the default, the player owns it
         if (s_PlayerHand != 0) s.leftHanded = s_PlayerHand == 2;
         if (s_PlayerSize != 0) s.buttonScale = TouchButtonScaleForSize(s_PlayerSize);
@@ -433,6 +453,30 @@ void ClearScriptTouchButtons() {
     if (s_ScriptButtons.empty()) return;
     s_ScriptButtons.clear();
     ResetTouchPresetTracking();
+}
+
+void SetScriptTouchStick(bool enabled, const int keys[4], const int actions[4]) {
+    s_ScriptStick.set = true;
+    s_ScriptStick.enabled = enabled;
+    for (int i = 0; i < 4; ++i) {
+        s_ScriptStick.keys[i] = keys ? keys[i] : -1;
+        s_ScriptStick.actions[i] = actions ? actions[i] : -1;
+    }
+    ResetTouchPresetTracking();
+}
+
+void SetScriptTouchLook(bool enabled) {
+    s_ScriptLook = enabled ? 1 : 0;
+    ResetTouchPresetTracking();
+}
+
+void ClearScriptTouchState() {
+    ClearScriptTouchButtons();
+    if (s_ScriptStick.set || s_ScriptLook >= 0) {
+        s_ScriptStick = ScriptStick{};
+        s_ScriptLook = -1;
+        ResetTouchPresetTracking();
+    }
 }
 
 // ---- Drawing -----------------------------------------------------------------

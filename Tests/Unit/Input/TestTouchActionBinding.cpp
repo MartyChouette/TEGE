@@ -290,6 +290,103 @@ ENJIN_TEST(TouchActionBinding, TriggerButtonsSpreadOutAndScriptButtonsSurvive) {
     SetTouchActionMap(nullptr);
 }
 
+namespace {
+// Compile `body` as void Run() and execute it against the real bindings.
+bool RunTouchScript(Scripting::ScriptEngine& engine, const char* module, const char* body) {
+    if (!engine.CompileScriptFromMemory(module, body)) return false;
+    asIScriptFunction* fn = engine.GetASEngine()->GetModule(module)->GetFunctionByName("Run");
+    if (!fn) return false;
+    asIScriptContext* ctx = engine.AcquireContext();
+    ctx->Prepare(fn);
+    const int r = ctx->Execute();
+    engine.ReturnContext(ctx);
+    return r == asEXECUTION_FINISHED;
+}
+} // namespace
+
+// A script's stick and look region went the way its buttons used to (IN-34):
+// written into the current scheme only, and the rebuild that adding a button
+// triggers put back the preset's. Twister added its pedals, then turned on a
+// steering stick, and had no stick one frame later.
+ENJIN_TEST(TouchActionBinding, ScriptStickAndLookSurviveRebuilds) {
+    Scripting::ScriptEngine engine;
+    ENJIN_ASSERT_TRUE(engine.Initialize());
+    Scripting::RegisterAllBindings(engine.GetASEngine());
+    ClearScriptTouchState();
+
+    // Arrange: the Generic preset (no controller) has no stick and no look.
+    ECS::World world;
+    ENJIN_ASSERT_TRUE(RunTouchScript(engine, "touch_stick",
+        "void Run() {"
+        "    Touch_ClearButtons();"
+        "    Touch_AddButton(\"GAS\", 87, 0.0f, 0.0f, 0.09f);"
+        "    Touch_SetStick(true, 65, 68, -1, -1);"
+        "    Touch_SetLookRegion(true);"
+        "}"));
+
+    // Act: the rebuild the add asked for, then a second for good measure.
+    ApplyTouchPresetForWorld(&world);
+    ResetTouchPresetTracking();
+    ApplyTouchPresetForWorld(&world);
+
+    // Assert
+    const Input::TouchScheme s = Input::GetTouchScheme();
+    ENJIN_EXPECT_TRUE(s.moveStick);
+    ENJIN_EXPECT_EQ(s.stickKeys[0], 65);
+    ENJIN_EXPECT_EQ(s.stickKeys[1], 68);
+    ENJIN_EXPECT_EQ(s.stickKeys[2], -1);
+    ENJIN_EXPECT_EQ(s.stickActions[0], -1);
+    ENJIN_EXPECT_TRUE(s.lookRegion);
+    ENJIN_EXPECT_EQ(s.buttonCount, 1);
+
+    // A new scene's scripts start clean: the preset's stick and look come back.
+    ClearScriptTouchState();
+    ApplyTouchPresetForWorld(&world);
+    const Input::TouchScheme cleared = Input::GetTouchScheme();
+    ENJIN_EXPECT_FALSE(cleared.moveStick);
+    ENJIN_EXPECT_FALSE(cleared.lookRegion);
+
+    Input::SetTouchScheme(Input::TouchScheme{});
+    engine.Shutdown();
+}
+
+// Touch_SetStick and Touch_SetStickActions both describe the whole stick, so
+// whichever a script called LAST is the stick it gets, rebuilds included.
+ENJIN_TEST(TouchActionBinding, TheLastStickCallWins) {
+    Scripting::ScriptEngine engine;
+    ENJIN_ASSERT_TRUE(engine.Initialize());
+    Scripting::RegisterAllBindings(engine.GetASEngine());
+    ClearScriptTouchState();
+    ECS::World world;
+
+    // Keys, then actions: the actions apply.
+    ENJIN_ASSERT_TRUE(RunTouchScript(engine, "touch_keys_then_actions",
+        "void Run() {"
+        "    Touch_SetStick(true, 65, 68, -1, -1);"
+        "    Touch_SetStickActions(true, 0, 1, 2, 3);"
+        "}"));
+    ResetTouchPresetTracking();
+    ApplyTouchPresetForWorld(&world);
+    ENJIN_EXPECT_EQ(Input::GetTouchScheme().stickActions[0], 0);
+    ENJIN_EXPECT_EQ(Input::GetTouchScheme().stickActions[3], 3);
+
+    // Actions, then keys: the keys apply and the actions are gone.
+    ENJIN_ASSERT_TRUE(RunTouchScript(engine, "touch_actions_then_keys",
+        "void Run() {"
+        "    Touch_SetStickActions(true, 0, 1, 2, 3);"
+        "    Touch_SetStick(true, 74, 76, -1, -1);"
+        "}"));
+    ResetTouchPresetTracking();
+    ApplyTouchPresetForWorld(&world);
+    const Input::TouchScheme s = Input::GetTouchScheme();
+    ENJIN_EXPECT_EQ(s.stickKeys[0], 74);
+    ENJIN_EXPECT_EQ(s.stickActions[0], -1);
+
+    ClearScriptTouchState();
+    Input::SetTouchScheme(Input::TouchScheme{});
+    engine.Shutdown();
+}
+
 // IN-26: the player's layout choice wins over the project's
 ENJIN_TEST(TouchActionBinding, ThePlayersLayoutOverridesTheProject) {
     InputProjectSettings project;

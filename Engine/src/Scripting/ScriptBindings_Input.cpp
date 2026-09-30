@@ -217,7 +217,15 @@ static void Touch_SetStick(bool enabled, int leftKey, int rightKey, int upKey, i
     s.moveStick = enabled;
     s.stickKeys[0] = leftKey; s.stickKeys[1] = rightKey;
     s.stickKeys[2] = upKey;   s.stickKeys[3] = downKey;
+    // The whole stick, keys this time. Touch_SetStickActions is the other way to
+    // say the same thing, so whichever was called LAST describes the stick: a
+    // later SetStickActions still applies over this, and this clears actions an
+    // earlier one set. Before, the two merged, and a stick set by keys after
+    // actions went on pressing the actions' bindings.
+    for (int i = 0; i < 4; ++i) s.stickActions[i] = -1;
     Input::SetTouchScheme(s);
+    const int keys[4] = { leftKey, rightKey, upKey, downKey };
+    InputSystem::SetScriptTouchStick(enabled, keys, nullptr);   // survives the next rebuild
 }
 
 // Bind the move stick to the four movement GameActions, so it reflects their
@@ -229,12 +237,15 @@ static void Touch_SetStickActions(bool enabled, int leftAction, int rightAction,
     s.stickActions[0] = leftAction; s.stickActions[1] = rightAction;
     s.stickActions[2] = fwdAction;  s.stickActions[3] = backAction;
     Input::SetTouchScheme(s);
+    const int actions[4] = { leftAction, rightAction, fwdAction, backAction };
+    InputSystem::SetScriptTouchStick(enabled, s.stickKeys, actions);   // survives the next rebuild
 }
 
 static void Touch_SetLookRegion(bool enabled) {
     Input::TouchScheme s = Input::GetTouchScheme();
     s.lookRegion = enabled;
     Input::SetTouchScheme(s);
+    InputSystem::SetScriptTouchLook(enabled);   // survives the next rebuild
 }
 
 // ============================================================================

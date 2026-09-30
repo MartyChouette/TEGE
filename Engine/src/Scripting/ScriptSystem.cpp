@@ -508,7 +508,7 @@ void ScriptSystem::InitScript(ECS::Entity entity, usize index) {
 void ScriptSystem::InitializeAllScripts() {
     if (!m_World || !m_ScriptEngine) return;
     // A new scene's scripts add their own touch buttons
-    InputSystem::ClearScriptTouchButtons();
+    InputSystem::ClearScriptTouchState();
 
     for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::ScriptComponent>()) {
         auto* sc = m_World->GetComponent<ECS::ScriptComponent>(entity);
@@ -606,7 +606,7 @@ void ScriptSystem::ShutdownAllScripts() {
     // the editor continues the first run's Time_GetTime().
     Scripting::ResetBindingsTime();
     // Their touch buttons go with them
-    InputSystem::ClearScriptTouchButtons();
+    InputSystem::ClearScriptTouchState();
 
     ENJIN_LOG_INFO(Script, "All scripts shut down");
 }
