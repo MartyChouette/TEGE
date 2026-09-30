@@ -422,6 +422,14 @@ bool StreamingManager::ProcessStagedIntegration()
             m_ActiveLoads.fetch_sub(1);
             continue;
         }
+        // Unloaded (or loaded by a later request) while this read was in flight:
+        // whoever changed the state wins, and this data is stale. The load slot
+        // is released all the same.
+        if (chunk->state != ChunkState::Loading) {
+            m_ActiveLoads.fetch_sub(1);
+            ENJIN_LOG_INFO(Game, "Dropped staged data for chunk '%s': no longer loading", staged.chunkId.c_str());
+            continue;
+        }
 
         // Integrate via SceneSerializer (this is the main-thread-bound part).
         // For now, the full integration happens here. A further optimization would
@@ -596,6 +604,18 @@ void StreamingManager::ForceUnloadChunk(const std::string& chunkId)
                 if (m_OnChunkUnloaded) {
                     m_OnChunkUnloaded(chunkId);
                 }
+            } else if (chunk.state == ChunkState::Loading) {
+                // Asked to go before it arrived. The read is already queued or in
+                // flight and cannot be recalled, so the chunk is marked Unloaded
+                // now and ProcessStagedIntegration drops its data when it lands.
+                //
+                // This used to be refused with a warning, and the load then
+                // finished and stayed. Twister force-loads its title overlay at
+                // startup and force-unloads it when a run begins; on web the read
+                // is slower than that, so the title sat over the whole game.
+                chunk.state = ChunkState::Unloaded;
+                ENJIN_LOG_INFO(Game, "Chunk '%s' unloaded while still loading; its data will be dropped on arrival",
+                               chunkId.c_str());
             } else {
                 ENJIN_LOG_WARN(Game, "Cannot force-unload chunk '%s': state is not Loaded", chunkId.c_str());
             }

@@ -311,6 +311,53 @@ ENJIN_TEST(ChunkLoad, SubSceneLoadsFromSceneRoot) {
     std::filesystem::remove_all(root, ec);
 }
 
+// An unload asked for while the chunk is still loading must win. It used to be
+// refused, the load finished, and the chunk stayed: Twister's title overlay
+// covered the whole game on web, where the read outlasts the frame the game
+// asks for it to go.
+ENJIN_TEST(ChunkLoad, UnloadDuringLoadWins) {
+    auto root = MakeChunkRoot("unload_while_loading");
+    ECS::World world;
+    StreamingManager sm;
+    sm.SetWorld(&world);
+    sm.SetSceneRoot(root.string());
+    StreamingChunk c;
+    c.chunkId = "a";
+    c.scenePath = "scenes/chunk_a.enjin";
+    // Loaded and unloaded by request only, as Twister's overlay is: distance
+    // streaming would otherwise load it straight back in and mask the result.
+    c.loadDistance = 0.0f;
+    c.unloadDistance = 1.0e9f;
+    sm.AddChunk(c);
+    const usize before = world.GetAllEntities().size();
+    const Vector3 farAway(100000.0f, 0.0f, 0.0f);
+
+    // Act: load, and change our mind before the read can have landed
+    sm.ForceLoadChunk("a");
+    ENJIN_ASSERT_TRUE(sm.GetChunkState("a") == ChunkState::Loading);
+    sm.ForceUnloadChunk("a");
+
+    // Give the read every chance to arrive and integrate
+    for (int i = 0; i < 60; ++i) {
+        sm.Update(farAway, 0.016f);
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+
+    // Assert: still unloaded, nothing entered the world
+    ENJIN_EXPECT_TRUE(sm.GetChunkState("a") == ChunkState::Unloaded);
+    ENJIN_EXPECT_EQ(world.GetAllEntities().size(), before);
+    ENJIN_EXPECT_TRUE(world.FindEntityByName("StreamedProp") == ECS::INVALID_ENTITY);
+
+    // And the slot came back: the chunk can be loaded again
+    sm.ForceLoadChunk("a");
+    PumpUntilSettled(sm, "a");
+    ENJIN_EXPECT_TRUE(sm.GetChunkState("a") == ChunkState::Loaded);
+    ENJIN_EXPECT_EQ(world.GetAllEntities().size(), before + 1);
+
+    std::error_code ec;
+    std::filesystem::remove_all(root, ec);
+}
+
 ENJIN_TEST(ChunkLoad, ClearChunksDestroysStreamedEntities) {
     // Arrange: a loaded chunk
     auto root = MakeChunkRoot("clear");
