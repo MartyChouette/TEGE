@@ -166,16 +166,16 @@ with open(os.path.join(OUT, 'scripts', 'StreamStress.as'), 'w') as f:
     f.write(script)
 
 # ---------------- project manifest ----------------
-# Every chunk sub-scene must be listed here or BuildPipeline never packs it
-# (the packer walks the project's scene list). buildIndex -1 keeps them out of
-# the build ORDER while still shipping them in the .enjpak, which is exactly
-# what a streamed sub-scene wants.
+# Every chunk sub-scene must be listed here AND ticked in Build Scenes
+# (buildIndex >= 0) or BuildPipeline never packs it. buildIndex -1 used to ship
+# anyway; since 2026-09-28 only the build list does, and -1 left a 4 KB pak with
+# no chunks in it.
 scenes = [{"name": "Main", "path": "scenes/Main.enjin", "buildIndex": 0, "isStartScene": True}]
 for cz in range(GRID):
     for cx in range(GRID):
         scenes.append({"name": f"chunk_{cx}_{cz}",
                        "path": f"scenes/chunks/chunk_{cx}_{cz}.enjin",
-                       "buildIndex": -1, "isStartScene": False})
+                       "buildIndex": len(scenes), "isStartScene": False})
 proj = {"name": "StreamStress", "version": "1.0", "scenes": scenes}
 with open(os.path.join(OUT, 'StreamStress.enjinproject'), 'w') as f:
     json.dump(proj, f, indent=2)

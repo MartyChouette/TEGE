@@ -41,5 +41,6 @@ the heap, so heap only moves when the working set forces growth.
 ## Requires
 
 The scene JSON must list every chunk sub-scene in the project's `scenes` array
-(with `buildIndex: -1`) or BuildPipeline never packs them — the packer walks the
-project scene list, and a streamed sub-scene is otherwise invisible to it.
+with a `buildIndex` of 0 or more, or BuildPipeline never packs them. The packer
+walks the project scene list and ships only the scenes ticked in Build Scenes,
+so a streamed sub-scene at -1 is left out.
