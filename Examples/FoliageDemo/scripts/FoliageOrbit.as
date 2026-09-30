@@ -31,6 +31,9 @@ class FoliageOrbit : TegeBehavior {
     float IDLE_SPIN = 3.0f;      // degrees/sec when nobody is touching it
 
     float idleFor = 0.0f;
+    bool  fingerWas = false;
+    float lastFingerX = 0.0f;
+    float lastFingerY = 0.0f;
 
     void OnStart() {
         cam = Scene_FindEntity("MainCam");
@@ -54,13 +57,27 @@ class FoliageOrbit : TegeBehavior {
         // Only while a pointer is down, so the camera does not chase a hovering
         // mouse. A two-finger pinch must not also spin the view, or zooming
         // yanks the camera sideways.
-        if (Input_GetMouseButton(0) && Input_GetTouchCount() < 2) {   // raw-input-ok: pointer drag orbits the camera, a gesture rather than a button
-            Vector2 d = Input_GetMouseDelta();
-            if (d.x != 0.0f || d.y != 0.0f) {
-                yaw -= d.x * DRAG_SPEED;
-                pitch -= d.y * DRAG_SPEED;
-                touched = true;
-            }
+        //
+        // On a phone a finger never holds the left button (the web player only
+        // turns a short tap into a click), and with no controller in the scene
+        // the touch scheme has no look region, so a drag never reaches the
+        // mouse delta either. The finger does move the pointer, so one touch
+        // orbits by how far the pointer moved since the last frame.
+        float dx = 0.0f, dy = 0.0f;
+        bool oneFinger = Input_GetTouchCount() == 1;
+        if (oneFinger) {
+            Vector2 p = Input_GetMousePosition();
+            if (fingerWas) { dx = p.x - lastFingerX; dy = p.y - lastFingerY; }
+            lastFingerX = p.x; lastFingerY = p.y;
+        } else if (Input_GetMouseButton(0) && Input_GetTouchCount() < 2) {   // raw-input-ok: pointer drag orbits the camera, a gesture rather than a button
+            Vector2 md = Input_GetMouseDelta();
+            dx = md.x; dy = md.y;
+        }
+        fingerWas = oneFinger;
+        if (dx != 0.0f || dy != 0.0f) {
+            yaw -= dx * DRAG_SPEED;
+            pitch -= dy * DRAG_SPEED;
+            touched = true;
         }
 
         // ---- zoom --------------------------------------------------------

@@ -126,7 +126,9 @@ class BirdFlight : TegeBehavior {
                 - InputAction_GetValue(GameAction::MoveLeft);
 
         // Held pointer: distance from the middle of the screen is the stick.
-        if (Input_GetMouseButton(MouseBtn::Left)) {   // raw-input-ok: the held pointer's screen position is the steering stick
+        // A finger on a phone never holds the left button (the web player only
+        // turns a short tap into a click), so a touch counts as held here.
+        if (Input_GetMouseButton(MouseBtn::Left) || Input_GetTouchCount() > 0) {   // raw-input-ok: the held pointer's screen position is the steering stick
             Vector2 size = Input_GetScreenSize();
             if (size.x > 1.0f) {
                 Vector2 m = Input_GetMousePosition();
