@@ -1221,6 +1221,7 @@ struct ViewProjection {
 // serves all of them.
 // params.x = 1 when the caster is skinned and binding 1 holds its bones.
 // Skinned casters used to go into the depth map in their bind pose (WP-16).
+// params.y = the alpha cutoff of a Mask caster, read by fs_mask; 0 otherwise.
 struct ShadowRow {
     model: mat4x4<f32>,
     params: vec4<f32>,
@@ -1236,13 +1237,21 @@ struct ShadowBones {
 
 struct VertexInput {
     @location(0) position: vec3<f32>,
+    @location(2) uv: vec2<f32>,
     @location(4) boneWeights: vec4<f32>,
     @location(5) boneIndices: vec4<u32>,
 };
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+    @location(1) @interpolate(flat) cutoff: f32,
 };
+
+// Mask casters only: the material's base colour, bound with the caster's own
+// texture group (the same group the scene pass uses).
+@group(2) @binding(0) var baseColorTex: texture_2d<f32>;
+@group(2) @binding(1) var baseColorSmp: sampler;
 
 @vertex
 fn vs_main(in: VertexInput, @builtin(instance_index) instanceIdx: u32) -> VertexOutput {
@@ -1258,7 +1267,20 @@ fn vs_main(in: VertexInput, @builtin(instance_index) instanceIdx: u32) -> Vertex
     }
     let world_pos = row.model * vec4<f32>(pos, 1.0);
     out.clip_position = lightVP.proj * lightVP.view * world_pos;
+    out.uv = in.uv;
+    out.cutoff = row.params.y;
     return out;
+}
+
+// The masked depth pass: a Mask caster (leaves, a chain-link fence) casts the
+// shape of its cutout rather than a solid card. The plain pipeline has no
+// fragment stage at all, which is why every cutout used to cast a solid block.
+@fragment
+fn fs_mask(in: VertexOutput) {
+    let a = textureSample(baseColorTex, baseColorSmp, in.uv).a;
+    if (a < in.cutoff) {
+        discard;
+    }
 }
 )";
 

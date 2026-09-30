@@ -2529,17 +2529,30 @@ void RenderSystem::Initialize() {
         shadowPipeDesc.depthBiasSlope = 0.25f;
         shadowPipeDesc.label = "ShadowPipeline";
 
-        // Position, and the bone influences a skinned caster needs
+        // Position, the UV a Mask caster samples, and the bone influences a
+        // skinned caster needs
         Renderer::GPUVertexBufferLayoutDesc shadowVertLayout;
         shadowVertLayout.stride = sizeof(MeshComponent::Vertex);
         shadowVertLayout.attributes = {
             {Renderer::GPUVertexFormat::Float32x3, 0, 0},
+            {Renderer::GPUVertexFormat::Float32x2, static_cast<u32>(offsetof(MeshComponent::Vertex, uv)), 2},
             {Renderer::GPUVertexFormat::Float32x4, static_cast<u32>(offsetof(MeshComponent::Vertex, boneWeights)), 4},
             {Renderer::GPUVertexFormat::Uint32x4,  static_cast<u32>(offsetof(MeshComponent::Vertex, boneIndices)), 5},
         };
         shadowPipeDesc.vertexBuffers = {shadowVertLayout};
 
         m_WebShadowPipeline = pipeMgr->CreateRenderPipeline(shadowPipeDesc);
+
+        // The masked variant: the same depth pass plus a fragment stage that
+        // discards below the caster's alpha cutoff, reading its texture group.
+        {
+            Renderer::GPURenderPipelineDesc maskDesc = shadowPipeDesc;
+            maskDesc.fragmentShader = m_WebShadowShader;
+            maskDesc.fragmentEntryPoint = "fs_mask";
+            maskDesc.bindGroupLayouts = {m_WebShadowFrameLayout, m_WebShadowObjectLayout, m_WebTextureLayout};
+            maskDesc.label = "ShadowMaskedPipeline";
+            m_WebShadowMaskedPipeline = pipeMgr->CreateRenderPipeline(maskDesc);
+        }
 
         // Shadow UBOs. m_WebShadowVPBuffer is the cascade block the PBR pass
         // samples with; each cascade's depth pass has its own VP buffer.
@@ -3374,6 +3387,7 @@ void RenderSystem::Shutdown() {
     }
     if (texMgr && m_WebShadowMapTex.IsValid()) texMgr->DestroyTexture(m_WebShadowMapTex);
     if (pipeMgr && m_WebShadowPipeline.IsValid()) pipeMgr->DestroyPipeline(m_WebShadowPipeline);
+    if (pipeMgr && m_WebShadowMaskedPipeline.IsValid()) pipeMgr->DestroyPipeline(m_WebShadowMaskedPipeline);
     if (shaderMgr && m_WebShadowShader.IsValid()) shaderMgr->DestroyShader(m_WebShadowShader);
 
     if (pipeMgr && m_WebOutlinePipeline.IsValid()) pipeMgr->DestroyPipeline(m_WebOutlinePipeline);
@@ -4356,6 +4370,10 @@ void RenderSystem::Update(f32 deltaTime) {
             ShadowRow row{};
             row.model = ECS::ComputeWorldMatrix(m_World, ce);
             row.params[0] = webShadowCasterSkinned(ce) ? 1.0f : 0.0f;
+            // A Mask caster's cutoff, for the masked pass (0 = solid)
+            if (const auto* cm = m_World->GetComponent<MaterialComponent>(ce);
+                cm && cm->alphaMode == MaterialComponent::AlphaMode::Mask)
+                row.params[1] = cm->alphaCutoff;
             models.push_back(row);
         }
 
@@ -4900,7 +4918,10 @@ void RenderSystem::Update(f32 deltaTime) {
             const bool shadowObjOK = webShadowObjects();
             const auto& dirCasters = webShadowCasters();
             WGPURenderPipeline nativeShadowPipeline = pipeMgr->GetNativePipeline(m_WebShadowPipeline);
+            WGPURenderPipeline nativeMaskedPipeline = m_WebShadowMaskedPipeline.IsValid()
+                ? pipeMgr->GetNativePipeline(m_WebShadowMaskedPipeline) : nullptr;
             for (u32 c = 0; c < WEB_SHADOW_CASCADES; ++c) {
+                bool maskedBound = false;
                 if (!m_WebShadowLayerView[c]) continue;
                 WGPURenderPassEncoder shadowPass = webRenderer->BeginDepthOnlyPass(
                     static_cast<WGPUTextureView>(m_WebShadowLayerView[c]), WEB_SHADOW_MAP_SIZE, WEB_SHADOW_MAP_SIZE);
@@ -4928,6 +4949,20 @@ void RenderSystem::Update(f32 deltaTime) {
                     auto& rd = m_EntityRenderData[eid];
                     if (!rd.valid || !rd.vertexBuffer.IsValid() || !rd.indexBuffer.IsValid()) { shadowIncomplete = true; continue; }
                     wgpuRenderPassEncoderSetBindGroup(shadowPass, 1, webShadowGroupFor(entity), 0, nullptr);
+                    // A Mask caster with a texture group casts its cutout
+                    {
+                        const auto* cm = m_World->GetComponent<MaterialComponent>(entity);
+                        const bool masked = nativeMaskedPipeline && cm &&
+                            cm->alphaMode == MaterialComponent::AlphaMode::Mask && rd.texBindGroup.IsValid();
+                        if (masked != maskedBound) {
+                            wgpuRenderPassEncoderSetPipeline(shadowPass, masked ? nativeMaskedPipeline : nativeShadowPipeline);
+                            maskedBound = masked;
+                        }
+                        if (masked) {
+                            wgpuRenderPassEncoderSetBindGroup(shadowPass, 2,
+                                webBindMgr->GetNativeGroup(rd.texBindGroup), 0, nullptr);
+                        }
+                    }
                     wgpuRenderPassEncoderSetVertexBuffer(shadowPass, 0, webBufMgr->GetNativeBuffer(rd.vertexBuffer), 0, WGPU_WHOLE_SIZE);
                     wgpuRenderPassEncoderSetIndexBuffer(shadowPass, webBufMgr->GetNativeBuffer(rd.indexBuffer),
                                                         WGPUIndexFormat_Uint32, 0, WGPU_WHOLE_SIZE);

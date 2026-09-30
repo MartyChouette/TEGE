@@ -2217,7 +2217,8 @@ private:
     // right before the scene pass ends. The web player uses it to draw GPU particles
     // with real scene depth. Public setter below.
     std::function<void(void*)> m_WebScenePassHook;
-    std::function<void(void*, const Math::Matrix4&)> m_WebShadowPassHook;
+    std::function<void(void*, const Math::Matrix4&, u32)> m_WebShadowPassHook;
+    Renderer::GPUPipelineHandle m_WebShadowMaskedPipeline;   // Mask casters: depth + alpha discard
     u64 m_WebShadowExtraSig = 0;   // hook contributors' share of the shadow signature
 
     // Default bone buffer (single identity matrix for non-skinned meshes)
