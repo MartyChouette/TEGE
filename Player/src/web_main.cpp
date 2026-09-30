@@ -878,6 +878,9 @@ public:
         // was bound "above, once m_RenderSystem exists", and above is where it
         // was null.
         Enjin::Scripting::SetBindingsRenderSystem(m_RenderSystem);
+        // The PostProcess_ calls change the scene's post settings, the base a
+        // volume blends on. Never connected on web, so all of them did nothing.
+        Enjin::Scripting::SetBindingsPostProcessSettings(&m_WebPostProcessBase);
         m_RenderSystem->SetCamera(m_Camera.get());
         m_RenderSystem->SetAssetReader(&m_AssetReader);
         m_RenderSystem->Initialize();
@@ -2173,8 +2176,14 @@ public:
                     contributing = true;
                 }
             }
-            if (contributing || m_WebPostProcessVolumeActive) {
+            // A script that changed the base through a PostProcess_ call needs
+            // the push too, volume or not. Compared as bytes: the struct is the
+            // GPU layout, and only a change should cost a push.
+            const bool scriptChanged = std::memcmp(&m_WebPostProcessBase, &m_WebPostProcessPushedBase,
+                                                   sizeof(m_WebPostProcessBase)) != 0;
+            if (contributing || m_WebPostProcessVolumeActive || scriptChanged) {
                 PushWebPostProcessScalars(blended);
+                m_WebPostProcessPushedBase = m_WebPostProcessBase;
             }
             m_WebPostProcessVolumeActive = contributing;
         }
@@ -3793,6 +3802,7 @@ private:
     // m_SceneRenderSettings by ApplyToRuntime. Volumes blend on top of this
     // each frame; it is never itself written by a blend.
     Enjin::Renderer::PostProcessSettings m_WebPostProcessBase;
+    Enjin::Renderer::PostProcessSettings m_WebPostProcessPushedBase;   // last base pushed (script changes)
     bool m_WebCameraStyleActive = false;   // the active camera carries an ArtStyleComponent
     // Whether a volume contributed last frame, so the frame it stops
     // contributing still pushes once and restores the scene's own grade.

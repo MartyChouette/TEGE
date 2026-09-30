@@ -13,7 +13,7 @@ namespace Networking { class NetworkSystem; }
 namespace Audio { class AudioEngine; }
 namespace Accessibility { class SubtitleSystem; class AccessibilityAnnouncer; struct RuntimeAccessibilitySettings; }
 namespace Scene { class SceneManager; class StreamingManager; }
-namespace Renderer { class PostProcessing; class Camera; }
+namespace Renderer { class PostProcessing; class Camera; struct PostProcessSettings; }
 namespace Build { class AssetReader; }
 namespace Gameplay { class TieredSaveSystem; class QuestSystem; class CinematicSystem; class ObjectPool; class RecordRewindSystem; class CameraDirector; }
 namespace Effects { class WeatherSystem; class WindSystem; class DestructibleSystem; class ElementalSystem; class WorldTimeSystem; class SeasonalWeatherSystem; }
@@ -133,6 +133,10 @@ void SetBindingsScriptEngine(ScriptEngine* engine);
 void SetBindingsDialogueSystem(ECS::DialogueSystem* system);
 void SetBindingsRenderSystem(ECS::RenderSystem* renderSystem);
 void SetBindingsPostProcessing(Renderer::PostProcessing* postProcessing);
+// Web has no PostProcessing object, only settings. The web player hands its
+// settings here so the PostProcess_ calls have something to change; null
+// disconnects them. Does nothing on desktop, which uses the call above.
+void SetBindingsPostProcessSettings(Renderer::PostProcessSettings* settings);
 void SetBindingsSaveSystem(Gameplay::TieredSaveSystem* sys);
 void SetBindingsWeather(Effects::WeatherSystem* weather);
 void SetBindingsWind(Effects::WindSystem* wind);

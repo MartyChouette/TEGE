@@ -20,17 +20,19 @@ using namespace Enjin::Math;
 // visible symbol has to be registered on every platform or an .as module that
 // mentions one fails to compile wholesale (this exact failure shipped — the
 // Playground script died on web with "No matching symbol 'Render_SetRainActive'").
-// The wrappers only touch GetSettings(), and SetBindingsPostProcessing is never
-// wired on web (pointer stays null), so this stand-in exists purely to satisfy
-// the compiler. The settings type is the REAL struct, so there is no field drift.
+// The wrappers only touch GetSettings(). This stand-in used to exist purely to
+// satisfy the compiler, and nothing wired it on web, so every PostProcess_ call
+// did nothing in a browser. It now points at the web player's real settings
+// (SetBindingsPostProcessSettings). The settings type is the REAL struct, so
+// there is no field drift.
 namespace Enjin { namespace Renderer {
 class PostProcessing {
 public:
-    PostProcessSettings& GetSettings() { return m_Settings; }
-private:
-    PostProcessSettings m_Settings;
+    PostProcessSettings& GetSettings() { return *m_Settings; }
+    PostProcessSettings* m_Settings = nullptr;
 };
 }}
+static Renderer::PostProcessing s_WebPostProcessing;
 #endif
 
 #define AS_CHECK(expr) \
@@ -51,6 +53,15 @@ void SetBindingsRenderSystem(ECS::RenderSystem* renderSystem) {
 
 void SetBindingsPostProcessing(Renderer::PostProcessing* postProcessing) {
     s_BindingsPostProcessing = postProcessing;
+}
+
+void SetBindingsPostProcessSettings(Renderer::PostProcessSettings* settings) {
+#if ENJIN_RENDERER_WEBGPU
+    s_WebPostProcessing.m_Settings = settings;
+    s_BindingsPostProcessing = settings ? &s_WebPostProcessing : nullptr;
+#else
+    (void)settings;
+#endif
 }
 
 } // namespace Scripting
