@@ -1674,15 +1674,11 @@ void ControllerSystem::UpdateThirdPerson(Entity entity, ThirdPersonController& c
         ctrl.velocity.z = Math::MoveTowards(ctrl.velocity.z, 0.0f, ctrl.deceleration * dt);
     }
 
-    // Jumping
-    // WASM workaround: IsKeyPressed (edge detection) doesn't work on Emscripten because
-    // key callbacks fire before Input::Update copies state. Use IsKeyDown + manual flag instead.
+    // Jumping. Web used to OR a raw Space read in here, a workaround for key
+    // edges being lost between frames. That was fixed at the source on
+    // 2026-08-09 (the web input latch in Core/src/Platform/Input.cpp), and the
+    // leftover read made Space jump on web whatever Jump was bound to.
     bool jumpInput = IsJumpPressed();
-#if ENJIN_PLATFORM_WEB
-    bool spaceDown = Input::IsKeyDown(static_cast<KeyCode>(32));
-    if (spaceDown && !ctrl.jumpKeyWasDown) jumpInput = true;
-    ctrl.jumpKeyWasDown = spaceDown;
-#endif
 
     // G1 ladder: while climbing, the climb owns velocity.y (jump/gravity skip).
     bool climbing = UpdateLadderClimb(m_World, ctrl, transform, input, jumpInput, dt);

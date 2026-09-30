@@ -225,7 +225,6 @@ struct ThirdPersonController : public CharacterControllerBase {
     bool isFalling = false;
     bool isSprinting = false;
     f32 prevPositionY = 0.0f;   // for WASM ground detection fallback
-    bool jumpKeyWasDown = false;  // for WASM edge detection
     i32 fallFrameCount = 0;       // frames of continuous Y decrease
 };
 
