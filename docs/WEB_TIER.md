@@ -13,6 +13,7 @@ This document is the contract. For every capability it says one of three things:
 |---|---|
 | **Same** | Works on web the way it works on desktop. |
 | **Substituted** | Web gets a *different, deliberate* implementation. The substitute is named. This is not a downgrade, it is the web-native way to get the same result. |
+| **Partly** | Works on web with named gaps. The gaps are listed on the row. |
 | **Absent** | Not on web. Authoring it will silently do nothing in a browser build. |
 
 **Absent is the row that matters.** A maker who knows a feature is absent designs
@@ -29,12 +30,12 @@ Rows carry the date they were last checked. The table as a whole was last verifi
 | Capability | Web | Notes |
 |---|---|---|
 | PBR materials, lit meshes | Same | |
-| Shadows | Same | |
-| Skybox, procedural sky, clouds | Same | Fixed 2026-09-15 and verified by capture. It was silently broken for the life of the web player: the boot scene loads BEFORE the RenderSystem is constructed, so `SetSkybox` hit its own null guard and every browser scene drew the built-in default. A scene authoring a red zenith rendered byte-identical to one authoring blue. |
-| GPU particles | Same | `WebGPUParticleSystem.cpp`, compute-driven, verified in a browser. |
-| Vegetation, wind | Same | Verified by capture 2026-09-15: renders, sways, and casts shadows. |
+| Shadows | **Partly** | Four soft cascades for the sun, as on desktop. Gaps (2026-09-30): 1 point and 2 spot shadow casters against desktop's 4 and 4; spot and point passes skip wide flat casters; cutout (Mask) casters are cut out only in the sun's cascades, and cast solid from spot and point lights. |
+| Skybox, procedural sky, clouds | **Partly** | Gap (2026-09-30): a cubemap sky is drawn but not used for reflections. Fixed 2026-09-15 and verified by capture. It was silently broken for the life of the web player: the boot scene loads BEFORE the RenderSystem is constructed, so `SetSkybox` hit its own null guard and every browser scene drew the built-in default. A scene authoring a red zenith rendered byte-identical to one authoring blue. |
+| GPU particles | **Partly** | `WebGPUParticleSystem.cpp`, compute-driven, verified in a browser; one-shot bursts reach it since 2026-09-30. Gap: an emitter's texture sprite (`sprite == 5`) falls back to the soft circle. |
+| Vegetation, wind | **Partly** | Verified by capture 2026-09-15: renders, sways, and casts shadows (each cascade with its own matrix since 2026-09-30). Gaps: no fog, no shadow receiving, no bend where the player steps, no world curvature. |
 | Tilemaps | Same | Fixed 2026-09-13. It had never worked: mesh generation lived only in the Vulkan `RenderSystem::Update` body. |
-| Sprites, 2D | Same | |
+| Sprites, 2D | **Partly** | Gaps (2026-09-30): lit sprites draw unlit (and normal-mapped sprites lose their relief), a sprite rotated in 3D faces the camera where desktop draws it in the world plane, and there is no drop shadow. An orthographic 2D camera cannot tell the plane difference. |
 | Compute | Same | |
 | CPU particle emitters | Same | `ParticleEmitterComponent` renders through the web particle pipeline (`RenderSystem.cpp`, the web `Update` body), capped at 8192 instances shared between emitters, and draws its `texturePath` since ccc13ca8. Still missing: sheet animation and velocity stretch. |
 | 3D text | Same | SDF text meshes and text-on-surface rasters both draw on web (`WebEnsureTextMeshes`). Checked 2026-09-30. |
