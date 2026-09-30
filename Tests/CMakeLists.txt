@@ -311,6 +311,7 @@ enjin_add_test(TestScriptHandleOwnership Unit/Scripting/TestScriptHandleOwnershi
 enjin_add_test(TestEntityEventBridge Unit/Scripting/TestEntityEventBridge.cpp)
 enjin_add_test(TestScriptEnabledFlag Unit/Scripting/TestScriptEnabledFlag.cpp)
 enjin_add_test(TestScriptLifecycle    Unit/Scripting/TestScriptLifecycle.cpp)
+enjin_add_test(TestScriptClock        Unit/Scripting/TestScriptClock.cpp)
 enjin_add_test(TestScriptCollisionDispatch Unit/Scripting/TestScriptCollisionDispatch.cpp)
 enjin_add_test(TestScriptProperties   Unit/Scripting/TestScriptProperties.cpp)
 enjin_add_test(TestScriptBindings     Unit/Scripting/TestScriptBindings.cpp)

@@ -746,7 +746,20 @@ void ScriptSystem::FixedUpdate(f32 fixedDeltaTime) {
 
     // Time_GetFixedDeltaTime() should report the step actually being run, not
     // the 1/60 the binding was initialised with.
-    Scripting::TickBindingsTime(0.0f, fixedDeltaTime);
+    //
+    // Only that. This used to call TickBindingsTime(0, step), which also set
+    // the frame delta to 0 and counted a frame. Update runs its fixed steps
+    // BEFORE OnUpdate, so on every frame with a step in it the scripts read
+    // Time_GetDeltaTime() == 0 and a frame count too high. At 60 fps that is
+    // most frames; a slow web frame is all of them, and Twister's idle timer,
+    // which is Time_GetDeltaTime() summed, never left zero, so no key or touch
+    // could wake it out of attract mode.
+    Scripting::SetBindingsFixedDeltaTime(fixedDeltaTime);
+    // Inside OnFixedUpdate the delta IS the step, which is what a script
+    // integrating there expects. The frame's delta goes back afterwards, for
+    // OnUpdate after the internal accumulator, or for the next Update after the
+    // external SimulationClock loop, which calls this too.
+    const f32 frameDelta = Scripting::SwapBindingsDeltaTime(fixedDeltaTime);
 
     for (ECS::Entity entity : m_CachedScriptEntities) {
         ForEachScript(entity, [&](usize i, ECS::ScriptAttachment& script) {
@@ -756,6 +769,8 @@ void ScriptSystem::FixedUpdate(f32 fixedDeltaTime) {
             }
         });
     }
+
+    Scripting::SwapBindingsDeltaTime(frameDelta);
 }
 
 void ScriptSystem::LateUpdate(f32 deltaTime) {

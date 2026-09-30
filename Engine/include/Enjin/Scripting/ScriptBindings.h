@@ -114,6 +114,13 @@ void SetBindingsEventBus(ScriptEventBus* bus);
 // runtime gets it without another hand-maintained list. Without it
 // Time_GetTime(), Time_GetDeltaTime() and Time_GetFrameCount() return 0 forever.
 void TickBindingsTime(f32 deltaTime, f32 fixedDeltaTime = 0.0f);
+// The fixed step being run, for Time_GetFixedDeltaTime(). Touches nothing else:
+// a fixed step is not a frame.
+void SetBindingsFixedDeltaTime(f32 fixedDeltaTime);
+// Set what Time_GetDeltaTime() returns and hand back what it returned before.
+// FixedUpdate uses it to answer with the step inside OnFixedUpdate and put the
+// frame's delta back for OnUpdate.
+f32 SwapBindingsDeltaTime(f32 deltaTime);
 void ResetBindingsTime();
 
 void ClearBindingsEventListeners();

@@ -477,6 +477,16 @@ void TickBindingsTime(f32 deltaTime, f32 fixedDeltaTime) {
     if (fixedDeltaTime > 0.0f) s_FixedDeltaTime = fixedDeltaTime;
 }
 
+void SetBindingsFixedDeltaTime(f32 fixedDeltaTime) {
+    if (fixedDeltaTime > 0.0f) s_FixedDeltaTime = fixedDeltaTime;
+}
+
+f32 SwapBindingsDeltaTime(f32 deltaTime) {
+    const f32 previous = s_DeltaTime;
+    s_DeltaTime = deltaTime;
+    return previous;
+}
+
 void ResetBindingsTime() {
     s_DeltaTime = 0.0f;
     s_TotalTime = 0.0f;
