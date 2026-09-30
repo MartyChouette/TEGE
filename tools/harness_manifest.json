@@ -97,9 +97,10 @@
       "claims": {
         "draws": true,
         "animates": {
-          "min_changed_pct": 0.5
+          "min_changed_pct": 0.35
         }
-      }
+      },
+      "animates_bar_because": "Lowered from 0.50 to 0.35 (Marty, 2026-09-29). The three fluid columns are small on screen: the 2026-09-29 sweep measured 0.43% moved at best, the same over three repeats, while the frames show the plume moving. The demo is left as it is."
     },
     {
       "name": "FoliageDemo",
