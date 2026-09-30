@@ -68,6 +68,13 @@ struct ENJIN_API MeshComponent : public IComponent {
     Math::Vector3 cachedAABBMax = Math::Vector3(-1.0f, -1.0f, -1.0f);
     bool aabbDirty = true;
 
+    // Runtime only, never serialized. True when the scene loader left this mesh's
+    // vertices in MeshAssetCache instead of copying them into the component
+    // (MeshAssetCache::ResolveDeferred): the bounds and submeshes are filled, the
+    // vertex and index vectors are empty, and EnsureCpuData brings them back for
+    // anything that needs them. A field of 7344 stalks of one mesh is one copy.
+    bool cpuDeferred = false;
+
     bool IsValid() const {
         return !vertices.empty() && !indices.empty();
     }

@@ -167,12 +167,7 @@ void RenderSystem::DropEntityGeometryBuffers(Entity entity) {
 #if ENJIN_RENDERER_WEBGPU
     auto& rd = m_EntityRenderData[idx];
     if (!rd.valid) return;
-    if (auto* bufMgr = m_Renderer ? m_Renderer->GetBufferManager() : nullptr) {
-        if (rd.vertexBuffer.IsValid()) bufMgr->DestroyBuffer(rd.vertexBuffer);
-        if (rd.indexBuffer.IsValid()) bufMgr->DestroyBuffer(rd.indexBuffer);
-    }
-    rd.vertexBuffer = {};
-    rd.indexBuffer = {};
+    WebReleaseMeshBuffers(rd);
     rd.valid = false;
 #else
     RetireEntityBuffers(m_EntityRenderData[idx]);
@@ -1747,6 +1742,82 @@ void RenderSystem::WebDropSplitViewportResources() {
     m_WebSplitVPBuffers.clear();
 }
 
+bool RenderSystem::WebAcquireSharedMesh(EntityRenderData& rd, const MeshComponent& mesh) {
+    const u64 key = mesh.source.Valid() ? mesh.source.contentHash : 0ull;
+    if (key == 0) return false;
+    auto* bufMgr = m_Renderer ? m_Renderer->GetBufferManager() : nullptr;
+    if (!bufMgr) return false;
+
+    auto it = m_WebSharedMeshes.find(key);
+    if (it == m_WebSharedMeshes.end()) {
+        // The first user uploads from the cache's own copy. Nothing is copied
+        // into the component, which is the point.
+        auto& cache = Assets::MeshAssetCache::Get();
+        const auto* verts = cache.PeekVertices(mesh.source);
+        const auto* inds = cache.PeekIndices(mesh.source);
+        if (!verts || !inds || verts->empty() || inds->empty()) return false;
+
+        WebSharedMesh shared;
+        Renderer::GPUBufferDesc vbDesc;
+        vbDesc.size = verts->size() * sizeof(MeshComponent::Vertex);
+        vbDesc.usage = Renderer::GPUBufferUsage::Vertex | Renderer::GPUBufferUsage::CopyDst;
+        vbDesc.hostVisible = true;
+        shared.vertexBuffer = bufMgr->CreateBufferWithData(vbDesc, verts->data());
+
+        Renderer::GPUBufferDesc ibDesc;
+        ibDesc.size = inds->size() * sizeof(u32);
+        ibDesc.usage = Renderer::GPUBufferUsage::Index | Renderer::GPUBufferUsage::CopyDst;
+        ibDesc.hostVisible = true;
+        shared.indexBuffer = bufMgr->CreateBufferWithData(ibDesc, inds->data());
+
+        if (!shared.vertexBuffer.IsValid() || !shared.indexBuffer.IsValid()) {
+            if (shared.vertexBuffer.IsValid()) bufMgr->DestroyBuffer(shared.vertexBuffer);
+            if (shared.indexBuffer.IsValid()) bufMgr->DestroyBuffer(shared.indexBuffer);
+            return false;
+        }
+        shared.indexCount = static_cast<u32>(inds->size());
+        it = m_WebSharedMeshes.emplace(key, shared).first;
+    }
+
+    ++it->second.refs;
+    rd.vertexBuffer = it->second.vertexBuffer;
+    rd.indexBuffer = it->second.indexBuffer;
+    rd.indexCount = it->second.indexCount;
+    rd.webSharedHash = key;
+    return true;
+}
+
+void RenderSystem::WebReleaseMeshBuffers(EntityRenderData& rd) {
+    auto* bufMgr = m_Renderer ? m_Renderer->GetBufferManager() : nullptr;
+    if (rd.webSharedHash != 0) {
+        auto it = m_WebSharedMeshes.find(rd.webSharedHash);
+        if (it != m_WebSharedMeshes.end() && it->second.refs > 0 && --it->second.refs == 0) {
+            if (bufMgr) {
+                if (it->second.vertexBuffer.IsValid()) bufMgr->DestroyBuffer(it->second.vertexBuffer);
+                if (it->second.indexBuffer.IsValid()) bufMgr->DestroyBuffer(it->second.indexBuffer);
+            }
+            m_WebSharedMeshes.erase(it);
+        }
+    } else if (bufMgr) {
+        if (rd.vertexBuffer.IsValid()) bufMgr->DestroyBuffer(rd.vertexBuffer);
+        if (rd.indexBuffer.IsValid()) bufMgr->DestroyBuffer(rd.indexBuffer);
+    }
+    rd.vertexBuffer = {};
+    rd.indexBuffer = {};
+    rd.webSharedHash = 0;
+}
+
+void RenderSystem::WebDropSharedMeshes() {
+    auto* bufMgr = m_Renderer ? m_Renderer->GetBufferManager() : nullptr;
+    if (bufMgr) {
+        for (auto& entry : m_WebSharedMeshes) {
+            if (entry.second.vertexBuffer.IsValid()) bufMgr->DestroyBuffer(entry.second.vertexBuffer);
+            if (entry.second.indexBuffer.IsValid()) bufMgr->DestroyBuffer(entry.second.indexBuffer);
+        }
+    }
+    m_WebSharedMeshes.clear();
+}
+
 bool RenderSystem::WebEnsureSplitViewportResources(u32 count) {
     if (count < 2) return false;
     if (count > MAX_SPLITSCREEN_VIEWPORTS) count = MAX_SPLITSCREEN_VIEWPORTS;
@@ -3301,11 +3372,11 @@ void RenderSystem::Shutdown() {
     if (bufMgr) {
         for (auto& rd : m_EntityRenderData) {
             if (rd.valid) {
-                if (rd.vertexBuffer.IsValid()) bufMgr->DestroyBuffer(rd.vertexBuffer);
-                if (rd.indexBuffer.IsValid()) bufMgr->DestroyBuffer(rd.indexBuffer);
+                WebReleaseMeshBuffers(rd);
                 rd.Invalidate();
             }
         }
+        WebDropSharedMeshes();
     }
 
     // Destroy bind groups
@@ -4091,8 +4162,7 @@ void RenderSystem::WebEnsureTextMeshes() {
         u64 eid = EntityIndex(entity);
         if (eid < m_EntityRenderData.size() && bufMgr) {
             auto& rd = m_EntityRenderData[eid];
-            if (rd.vertexBuffer.IsValid()) bufMgr->DestroyBuffer(rd.vertexBuffer);
-            if (rd.indexBuffer.IsValid()) bufMgr->DestroyBuffer(rd.indexBuffer);
+            WebReleaseMeshBuffers(rd);
             rd.valid = false;
             rd.texBindGroupValid = false;
         }
@@ -4257,7 +4327,7 @@ void RenderSystem::Update(f32 deltaTime) {
             for (Entity e : meshEntities) {
                 auto* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(e) : nullptr;
                 auto* xf = m_CachedTransformStorage ? m_CachedTransformStorage->Get(e) : nullptr;
-                if (!mesh || !xf || !xf->visible || mesh->vertices.empty()) continue;
+                if (!mesh || !xf || !xf->visible || (mesh->vertices.empty() && !mesh->cpuDeferred)) continue;
                 // Viewmodels cast no shadows (see Vulkan RenderEntityShadow)
                 auto* vmc = m_CachedViewmodelStorage ? m_CachedViewmodelStorage->Get(e) : nullptr;
                 if (vmc && vmc->enabled) continue;
@@ -4941,7 +5011,7 @@ void RenderSystem::Update(f32 deltaTime) {
                 for (usize ci = 0; shadowObjOK && ci < dirCasters.size(); ci++) {
                     Entity entity = dirCasters[ci];
                     auto* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity) : nullptr;
-                    if (!mesh || mesh->indices.empty()) continue;
+                    if (!mesh || (mesh->indices.empty() && !mesh->cpuDeferred)) continue;
                     const u64 eid = EntityIndex(entity);
                     // Not ready YET is not the same as nothing to draw: entity
                     // buffers are made lazily in the main loop, after this pass
@@ -5619,7 +5689,9 @@ void RenderSystem::Update(f32 deltaTime) {
             auto* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity) : nullptr;
             auto* xf = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
             if (!mesh || !xf || !xf->visible) continue;
-            if (mesh->vertices.empty() || mesh->indices.empty()) continue;
+            // A deferred mesh has no CPU copy by design; its geometry is in
+            // MeshAssetCache and goes to the GPU once, shared (see below).
+            if (!mesh->cpuDeferred && (mesh->vertices.empty() || mesh->indices.empty())) continue;
 
             // The same filters the desktop path applies: the enabled switch,
             // the render-layer mask against this camera's culling mask, and the
@@ -5664,8 +5736,7 @@ void RenderSystem::Update(f32 deltaTime) {
                             || (proc && proc->topologyDirty);
                 if (topo) {
                     if (rd.valid) {
-                        if (rd.vertexBuffer.IsValid()) bufMgr->DestroyBuffer(rd.vertexBuffer);
-                        if (rd.indexBuffer.IsValid()) bufMgr->DestroyBuffer(rd.indexBuffer);
+                        WebReleaseMeshBuffers(rd);
                         rd.valid = false;
                     }
                     if (cloth) { cloth->topologyDirty = false; cloth->meshDirty = false; }
@@ -5674,7 +5745,9 @@ void RenderSystem::Update(f32 deltaTime) {
                     // create-block below rebuilds them, but nothing re-dirties a
                     // generated mesh afterwards, so it needs the follow-up upload.
                     if (proc) { proc->topologyDirty = false; proc->meshDirty = true; }
-                } else if (rd.valid && rd.owner == entity &&
+                } else if (rd.valid && rd.owner == entity && rd.webSharedHash == 0 &&
+                           // never into a SHARED buffer: every other user would
+                           // draw this entity's deformed vertices
                            ((cloth && cloth->meshDirty) || (rope && rope->meshDirty)
                             || (proc && proc->meshDirty) || (w3d && w3d->meshDirty)
                             || (jelly && jelly->meshDirty))) {
@@ -5689,19 +5762,31 @@ void RenderSystem::Update(f32 deltaTime) {
             }
 
             if (!rd.valid || rd.owner != entity) {  // owner mismatch = slot recycled by a new entity
-                Renderer::GPUBufferDesc vbDesc;
-                vbDesc.size = mesh->vertices.size() * sizeof(MeshComponent::Vertex);
-                vbDesc.usage = Renderer::GPUBufferUsage::Vertex | Renderer::GPUBufferUsage::CopyDst;
-                vbDesc.hostVisible = true;
-                rd.vertexBuffer = bufMgr->CreateBufferWithData(vbDesc, mesh->vertices.data());
+                // A recycled slot still holds the old owner's buffers, and
+                // overwriting the handles leaked them (or, shared, a reference).
+                if (rd.valid) WebReleaseMeshBuffers(rd);
 
-                Renderer::GPUBufferDesc ibDesc;
-                ibDesc.size = mesh->indices.size() * sizeof(u32);
-                ibDesc.usage = Renderer::GPUBufferUsage::Index | Renderer::GPUBufferUsage::CopyDst;
-                ibDesc.hostVisible = true;
-                rd.indexBuffer = bufMgr->CreateBufferWithData(ibDesc, mesh->indices.data());
+                bool made = mesh->cpuDeferred && WebAcquireSharedMesh(rd, *mesh);
+                if (!made) {
+                    // Deferred but not shareable after all: bring its vertices
+                    // back and give it its own buffers, as before.
+                    if (mesh->vertices.empty()) Assets::MeshAssetCache::Get().EnsureCpuData(*mesh);
+                    if (mesh->vertices.empty() || mesh->indices.empty()) continue;
 
-                rd.indexCount = static_cast<u32>(mesh->indices.size());
+                    Renderer::GPUBufferDesc vbDesc;
+                    vbDesc.size = mesh->vertices.size() * sizeof(MeshComponent::Vertex);
+                    vbDesc.usage = Renderer::GPUBufferUsage::Vertex | Renderer::GPUBufferUsage::CopyDst;
+                    vbDesc.hostVisible = true;
+                    rd.vertexBuffer = bufMgr->CreateBufferWithData(vbDesc, mesh->vertices.data());
+
+                    Renderer::GPUBufferDesc ibDesc;
+                    ibDesc.size = mesh->indices.size() * sizeof(u32);
+                    ibDesc.usage = Renderer::GPUBufferUsage::Index | Renderer::GPUBufferUsage::CopyDst;
+                    ibDesc.hostVisible = true;
+                    rd.indexBuffer = bufMgr->CreateBufferWithData(ibDesc, mesh->indices.data());
+
+                    rd.indexCount = static_cast<u32>(mesh->indices.size());
+                }
                 rd.valid = true;
                 rd.owner = entity;
             }
@@ -7408,10 +7493,7 @@ void RenderSystem::OnEntityRemoved(Entity entity) {
         auto* bufMgr = m_Renderer ? m_Renderer->GetBufferManager() : nullptr;
         auto* bindMgr = m_Renderer ? m_Renderer->GetBindGroupManager() : nullptr;
         auto& rd = m_EntityRenderData[eid];
-        if (bufMgr) {
-            if (rd.vertexBuffer.IsValid()) bufMgr->DestroyBuffer(rd.vertexBuffer);
-            if (rd.indexBuffer.IsValid()) bufMgr->DestroyBuffer(rd.indexBuffer);
-        }
+        if (bufMgr) WebReleaseMeshBuffers(rd);
         if (bindMgr && rd.texBindGroup.IsValid()) bindMgr->DestroyBindGroup(rd.texBindGroup);
         if (bindMgr && rd.objBoneBindGroup.IsValid()) bindMgr->DestroyBindGroup(rd.objBoneBindGroup);
         if (bindMgr && rd.outlineBoneBindGroup.IsValid()) bindMgr->DestroyBindGroup(rd.outlineBoneBindGroup);
@@ -7431,8 +7513,7 @@ void RenderSystem::FlushSceneClear(const Renderer::GpuLifetimeToken&) {
     if (bufMgr) {
         for (auto& rd : m_EntityRenderData) {
             if (rd.valid) {
-                if (rd.vertexBuffer.IsValid()) bufMgr->DestroyBuffer(rd.vertexBuffer);
-                if (rd.indexBuffer.IsValid()) bufMgr->DestroyBuffer(rd.indexBuffer);
+                WebReleaseMeshBuffers(rd);
                 // The bind groups used to be left behind here, so every scene
                 // change leaked one texture group and one object group per
                 // entity for the life of the tab.
@@ -7443,6 +7524,7 @@ void RenderSystem::FlushSceneClear(const Renderer::GpuLifetimeToken&) {
                 rd.Invalidate();
             }
         }
+        WebDropSharedMeshes();
     }
     m_EntityRenderData.clear();
     m_CachedLightEntities.clear();

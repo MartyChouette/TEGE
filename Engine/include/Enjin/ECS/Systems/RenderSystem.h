@@ -258,6 +258,11 @@ struct EntityRenderData {
     // needs its bones (WP-16; it cast its bind pose)
     Renderer::GPUBindGroupHandle shadowBoneBindGroup;
     u32 shadowBoneBindGroupGen = 0;
+    // Content hash of the m_WebSharedMeshes entry whose buffers this entity is
+    // HOLDING A REFERENCE TO, or 0 when vertexBuffer/indexBuffer are its own.
+    // Release goes through RenderSystem::WebReleaseMeshBuffers, which reads this
+    // to decide between dropping a reference and destroying the buffers.
+    u64 webSharedHash = 0;
 #endif
     u32 indexCount = 0;
     bool valid = false;  // true if this slot is occupied
@@ -296,6 +301,7 @@ struct EntityRenderData {
         objBoneBindGroupGen = 0;
         shadowBoneBindGroup = {};
         shadowBoneBindGroupGen = 0;
+        webSharedHash = 0;
 #endif
         indexCount = 0;
         valid = false;
@@ -2150,6 +2156,29 @@ private:
     // Destroy them. Called when anything they snapshot (the lightmap atlases)
     // is replaced, and at shutdown.
     void WebDropSplitViewportResources();
+
+    // One vertex and index buffer per distinct mesh, shared by every entity whose
+    // mesh was loaded deferred (MeshComponent::cpuDeferred), keyed by content
+    // hash. 7344 corn stalks of one mesh draw from one pair of buffers instead of
+    // allocating 7344 copies the wasm heap cannot hold. Refcounted: the last
+    // entity to let go destroys the buffers.
+    struct WebSharedMesh {
+        Renderer::GPUBufferHandle vertexBuffer;
+        Renderer::GPUBufferHandle indexBuffer;
+        u32 indexCount = 0;
+        u32 refs = 0;
+    };
+    std::unordered_map<u64, WebSharedMesh> m_WebSharedMeshes;
+    // Point rd at the shared buffers for `mesh`, uploading them on first use from
+    // MeshAssetCache's copy. False when the mesh has no usable reference.
+    bool WebAcquireSharedMesh(EntityRenderData& rd, const MeshComponent& mesh);
+    // THE way to let go of an entity's vertex/index buffers on web: drops the
+    // reference on a shared pair, destroys an owned one, and clears the handles.
+    // Every release site goes through here. Destroying a shared buffer directly
+    // leaves every other user drawing from a dead handle, a black canvas.
+    void WebReleaseMeshBuffers(EntityRenderData& rd);
+    // Destroy whatever is left in m_WebSharedMeshes (shutdown, scene teardown).
+    void WebDropSharedMeshes();
 
     // Uniform buffers
     Renderer::GPUBufferHandle m_WebViewProjBuffer;           // 144 bytes

@@ -191,7 +191,9 @@ bool ReflectionProbeSystem::ComputeSceneBounds(ECS::World* world,
     for (ECS::Entity e : world->GetEntitiesWithComponent<ECS::MeshComponent>()) {
         auto* mesh = world->GetComponent<ECS::MeshComponent>(e);
         auto* xf = world->GetComponent<ECS::TransformComponent>(e);
-        if (!mesh || !xf || !mesh->IsValid()) continue;
+        // A deferred mesh (MeshAssetCache::ResolveDeferred) has no vertices here
+        // but arrives with its cached AABB filled, which is all this reads.
+        if (!mesh || !xf || (!mesh->IsValid() && !mesh->cpuDeferred)) continue;
 
         // Only things that hold still may define the volume. A viewmodel is
         // parented to the camera and a dynamic body is in flight, so either one

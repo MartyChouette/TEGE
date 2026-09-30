@@ -895,7 +895,10 @@ ECS::MaterialComponent DeserializeMaterialComponent(const json& j) {
     return material;
 }
 
-ECS::MeshComponent DeserializeMeshComponent(const json& j) {
+// deferCpu: leave a source-referenced mesh's geometry in MeshAssetCache rather
+// than copying it into the component (see DefersMeshCpu). Falls back to a full
+// copy whenever the cache refuses, so the result is never emptier than before.
+ECS::MeshComponent DeserializeMeshComponent(const json& j, bool deferCpu = false) {
     ECS::MeshComponent mesh;
 
     static constexpr usize kMaxVertices = 10'000'000; // SN-H1: OOM cap
@@ -1004,10 +1007,44 @@ ECS::MeshComponent DeserializeMeshComponent(const json& j) {
     // always wins, keeping old/authored scenes untouched. On failure the mesh stays
     // empty and the cache logs why (missing file / hash drift), rather than crashing.
     if (mesh.vertices.empty() && mesh.source.Valid()) {
-        Assets::MeshAssetCache::Get().Resolve(mesh.source, mesh);
+        if (!(deferCpu && Assets::MeshAssetCache::Get().ResolveDeferred(mesh.source, mesh))) {
+            Assets::MeshAssetCache::Get().Resolve(mesh.source, mesh);
+        }
     }
 
     return mesh;
+}
+
+// Whether a loaded entity's source-referenced mesh may stay in MeshAssetCache
+// instead of being copied into its component. WEB ONLY.
+//
+// The copy is what took Twister down in the browser: 7344 corn stalks of one
+// 1456-vertex mesh are 1.45 GB of vertices at a 136-byte stride, against a
+// 512 MB wasm heap, and the page aborted before a frame was drawn. Deferred,
+// the field is one copy in the cache and one shared buffer on the GPU.
+//
+// Excluded: anything that reads its own vertices from the component at load or
+// every frame -- skinning (Animator; ResolveDeferred also refuses a mesh with
+// bone weights), morph targets, a mesh collider, cloth, rope and JellyMesh
+// (which wobbles its vertices on the CPU and re-uploads them). The registry
+// components are deserialized before the mesh, so they can be asked here.
+// Anything else that needs vertices later calls MeshAssetCache::EnsureCpuData.
+//
+// Desktop keeps the copy: its GPU pool shares by content hash and frees the CPU
+// side after upload (m_FreeMeshCpuData), and it has the memory for the peak.
+static bool DefersMeshCpu(ECS::World* world, ECS::Entity e) {
+#if ENJIN_PLATFORM_WEB
+    if (!world) return false;
+    return !world->HasComponent<ECS::AnimatorComponent>(e)
+        && !world->HasComponent<ECS::MorphTargetComponent>(e)
+        && !world->HasComponent<ECS::MeshColliderComponent>(e)
+        && !world->HasComponent<ECS::ClothComponent>(e)
+        && !world->HasComponent<ECS::RopeComponent>(e)
+        && !world->HasComponent<ECS::JellyMeshComponent>(e);
+#else
+    (void)world; (void)e;
+    return false;
+#endif
 }
 
 ECS::LightComponent DeserializeLightComponent(const json& j) {
@@ -10892,8 +10929,8 @@ void SceneSerializer::DeserializeEntities(const json& sceneJson, Deserialization
             MigrateRetiredPolygonCollider2D(m_World, entity, *poly);
         }
         if (entityJson.contains("mesh")) {
-            auto mesh = DeserializeMeshComponent(entityJson["mesh"]);
-            if (mesh.IsValid()) {
+            auto mesh = DeserializeMeshComponent(entityJson["mesh"], DefersMeshCpu(m_World, entity));
+            if (mesh.IsValid() || mesh.cpuDeferred) {
                 m_World->AddComponent<ECS::MeshComponent>(entity, mesh);
             }
         }
@@ -11707,7 +11744,7 @@ ECS::Entity SceneSerializer::DeserializeEntityFromString(ECS::World* world, cons
             MigrateRetiredPolygonCollider2D(world, entity, *poly);
         }
         if (entityJson.contains("mesh")) {
-            world->AddComponent<ECS::MeshComponent>(entity, DeserializeMeshComponent(entityJson["mesh"]));
+            world->AddComponent<ECS::MeshComponent>(entity, DeserializeMeshComponent(entityJson["mesh"], DefersMeshCpu(world, entity)));
         }
         if (entityJson.contains("parent")) {
             auto& pc = world->AddComponent<ECS::ParentComponent>(entity);

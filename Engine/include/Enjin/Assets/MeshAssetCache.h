@@ -105,6 +105,19 @@ public:
     // collider build, precise picking, device-loss re-upload) call this first.
     bool EnsureCpuData(ECS::MeshComponent& mc);
 
+    // Resolve a reference WITHOUT copying its geometry: fills subMeshes and the
+    // cached AABB, sets cpuDeferred, and leaves vertices/indices empty. Refuses
+    // (false, `out` untouched) when the reference does not resolve or the mesh is
+    // skinned, since a skinned mesh reads its bone data per entity. The caller
+    // then falls back to Resolve.
+    bool ResolveDeferred(const ECS::MeshComponent::SourceRef& ref, ECS::MeshComponent& out);
+
+    // The cache's own copy of a reference's geometry, for a renderer uploading
+    // one shared buffer. Null when the reference does not resolve. Valid until
+    // Clear().
+    const std::vector<ECS::MeshComponent::Vertex>* PeekVertices(const ECS::MeshComponent::SourceRef& ref);
+    const std::vector<u32>* PeekIndices(const ECS::MeshComponent::SourceRef& ref);
+
     void Clear();  // drop all cached files (e.g., on project/scene close)
 
 private:
@@ -113,6 +126,12 @@ private:
         std::vector<u32> indices;
         std::vector<ECS::MeshComponent::SubMesh> subMeshes;
         u64 contentHash = 0;
+        // Measured once, on the first ResolveDeferred, so 7344 references to
+        // one mesh walk its vertices once.
+        mutable bool measured = false;
+        mutable bool skinned = false;
+        mutable Math::Vector3 aabbMin = Math::Vector3(1.0f, 1.0f, 1.0f);
+        mutable Math::Vector3 aabbMax = Math::Vector3(-1.0f, -1.0f, -1.0f);
     };
     struct CachedFile {
         bool loaded = false;   // set once a load has been attempted (success or fail)

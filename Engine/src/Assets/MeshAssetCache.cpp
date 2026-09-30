@@ -4,6 +4,7 @@
 #include "Enjin/Assets/SceneImporter.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/Logging/Log.h"
+#include <algorithm>
 #include <filesystem>
 #include <unordered_set>
 #include <fstream>
@@ -409,6 +410,45 @@ bool MeshAssetCache::Resolve(const ECS::MeshComponent::SourceRef& ref, ECS::Mesh
     out.indices = cm->indices;
     if (out.subMeshes.empty()) out.subMeshes = cm->subMeshes;
     return true;
+}
+
+bool MeshAssetCache::ResolveDeferred(const ECS::MeshComponent::SourceRef& ref, ECS::MeshComponent& out) {
+    const CachedMesh* cm = Find(ref, /*logMismatch=*/true);
+    if (!cm || cm->vertices.empty() || cm->indices.empty()) return false;
+
+    if (!cm->measured) {
+        Math::Vector3 mn = cm->vertices[0].position, mx = mn;
+        bool skinned = false;
+        for (const auto& v : cm->vertices) {
+            mn.x = std::min(mn.x, v.position.x); mx.x = std::max(mx.x, v.position.x);
+            mn.y = std::min(mn.y, v.position.y); mx.y = std::max(mx.y, v.position.y);
+            mn.z = std::min(mn.z, v.position.z); mx.z = std::max(mx.z, v.position.z);
+            if (v.boneWeights.x > 0.0f || v.boneWeights.y > 0.0f ||
+                v.boneWeights.z > 0.0f || v.boneWeights.w > 0.0f) skinned = true;
+        }
+        cm->aabbMin = mn;
+        cm->aabbMax = mx;
+        cm->skinned = skinned;
+        cm->measured = true;
+    }
+    if (cm->skinned) return false;
+
+    if (out.subMeshes.empty()) out.subMeshes = cm->subMeshes;
+    out.cachedAABBMin = cm->aabbMin;
+    out.cachedAABBMax = cm->aabbMax;
+    out.aabbDirty = false;
+    out.cpuDeferred = true;
+    return true;
+}
+
+const std::vector<ECS::MeshComponent::Vertex>* MeshAssetCache::PeekVertices(const ECS::MeshComponent::SourceRef& ref) {
+    const CachedMesh* cm = Find(ref, /*logMismatch=*/false);
+    return cm ? &cm->vertices : nullptr;
+}
+
+const std::vector<u32>* MeshAssetCache::PeekIndices(const ECS::MeshComponent::SourceRef& ref) {
+    const CachedMesh* cm = Find(ref, /*logMismatch=*/false);
+    return cm ? &cm->indices : nullptr;
 }
 
 } // namespace Assets
