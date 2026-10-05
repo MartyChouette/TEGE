@@ -1568,12 +1568,10 @@ public:
         // WebGPU-only, so the guard has to match theirs.
 #if ENJIN_RENDERER_WEBGPU
         m_WebPPAccessibility.sharpness = m_WebSharpness;
-        // AA mode 0 is None; everything else falls back to FXAA, which is the
-        // only anti-aliasing the web path actually has. MSAA needs a
-        // multi-sample swapchain the web target fixed at one sample, TAA needs
-        // motion vectors this path does not produce, and SMAA is not
-        // implemented anywhere.
-        m_WebPPAccessibility.fxaaEnabled = (m_AAMode == 0) ? 0.0f : 1.0f;
+        // AA mode 0 is None, 3 is SMAA-lite (the shader reads 2 as SMAA), and
+        // everything else falls back to FXAA: TAA needs motion vectors this
+        // path does not produce.
+        m_WebPPAccessibility.fxaaEnabled = (m_AAMode == 0) ? 0.0f : (m_AAMode == 3 ? 2.0f : 1.0f);
 #endif
     }
 
@@ -2211,6 +2209,12 @@ private:
     std::unordered_map<std::string, Renderer::GPUTextureHandle> m_WebTextureCache;
     std::unordered_set<std::string> m_WebFailedTextures;  // don't retry failed loads
     Renderer::GPUTextureHandle WebGetOrLoadTexture(const std::string& path);
+    // A material's own texture filter (textureFilterOverride 1-3). A web bind
+    // group's sampler entry takes a TEXTURE handle and uses that texture's
+    // sampler, so each filter is a 1x1 texture that exists for its sampler.
+    // Built on first use with the project's wrap, anisotropy and mipmaps.
+    Renderer::GPUTextureHandle WebFilterCarrier(u32 filterOverride);
+    Renderer::GPUTextureHandle m_WebFilterCarrier[3];
     // Texture bind group for one sprite texture, cached by path. See the note
     // on the definition: this is what makes per-texture sprite batching possible
     // on web, where there is no bindless array to index into.

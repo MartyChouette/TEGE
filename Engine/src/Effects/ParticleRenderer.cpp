@@ -1,6 +1,7 @@
 #include "Enjin/Effects/ParticleRenderer.h"
 #include <algorithm>
 #include "Enjin/Effects/DrawBudget.h"
+#include "Enjin/Effects/ParticleSheet.h"
 #include "Enjin/Effects/ElementalSystem.h"
 #include "Enjin/Renderer/Vulkan/ShaderData.h"
 #include "Enjin/Renderer/Vulkan/VulkanPipeline.h"
@@ -311,12 +312,6 @@ void ParticleRenderer::Render(VkCommandBuffer commandBuffer,
         const bool velocityStretch = emitter->renderMode == ECS::ParticleEmitterComponent::RenderMode::VelocityStretch;
         const f32 stretchScale = emitter->velocityStretchScale;
 
-        // Sprite sheet, clamped the way the inspector's sliders are. These two
-        // fields had an inspector row and a serializer entry and were read by
-        // NOTHING, so a sheet texture drew its whole grid on every particle.
-        const i32 sheetCols = std::max(1, std::min(emitter->textureSheetX, 16));
-        const i32 sheetRows = std::max(1, std::min(emitter->textureSheetY, 16));
-        const i32 frameCount = sheetCols * sheetRows;
 
         // Over its share, an emitter takes every stride-th particle rather than
         // its first N. Its plume keeps its extent and thins out; truncating the
@@ -344,22 +339,13 @@ void ParticleRenderer::Render(VkCommandBuffer commandBuffer,
             inst.alpha = p.alpha;
             inst.color = p.color;
 
-            // Sheet frame for THIS particle's age. Per particle rather than
-            // global time, which is what separates this from the material
-            // flipbook: an explosion is many puffs each playing its own
-            // animation from its own birth, not one animation everything shares.
-            if (sheetCols > 1 || sheetRows > 1) {
-                const f32 span = (p.maxLifetime > 0.0001f) ? p.maxLifetime : 1.0f;
-                const f32 t = std::clamp(p.lifetime / span, 0.0f, 0.9999f);
-                const i32 frame = std::min(static_cast<i32>(t * static_cast<f32>(frameCount)),
-                                           frameCount - 1);
-                const i32 col = frame % sheetCols;
-                const i32 row = frame / sheetCols;
-                inst.uvScale = Math::Vector2(1.0f / static_cast<f32>(sheetCols),
-                                             1.0f / static_cast<f32>(sheetRows));
-                inst.uvOffset = Math::Vector2(static_cast<f32>(col) * inst.uvScale.x,
-                                              static_cast<f32>(row) * inst.uvScale.y);
-            }
+            // Sheet frame for THIS particle's age, shared with the web path
+            // (Effects/ParticleSheet.h). The textureSheetX/Y fields were once
+            // read by nothing, so a sheet drew its whole grid on every particle.
+            const Effects::ParticleSheetFrame sheet = Effects::ComputeParticleSheetFrame(
+                p.lifetime, p.maxLifetime, emitter->textureSheetX, emitter->textureSheetY);
+            inst.uvScale = sheet.uvScale;
+            inst.uvOffset = sheet.uvOffset;
 
             if (velocityStretch && stretchScale > 0.0f) {
                 f32 velLen = p.velocity.Length();

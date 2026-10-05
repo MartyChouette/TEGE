@@ -67,7 +67,12 @@
     /* off), z = cel specular cutoff, w = light ramp mode. */ \
     X1(shadingParams)             /* 16 */ \
     /* x = cel shadow tint mode, y = posterize levels (0 = off). zw free. */ \
-    X1(shadingParams2)            /* 16 */
+    X1(shadingParams2)            /* 16 */ \
+    /* The scene's retro settings, the ones desktop packs into its */ \
+    /* worldCurvature row and texturePageSize: x = world curvature, */ \
+    /* y = depth-sort jitter, z = normal quantize steps (0 = off), */ \
+    /* w = texture page size in texels (0 = off). */ \
+    X1(retroParams)               /* 16 */
 
 // One member of the C++ struct.
 #define ENJIN_WEB_LIGHTING_MEMBER1(name)        WebLightVec4 name;

@@ -56,6 +56,9 @@
     X(f32,                       splatTile1,         "f32",         {})       \
     X(f32,                       splatTile2,         "f32",         {})       \
     X(f32,                       splatTile3,         "f32",         {})       \
+    /* Refractive Water3D: the fresnel power of its refraction split, */   \
+    /* 0 for every other surface (desktop signals it in surfaceParam3) */   \
+    X(f32,                       refractFresnel,     "f32",         {})           /* Flipbook: a cols x rows sheet stepped at fps (0 cols = off) */             X(f32,                       flipbookCols,       "f32",         {})           X(f32,                       flipbookRows,       "f32",         {})           X(f32,                       flipbookFps,        "f32",         {})           /* Trim sheet: the atlas sub-rect the UVs tile inside (0 scale = off) */      X(f32,                       uvRegionOffU,       "f32",         {})           X(f32,                       uvRegionOffV,       "f32",         {})           X(f32,                       uvRegionScaleU,     "f32",         {})           X(f32,                       uvRegionScaleV,     "f32",         {})       \
     X(f32,                       layoutCanary,       "f32",                   \
       ENJIN_WEB_OBJECT_LAYOUT_CANARY)
 

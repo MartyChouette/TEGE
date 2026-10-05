@@ -1515,6 +1515,7 @@ void RenderSystem::ApplyAdaptiveQualityLevel(Renderer::QualityLevel level) {
 #include "Enjin/Effects/FluidSimulation.h"
 #include "Enjin/Effects/FluidCellSelection.h"
 #include "Enjin/Effects/DrawBudget.h"
+#include "Enjin/Effects/ParticleSheet.h"
 #include "Enjin/ECS/Components/FluidVolume.h"
 #include "Enjin/Renderer/WebGPU/WebObjectDataLayout.h"
 #include "Enjin/Renderer/WebGPU/WebShaderData.h"
@@ -1615,7 +1616,7 @@ struct alignas(16) WebLightVec4 { f32 x, y, z, w; };
 struct WebLightingUBO {
     ENJIN_WEB_LIGHTING_FIELDS(ENJIN_WEB_LIGHTING_MEMBER1, ENJIN_WEB_LIGHTING_MEMBERN)
 };
-static_assert(sizeof(WebLightingUBO) == 2016,
+static_assert(sizeof(WebLightingUBO) == 2032,
               "WebLightingUBO changed size. APPEND a row to the list in "
               "WebLightingLayout.h (inserting moves every offset after it), then "
               "move this number. The shaders follow automatically.");
@@ -1633,7 +1634,7 @@ static_assert(sizeof(WebLightingUBO) == 2016,
 struct WebObjectDataUBO {
     ENJIN_WEB_OBJECTDATA_FIELDS(ENJIN_WEB_OBJECTDATA_MEMBER)
 };
-static_assert(sizeof(WebObjectDataUBO) == 176,
+static_assert(sizeof(WebObjectDataUBO) == 208,
               "WebObjectDataUBO changed size. Add the field to the list in "
               "WebObjectDataLayout.h (the shaders follow automatically), keep the "
               "struct 16-byte aligned, and move this number.");
@@ -2145,10 +2146,40 @@ static Renderer::GPUVertexBufferLayoutDesc MakePBRVertexLayout() {
         {Renderer::GPUVertexFormat::Float32x4, static_cast<u32>(offsetof(MeshComponent::Vertex, tangent)), 3},    // tangent
         {Renderer::GPUVertexFormat::Float32x4, static_cast<u32>(offsetof(MeshComponent::Vertex, boneWeights)), 4},// boneWeights
         {Renderer::GPUVertexFormat::Uint32x4,  static_cast<u32>(offsetof(MeshComponent::Vertex, boneIndices)), 5},// boneIndices
+        {Renderer::GPUVertexFormat::Float32x4, static_cast<u32>(offsetof(MeshComponent::Vertex, boneWeights2)), 8},// influences 5-8
+        {Renderer::GPUVertexFormat::Uint32x4,  static_cast<u32>(offsetof(MeshComponent::Vertex, boneIndices2)), 9},
         {Renderer::GPUVertexFormat::Float32x4, static_cast<u32>(offsetof(MeshComponent::Vertex, color)), 6},      // vertex color (SDF glyph textColor)
         {Renderer::GPUVertexFormat::Float32x2, static_cast<u32>(offsetof(MeshComponent::Vertex, uv1)), 7},        // lightmap UVs (baked light)
     };
     return vl;
+}
+
+// One CPU particle billboard on web, shared by the emitter and elemental
+// draws and by both particle pipelines' layouts. The tail defaults to no
+// stretch and the whole texture, so a fill that names only the first eight
+// fields draws as it always did.
+struct WebParticleInst {
+    f32 px, py, pz, size, alpha, r, g, b;
+    f32 stretch = 1.0f;                     // elongates the quad along camera up, as particle.vert
+    f32 uvOffU = 0.0f, uvOffV = 0.0f;       // sheet frame
+    f32 uvScaleU = 1.0f, uvScaleV = 1.0f;
+};
+
+static Renderer::GPUVertexBufferLayoutDesc MakeWebParticleInstanceLayout() {
+    Renderer::GPUVertexBufferLayoutDesc l;
+    l.stride = sizeof(WebParticleInst);
+    l.perInstance = true;
+    l.attributes = {
+        {Renderer::GPUVertexFormat::Float32x3, static_cast<u32>(offsetof(WebParticleInst, px)), 2},
+        {Renderer::GPUVertexFormat::Float32, static_cast<u32>(offsetof(WebParticleInst, size)), 3},
+        {Renderer::GPUVertexFormat::Float32, static_cast<u32>(offsetof(WebParticleInst, alpha)), 4},
+        {Renderer::GPUVertexFormat::Float32, static_cast<u32>(offsetof(WebParticleInst, r)), 5},
+        {Renderer::GPUVertexFormat::Float32, static_cast<u32>(offsetof(WebParticleInst, g)), 6},
+        {Renderer::GPUVertexFormat::Float32, static_cast<u32>(offsetof(WebParticleInst, b)), 7},
+        {Renderer::GPUVertexFormat::Float32, static_cast<u32>(offsetof(WebParticleInst, stretch)), 8},
+        {Renderer::GPUVertexFormat::Float32x4, static_cast<u32>(offsetof(WebParticleInst, uvOffU)), 9},
+    };
+    return l;
 }
 
 // Weighted-blended OIT targets and pipelines, built the first time a scene
@@ -2490,6 +2521,8 @@ void RenderSystem::Initialize() {
             {Renderer::GPUVertexFormat::Float32x3, static_cast<u32>(offsetof(MeshComponent::Vertex, normal)), 1},
             {Renderer::GPUVertexFormat::Float32x4, static_cast<u32>(offsetof(MeshComponent::Vertex, boneWeights)), 4},
             {Renderer::GPUVertexFormat::Uint32x4,  static_cast<u32>(offsetof(MeshComponent::Vertex, boneIndices)), 5},
+            {Renderer::GPUVertexFormat::Float32x4, static_cast<u32>(offsetof(MeshComponent::Vertex, boneWeights2)), 8},// influences 5-8
+            {Renderer::GPUVertexFormat::Uint32x4,  static_cast<u32>(offsetof(MeshComponent::Vertex, boneIndices2)), 9},
         };
         olDesc.vertexBuffers = {olVert};
 
@@ -2609,6 +2642,8 @@ void RenderSystem::Initialize() {
             {Renderer::GPUVertexFormat::Float32x2, static_cast<u32>(offsetof(MeshComponent::Vertex, uv)), 2},
             {Renderer::GPUVertexFormat::Float32x4, static_cast<u32>(offsetof(MeshComponent::Vertex, boneWeights)), 4},
             {Renderer::GPUVertexFormat::Uint32x4,  static_cast<u32>(offsetof(MeshComponent::Vertex, boneIndices)), 5},
+            {Renderer::GPUVertexFormat::Float32x4, static_cast<u32>(offsetof(MeshComponent::Vertex, boneWeights2)), 8},// influences 5-8
+            {Renderer::GPUVertexFormat::Uint32x4,  static_cast<u32>(offsetof(MeshComponent::Vertex, boneIndices2)), 9},
         };
         shadowPipeDesc.vertexBuffers = {shadowVertLayout};
 
@@ -3202,18 +3237,7 @@ void RenderSystem::Initialize() {
             {Renderer::GPUVertexFormat::Float32x2, 0, 0},                   // position
             {Renderer::GPUVertexFormat::Float32x2, 2 * sizeof(f32), 1},     // uv
         };
-        Renderer::GPUVertexBufferLayoutDesc instanceLayout;
-        instanceLayout.stride = 8 * sizeof(f32);  // pos(3) + size(1) + alpha(1) + rgb(3)
-        instanceLayout.perInstance = true;
-        instanceLayout.attributes = {
-            {Renderer::GPUVertexFormat::Float32x3, 0, 2},                   // worldPos
-            {Renderer::GPUVertexFormat::Float32, 3 * sizeof(f32), 3},       // size
-            {Renderer::GPUVertexFormat::Float32, 4 * sizeof(f32), 4},       // alpha
-            {Renderer::GPUVertexFormat::Float32, 5 * sizeof(f32), 5},       // colorR
-            {Renderer::GPUVertexFormat::Float32, 6 * sizeof(f32), 6},       // colorG
-            {Renderer::GPUVertexFormat::Float32, 7 * sizeof(f32), 7},       // colorB
-        };
-        pd.vertexBuffers = {quadLayout, instanceLayout};
+        pd.vertexBuffers = {quadLayout, MakeWebParticleInstanceLayout()};
         m_WebParticlePipeline = pipeMgr->CreateRenderPipeline(pd);
 
         // Shared billboard quad (4 vertices, 6 indices)
@@ -3338,18 +3362,7 @@ void RenderSystem::Initialize() {
             {Renderer::GPUVertexFormat::Float32x2, 0, 0},
             {Renderer::GPUVertexFormat::Float32x2, 2 * sizeof(f32), 1},
         };
-        Renderer::GPUVertexBufferLayoutDesc tInst;
-        tInst.stride = 8 * sizeof(f32);
-        tInst.perInstance = true;
-        tInst.attributes = {
-            {Renderer::GPUVertexFormat::Float32x3, 0, 2},
-            {Renderer::GPUVertexFormat::Float32, 3 * sizeof(f32), 3},
-            {Renderer::GPUVertexFormat::Float32, 4 * sizeof(f32), 4},
-            {Renderer::GPUVertexFormat::Float32, 5 * sizeof(f32), 5},
-            {Renderer::GPUVertexFormat::Float32, 6 * sizeof(f32), 6},
-            {Renderer::GPUVertexFormat::Float32, 7 * sizeof(f32), 7},
-        };
-        tpd.vertexBuffers = {tQuad, tInst};
+        tpd.vertexBuffers = {tQuad, MakeWebParticleInstanceLayout()};
         m_WebParticleTexPipeline = pipeMgr->CreateRenderPipeline(tpd);
     }
 
@@ -3432,6 +3445,7 @@ void RenderSystem::Shutdown() {
         if (m_WebDefaultWhiteTex.IsValid()) texMgr->DestroyTexture(m_WebDefaultWhiteTex);
         if (m_WebDefaultNormalTex.IsValid()) texMgr->DestroyTexture(m_WebDefaultNormalTex);
         if (m_WebDefaultBlackTex.IsValid()) texMgr->DestroyTexture(m_WebDefaultBlackTex);
+        for (auto& c : m_WebFilterCarrier) if (c.IsValid()) texMgr->DestroyTexture(c);
     }
 
     // Destroy shadow resources
@@ -4851,6 +4865,8 @@ void RenderSystem::Update(f32 deltaTime) {
                                  m_CelShadingEnabled ? m_CelSpecularCutoff : 0.0f,
                                  m_LightRampMode};
             lit.shadingParams2 = {m_CelShadowMode, m_PosterizeLevels, 0.0f, 0.0f};
+            lit.retroParams = {m_WorldCurvature, m_DepthSortJitter,
+                               m_NormalQuantizeSteps, m_TexturePageSize};
             lit.skySunColor = {sc.sunColor.x, sc.sunColor.y, sc.sunColor.z, sc.sunSize};
             lit.skyClouds = {sc.cloudCoverage, sc.cloudScale, sc.cloudSpeed, sc.cloud2Coverage};
             lit.skyCloudColor = {sc.cloudColor.x, sc.cloudColor.y, sc.cloudColor.z, sc.cloud2Scale};
@@ -5871,21 +5887,31 @@ void RenderSystem::Update(f32 deltaTime) {
                     // every untextured surface by the full scale.
                     auto ht = heightT.IsValid() ? heightT : m_WebDefaultBlackTex;
 
+                    // A material's own filter replaces every sampler in its
+                    // group, as desktop's per-material sampler slot does. Not
+                    // for a splat terrain, whose slots hold layers.
+                    const Renderer::GPUTextureHandle filterSmp =
+                        (mat && !rd.hasSplat) ? WebFilterCarrier(mat->textureFilterOverride)
+                                              : Renderer::GPUTextureHandle{};
+                    auto smp = [&filterSmp](Renderer::GPUTextureHandle t) {
+                        return filterSmp.IsValid() ? filterSmp : t;
+                    };
+
                     Renderer::GPUBindGroupDesc texBGDesc;
                     texBGDesc.layout = m_WebTextureLayout;
                     texBGDesc.entries = {
                         {0, {}, 0, 0, bc, {}},
-                        {1, {}, 0, 0, {}, bc},
+                        {1, {}, 0, 0, {}, smp(bc)},
                         {2, {}, 0, 0, nm, {}},
-                        {3, {}, 0, 0, {}, nm},
+                        {3, {}, 0, 0, {}, smp(nm)},
                         {4, {}, 0, 0, mr, {}},
-                        {5, {}, 0, 0, {}, mr},
+                        {5, {}, 0, 0, {}, smp(mr)},
                         {6, {}, 0, 0, mc, {}},
-                        {7, {}, 0, 0, {}, mc},
+                        {7, {}, 0, 0, {}, smp(mc)},
                         {8, {}, 0, 0, sr, {}},
-                        {9, {}, 0, 0, {}, sr},
+                        {9, {}, 0, 0, {}, smp(sr)},
                         {10, {}, 0, 0, ht, {}},
-                        {11, {}, 0, 0, {}, ht},
+                        {11, {}, 0, 0, {}, smp(ht)},
                         {12, {}, 0, 0, emissiveT.IsValid() ? emissiveT : m_WebDefaultWhiteTex, {}},
                     };
                     auto* bm = m_Renderer->GetBindGroupManager();
@@ -5934,6 +5960,20 @@ void RenderSystem::Update(f32 deltaTime) {
             obj.alphaCutoff = alphaMask ? mat->alphaCutoff : 0.0f;
             obj.uvScrollU = mat ? mat->uvScrollSpeed.x : 0.0f;
             obj.uvScrollV = mat ? mat->uvScrollSpeed.y : 0.0f;
+            // Flipbook and trim sheet, the same gates MaterialGPU::FromComponent
+            // uses: a grid needs both counts, a region only when not identity
+            if (mat && mat->flipbookCols > 0 && mat->flipbookRows > 0) {
+                obj.flipbookCols = static_cast<f32>(mat->flipbookCols);
+                obj.flipbookRows = static_cast<f32>(mat->flipbookRows);
+                obj.flipbookFps = mat->flipbookFps;
+            }
+            if (mat && (mat->uvRegionOffset.x != 0.0f || mat->uvRegionOffset.y != 0.0f ||
+                        mat->uvRegionScale.x != 1.0f || mat->uvRegionScale.y != 1.0f)) {
+                obj.uvRegionOffU = mat->uvRegionOffset.x;
+                obj.uvRegionOffV = mat->uvRegionOffset.y;
+                obj.uvRegionScaleU = mat->uvRegionScale.x;
+                obj.uvRegionScaleV = mat->uvRegionScale.y;
+            }
             // Reflection styles: only active when their texture actually bound
             obj.matcapBlend = rd.hasMatcap ? 1.0f : 0.0f;
             if (rd.hasScrollRefl && mat) {
@@ -6025,6 +6065,34 @@ void RenderSystem::Update(f32 deltaTime) {
                     obj.flags |= ((snapRes < 1 ? 1 : (snapRes > 31 ? 31 : snapRes)) << 24);
                 }
             }
+            // The scene-wide retro switches and the entity's art style, over
+            // whatever the material asked for, in the order BuildMaterialDrawState
+            // applies them on desktop. The bits are the same on both backends.
+            // Web read only the per-material switches, so a scene set to PS1 mode
+            // as a whole rendered modern in a browser.
+            if (mat) {
+                auto forceSnap = [&obj](u32 res) {
+                    obj.flags |= (1 << 22);
+                    if (res > 0)
+                        obj.flags = (obj.flags & ~(0x1F << 24)) | (static_cast<i32>((res / 8) & 0x1F) << 24);
+                };
+                if (m_GlobalFlatShading)         obj.flags |= (1 << 20);
+                if (m_GlobalAffineTexturing)     obj.flags |= (1 << 21);
+                if (m_GlobalStippleTransparency) obj.flags |= (1 << 23);
+                if (m_GlobalUVQuantize)          obj.flags |= (1 << 12);
+                if (m_GlobalGouraudOnly)         obj.flags |= (1 << 13);
+                if (m_GlobalVertexSnapping)      forceSnap(m_GlobalVertexSnapResolution);
+                const ArtStyleComponent* art = m_CachedArtStyleStorage ? m_CachedArtStyleStorage->Get(entity) : nullptr;
+                if (art && art->style == ArtStyleType::PrePBR) {
+                    if (art->prePBR_flatShading) obj.flags |= (1 << 20);
+                    if (art->prePBR_gouraudOnly) obj.flags |= (1 << 13);
+                } else if (art && art->style == ArtStyleType::Retro) {
+                    if (art->retro_flatShading)     obj.flags |= (1 << 20);
+                    if (art->retro_affineTexturing) obj.flags |= (1 << 21);
+                    if (art->retro_uvQuantize)      obj.flags |= (1 << 12);
+                    if (art->retro_vertexSnapping)  forceSnap(art->retro_snapResolution);
+                }
+            }
             // Water surface (bit 5): the ONLY thing the web wave code was missing.
             // PBR_WGSL has carried the Gerstner-lite displacement all along and reads
             // `object.flags & 32` to decide whether to run it -- and nothing on this
@@ -6047,8 +6115,21 @@ void RenderSystem::Update(f32 deltaTime) {
                     obj.foamIntensity = wv->foamIntensity * (1.0f - wv->freezeProgress);
                     obj.foamScale = wv->foamScale;
                 }
+                // Rain ripples: bit 14 on web (desktop's bit 6 is SDF text here),
+                // no ripples on ice, as on desktop
+                if (m_RainActive && wv->freezeProgress < 0.5f) obj.flags |= (1 << 14);
+                // The colour and opacity move toward the ice settings as it freezes
+                const f32 fp = wv->freezeProgress;
+                obj.baseColor = obj.baseColor * (1.0f - fp) + wv->iceColor * fp;
+                obj.opacity = obj.opacity * (1.0f - fp) + wv->iceOpacity * fp;
             } else if (auto* w3d = m_World->GetComponent<Water3DComponent>(entity)) {
                 obj.flags |= (1 << 5);
+                obj.parallaxScale = 0.0f;   // no freeze; the shader reads this as freezeProgress
+                // Water3D's own colour and opacity win over the material, as on desktop
+                obj.baseColor = w3d->settings.shallowColor;
+                obj.opacity = w3d->settings.opacity;
+                if (w3d->settings.style == Effects::WaterStyle::Refractive)
+                    obj.refractFresnel = std::max(w3d->settings.fresnelPower, 1.0f);
                 // Foam on the crests, the same setting desktop reads. No flag bit
                 // is needed: the web path gates foam on the PARAMETERS, which are
                 // zero for any surface that did not ask for it.
@@ -6663,7 +6744,7 @@ void RenderSystem::Update(f32 deltaTime) {
         const auto& particleEntities = m_World->GetEntitiesWithComponent<ParticleEmitterComponent>();
 
         // Collect all active particles into instance buffer
-        struct ParticleInst { f32 px, py, pz, size, alpha, r, g, b; };
+        using ParticleInst = WebParticleInst;
         // Reused across frames like drawCmds above: render is single-threaded,
         // and a fresh heap allocation every frame for the same list is waste.
         static std::vector<ParticleInst> instances;
@@ -6718,13 +6799,25 @@ void RenderSystem::Update(f32 deltaTime) {
             const usize allowance = std::min(webShare, remaining);
             const usize stride = Effects::DrawStride(emitter->pool.activeCount, allowance);
             std::vector<ParticleInst>& run = runFor(webTexturesUsable ? emitter->texturePath : std::string());
+            const bool stretchOn = emitter->renderMode == ParticleEmitterComponent::RenderMode::VelocityStretch &&
+                                   emitter->velocityStretchScale > 0.0f;
 
             for (u32 i = 0; i < emitter->pool.activeCount && gathered < WEB_MAX_PARTICLES;
                  i += static_cast<u32>(stride)) {
                 const auto& p = emitter->pool.particles[i];
                 const f32 lifeRatio = p.lifetime / std::max(p.maxLifetime, 0.001f);
-                run.push_back({p.position.x, p.position.y, p.position.z,
-                    p.size, p.alpha * lifeRatio, p.color.x, p.color.y, p.color.z});
+                ParticleInst inst{p.position.x, p.position.y, p.position.z,
+                    p.size, p.alpha * lifeRatio, p.color.x, p.color.y, p.color.z};
+                // Velocity stretch and the sheet frame, as the Vulkan renderer
+                // computes them
+                if (stretchOn) inst.stretch = std::max(1.0f, p.velocity.Length() * emitter->velocityStretchScale);
+                const Effects::ParticleSheetFrame sheet = Effects::ComputeParticleSheetFrame(
+                    p.lifetime, p.maxLifetime, emitter->textureSheetX, emitter->textureSheetY);
+                inst.uvOffU = sheet.uvOffset.x;
+                inst.uvOffV = sheet.uvOffset.y;
+                inst.uvScaleU = sheet.uvScale.x;
+                inst.uvScaleV = sheet.uvScale.y;
+                run.push_back(inst);
                 ++gathered;
             }
         }
@@ -7150,7 +7243,7 @@ void RenderSystem::Update(f32 deltaTime) {
     // the system via SetMainPassElemental each frame.
     if (usePostProcess && m_WebParticlePipeline.IsValid() && scenePassEncoder && m_MainPassElemental) {
         const auto& epool = m_MainPassElemental->GetPool();
-        struct ParticleInst { f32 px, py, pz, size, alpha, r, g, b; };
+        using ParticleInst = WebParticleInst;
         // Reused across frames like drawCmds above: render is single-threaded,
         // and a fresh heap allocation every frame for the same list is waste.
         static std::vector<ParticleInst> einsts;
@@ -7582,6 +7675,24 @@ void RenderSystem::SetWireframeEnabled(bool enabled) {
             ENJIN_LOG_WARN(Renderer, "Wireframe is inert on web: the web renderer has no wireframe pass");
         }
     }
+}
+Renderer::GPUTextureHandle RenderSystem::WebFilterCarrier(u32 filterOverride) {
+    if (filterOverride < 1 || filterOverride > 3) return {};
+    Renderer::GPUTextureHandle& carrier = m_WebFilterCarrier[filterOverride - 1];
+    if (!carrier.IsValid()) {
+        auto* web = static_cast<Renderer::WebGPURenderer*>(m_Renderer);
+        auto* texMgr = m_Renderer ? m_Renderer->GetTextureManager() : nullptr;
+        if (!web || !texMgr) return {};
+        // The renderer builds a texture's sampler from its current config, so
+        // switch the filter for this one texture and put the project's back.
+        const u32 filter = web->GetSamplerFilter();
+        web->SetDefaultSamplerConfig(filterOverride - 1, web->GetSamplerAnisotropy(),
+                                     web->GetSamplerMipmaps(), web->GetSamplerWrap());
+        carrier = texMgr->CreateSolidColor(255, 255, 255, 255);
+        web->SetDefaultSamplerConfig(filter, web->GetSamplerAnisotropy(),
+                                     web->GetSamplerMipmaps(), web->GetSamplerWrap());
+    }
+    return carrier;
 }
 void RenderSystem::SetTextureFilterConfig(u32 filter, u32 anisotropy, bool mipmaps, u32 wrap) {
     // Was a no-op, and was not even called on this path. Textures created from

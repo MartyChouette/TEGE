@@ -124,6 +124,8 @@ struct VertexInput {
     @location(3) tangent: vec4<f32>,
     @location(4) boneWeights: vec4<f32>,
     @location(5) boneIndices: vec4<u32>,
+    @location(8) boneWeights2: vec4<f32>,  // influences 5-8, as triangle.vert
+    @location(9) boneIndices2: vec4<u32>,
     @location(6) color: vec4<f32>,        // vertex color (SDF glyphs carry textColor here)
     @location(7) uv1: vec2<f32>,          // lightmap UVs (baked light)
 };
@@ -157,7 +159,11 @@ fn vs_main(in: VertexInput, @builtin(instance_index) instanceIdx: u32) -> Vertex
         let skinMatrix = in.boneWeights.x * bones.matrices[in.boneIndices.x]
                        + in.boneWeights.y * bones.matrices[in.boneIndices.y]
                        + in.boneWeights.z * bones.matrices[in.boneIndices.z]
-                       + in.boneWeights.w * bones.matrices[in.boneIndices.w];
+                       + in.boneWeights.w * bones.matrices[in.boneIndices.w]
+                       + in.boneWeights2.x * bones.matrices[in.boneIndices2.x]
+                       + in.boneWeights2.y * bones.matrices[in.boneIndices2.y]
+                       + in.boneWeights2.z * bones.matrices[in.boneIndices2.z]
+                       + in.boneWeights2.w * bones.matrices[in.boneIndices2.w];
         skinnedPos = (skinMatrix * vec4<f32>(in.position, 1.0)).xyz;
         let skinNormalMat = mat3x3<f32>(skinMatrix[0].xyz, skinMatrix[1].xyz, skinMatrix[2].xyz);
         skinnedNormal = skinNormalMat * in.normal;
@@ -211,6 +217,13 @@ fn vs_main(in: VertexInput, @builtin(instance_index) instanceIdx: u32) -> Vertex
         world_pos = vec4<f32>(world_pos.xyz + wdir3 * sw * (sin(p1) * 0.16 + sin(p2) * 0.06), world_pos.w);
     }
 
+    // World curvature (the rolling-world look): bend geometry down by the
+    // squared distance from the camera, as triangle.vert does.
+    if (lighting.retroParams.x > 0.0) {
+        let delta = world_pos.xz - viewProj.viewPos.xz;
+        world_pos.y = world_pos.y - lighting.retroParams.x * dot(delta, delta);
+    }
+
     out.clip_position = viewProj.proj * viewProj.view * world_pos;
     out.world_pos = world_pos.xyz;
     let normal_mat = mat3x3<f32>(
@@ -240,6 +253,13 @@ fn vs_main(in: VertexInput, @builtin(instance_index) instanceIdx: u32) -> Vertex
             let snapped = (floor(ndc * grid + 0.5) / grid) * w;
             out.clip_position = vec4<f32>(snapped.x, snapped.y,
                                           out.clip_position.z, w);
+        }
+        // Polygon sort jitter: depth noise on snapped geometry, the ordering
+        // table errors a PlayStation made. Same hash as triangle.vert.
+        let depthJitter = lighting.retroParams.y;
+        if (depthJitter > 0.0) {
+            let h = fract(sin(dot(world_pos.xyz, vec3<f32>(12.9898, 78.233, 45.164))) * 43758.5453);
+            out.clip_position.z = out.clip_position.z + (h - 0.5) * 2.0 * depthJitter * out.clip_position.w;
         }
     }
 
@@ -653,6 +673,33 @@ fn shadeSurface(in: VertexOutput) -> vec4<f32> {
     // and the sample below stays in uniform control flow.
     var uv = in.uv / in.clipW;
 
+    // Flipbook: step through a cols x rows sheet at fps, then the trim sheet
+    // region the UVs tile inside. Both ported from triangle.frag, same order.
+    if (object.flipbookCols > 0.0) {
+        var fT = lighting.windData.w;
+        if (fT == 0.0) { fT = viewProj.time; }
+        let cols = object.flipbookCols;
+        let rows = object.flipbookRows;
+        let frame = floor(fT * object.flipbookFps) % (cols * rows);
+        let cell = vec2<f32>(frame % cols, floor(frame / cols));
+        uv = (fract(uv) + cell) / vec2<f32>(cols, rows);
+    }
+    if (object.uvRegionScaleU != 0.0 || object.uvRegionScaleV != 0.0 ||
+        object.uvRegionOffU != 0.0 || object.uvRegionOffV != 0.0) {
+        uv = fract(uv) * vec2<f32>(object.uvRegionScaleU, object.uvRegionScaleV)
+           + vec2<f32>(object.uvRegionOffU, object.uvRegionOffV);
+    }
+
+    // Texture page seams (affine materials only): nudge UVs near the edges of
+    // a PlayStation VRAM page, as triangle.frag does. Plain arithmetic, so
+    // the samples below stay in uniform control flow.
+    let pageSize = lighting.retroParams.w;
+    if (pageSize > 0.0 && (object.flags & 2097152) != 0) {
+        let pageFrac = fract(uv * 256.0 / pageSize);
+        let edgeDist = min(pageFrac, vec2<f32>(1.0) - pageFrac);
+        uv = uv + step(edgeDist, vec2<f32>(0.03)) * sign(pageFrac - vec2<f32>(0.5)) * 0.002;
+    }
+
     // Parallax occlusion mapping (bit 10 + a non-zero scale, matching
     // triangle.frag:1199). Shifts the UV along the view ray through the height
     // field BEFORE any material texture is sampled, which is the whole effect.
@@ -794,6 +841,48 @@ fn shadeSurface(in: VertexOutput) -> vec4<f32> {
     let flatNormal = normalize(cross(dpdx(in.world_pos), dpdy(in.world_pos)));
     if ((object.flags & 1048576) != 0) {
         N = flatNormal;
+    }
+
+    // Normal quantize: snap the normal to a few directions for the
+    // pixel-art-in-3D look, as triangle.frag does. 4 steps or more.
+    let nqSteps = lighting.retroParams.z;
+    if (nqSteps >= 4.0) {
+        N = normalize(floor(N * nqSteps + 0.5) / nqSteps);
+    }
+
+    // Rain ripples on water (web bit 14; desktop's FLAG_RAIN_RIPPLES is bit 6,
+    // which is SDF text here). Rings expanding from random drops, two grid
+    // layers, five cells each, ported from triangle.frag.
+    if ((object.flags & 32) != 0 && (object.flags & 16384) != 0) {
+        var rTime = lighting.windData.w;
+        if (rTime == 0.0) { rTime = viewProj.time; }
+        let wxz = in.world_pos.xz;
+        var rippleOffset = vec2<f32>(0.0);
+        let nbr = array<vec2<f32>, 5>(vec2<f32>(0.0, 0.0), vec2<f32>(-1.0, 0.0), vec2<f32>(1.0, 0.0),
+                                      vec2<f32>(0.0, -1.0), vec2<f32>(0.0, 1.0));
+        for (var layer = 0; layer < 2; layer = layer + 1) {
+            let scale = 1.2 + f32(layer) * 0.9;
+            let cellId = floor(wxz * scale);
+            for (var n = 0; n < 5; n = n + 1) {
+                let cell = cellId + nbr[n];
+                let hp = cell + vec2<f32>(f32(layer) * 53.0);
+                let rnd = fract(sin(vec2<f32>(dot(hp, vec2<f32>(127.1, 311.7)),
+                                              dot(hp, vec2<f32>(269.5, 183.3)))) * 43758.5453);
+                let dropPos = (cell + rnd) / scale;
+                let dist = length(wxz - dropPos);
+                if (dist > 2.0) { continue; }
+                let dropPhase = fract(sin(dot(cell + vec2<f32>(f32(layer) * 71.0), vec2<f32>(127.1, 311.7))) * 43758.5453);
+                let interval = 1.8 + dropPhase * 1.4;
+                let age = (rTime + dropPhase * interval) % interval;
+                let maxAge = interval * 0.85;
+                if (age < maxAge) {
+                    let ringDist = abs(dist - age * 1.5);
+                    let ring = exp(-ringDist * 12.0) * (1.0 - age / maxAge) * smoothstep(2.0, 0.0, dist);
+                    rippleOffset = rippleOffset + (wxz - dropPos) / max(dist, 0.001) * ring * 0.12;
+                }
+            }
+        }
+        N = normalize(N + vec3<f32>(rippleOffset.x, 0.0, rippleOffset.y));
     }
 
     // Baked light that still reacts to a normal map. Three atlases hold the
@@ -1038,6 +1127,23 @@ fn shadeSurface(in: VertexOutput) -> vec4<f32> {
         let reflectC = mix(skyC, skyC * vec3<f32>(0.85, 0.9, 1.0) + vec3<f32>(0.1), freezeP * 0.4);
         let reflectStrength = mix(0.4, 0.85, freezeP);
         color = mix(color, reflectC, fresnelW * reflectStrength);
+
+        // Refractive Water3D (the "late PS2" look): an animated refraction
+        // shimmer and a fresnel split, top-down shows the refracted deep
+        // colour, grazing keeps the reflection. Procedural, as on desktop.
+        if (object.refractFresnel > 0.0) {
+            var sT = lighting.windData.w;
+            if (sT == 0.0) { sT = viewProj.time; }
+            let wp = in.world_pos.xz;
+            let w1 = sin(wp.x * 0.7 + sT * 1.3) * cos(wp.y * 0.6 - sT * 1.1);
+            let w2 = sin((wp.x + wp.y) * 1.3 - sT * 0.9);
+            let shimmer = (w1 + w2) * 0.5;
+            let caustic = smoothstep(0.55, 1.0, shimmer);
+            let refractCol = object.baseColor * (0.55 + 0.25 * (shimmer * 0.5 + 0.5));
+            let refrFres = pow(1.0 - NdotVw, max(object.refractFresnel, 1.0));
+            color = mix(color, refractCol, (1.0 - refrFres) * 0.4);
+            color = color + vec3<f32>(0.05, 0.07, 0.09) * caustic * (1.0 - refrFres);
+        }
     }
 
     // Shore foam (mirrors triangle.frag ~1942). Gated on the parameters rather
@@ -1240,6 +1346,8 @@ struct VertexInput {
     @location(2) uv: vec2<f32>,
     @location(4) boneWeights: vec4<f32>,
     @location(5) boneIndices: vec4<u32>,
+    @location(8) boneWeights2: vec4<f32>,  // influences 5-8, as triangle.vert
+    @location(9) boneIndices2: vec4<u32>,
 };
 
 struct VertexOutput {
@@ -1262,7 +1370,11 @@ fn vs_main(in: VertexInput, @builtin(instance_index) instanceIdx: u32) -> Vertex
         let skin = in.boneWeights.x * bones.matrices[in.boneIndices.x]
                  + in.boneWeights.y * bones.matrices[in.boneIndices.y]
                  + in.boneWeights.z * bones.matrices[in.boneIndices.z]
-                 + in.boneWeights.w * bones.matrices[in.boneIndices.w];
+                 + in.boneWeights.w * bones.matrices[in.boneIndices.w]
+                 + in.boneWeights2.x * bones.matrices[in.boneIndices2.x]
+                 + in.boneWeights2.y * bones.matrices[in.boneIndices2.y]
+                 + in.boneWeights2.z * bones.matrices[in.boneIndices2.z]
+                 + in.boneWeights2.w * bones.matrices[in.boneIndices2.w];
         pos = (skin * vec4<f32>(in.position, 1.0)).xyz;
     }
     let world_pos = row.model * vec4<f32>(pos, 1.0);
@@ -1333,6 +1445,8 @@ struct VertexInput {
     @location(1) normal: vec3<f32>,
     @location(4) boneWeights: vec4<f32>,
     @location(5) boneIndices: vec4<u32>,
+    @location(8) boneWeights2: vec4<f32>,  // influences 5-8, as triangle.vert
+    @location(9) boneIndices2: vec4<u32>,
 };
 
 struct VertexOutput {
@@ -1353,7 +1467,11 @@ fn vs_main(in: VertexInput, @builtin(instance_index) instanceIdx: u32) -> Vertex
         let skinMatrix = in.boneWeights.x * bones.matrices[in.boneIndices.x]
                        + in.boneWeights.y * bones.matrices[in.boneIndices.y]
                        + in.boneWeights.z * bones.matrices[in.boneIndices.z]
-                       + in.boneWeights.w * bones.matrices[in.boneIndices.w];
+                       + in.boneWeights.w * bones.matrices[in.boneIndices.w]
+                       + in.boneWeights2.x * bones.matrices[in.boneIndices2.x]
+                       + in.boneWeights2.y * bones.matrices[in.boneIndices2.y]
+                       + in.boneWeights2.z * bones.matrices[in.boneIndices2.z]
+                       + in.boneWeights2.w * bones.matrices[in.boneIndices2.w];
         pos = (skinMatrix * vec4<f32>(pos, 1.0)).xyz;
         nrm = mat3x3<f32>(skinMatrix[0].xyz, skinMatrix[1].xyz, skinMatrix[2].xyz) * nrm;
     }
@@ -1455,7 +1573,7 @@ struct PostProcessParams {
     ssao: f32,            // screen-space AO strength, 0 = off (color-space approximation)
     ssaoRadius: f32,      // AO sample-ring radius scale
     sharpness: f32,       // contrast-adaptive sharpening, 0 = off
-    fxaaEnabled: f32,     // 1 = run FXAA, 0 = skip it entirely
+    fxaaEnabled: f32,     // 1 = run FXAA, 2 = SMAA-lite, 0 = skip it entirely
     celOutline: f32,      // Sobel-on-depth outline thickness, 0 = off
     celOutlineThreshold: f32,
     celOutlineR: f32,
@@ -1742,6 +1860,79 @@ fn fxaa(uv: vec2<f32>, texelSize: vec2<f32>) -> vec3<f32> {
     return mix(rgbM, rgbNeighbor, blendFactor);
 }
 
+// SMAA-lite, ported from postprocess.frag's applySMAA: edge detection on a
+// luma cross plus diagonals, a walk along the edge to its ends, then a blend
+// across it. Explicit-LOD samples throughout, since the walk loop is not
+// uniform control flow.
+fn smaaLuma(p: vec2<f32>) -> f32 {
+    return dot(textureSampleLevel(sceneTexture, sceneSampler, p, 0.0).rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
+}
+fn smaa(uv: vec2<f32>, texelSize: vec2<f32>) -> vec3<f32> {
+    let rgbC = textureSampleLevel(sceneTexture, sceneSampler, uv, 0.0).rgb;
+    let lumaC = dot(rgbC, vec3<f32>(0.2126, 0.7152, 0.0722));
+    let lumaN = smaaLuma(uv + vec2<f32>(0.0, -1.0) * texelSize);
+    let lumaS = smaaLuma(uv + vec2<f32>(0.0, 1.0) * texelSize);
+    let lumaW = smaaLuma(uv + vec2<f32>(-1.0, 0.0) * texelSize);
+    let lumaE = smaaLuma(uv + vec2<f32>(1.0, 0.0) * texelSize);
+    let lumaNW = smaaLuma(uv + vec2<f32>(-1.0, -1.0) * texelSize);
+    let lumaNE = smaaLuma(uv + vec2<f32>(1.0, -1.0) * texelSize);
+    let lumaSW = smaaLuma(uv + vec2<f32>(-1.0, 1.0) * texelSize);
+    let lumaSE = smaaLuma(uv + vec2<f32>(1.0, 1.0) * texelSize);
+
+    let edgeH = abs(lumaN - lumaC) + abs(lumaS - lumaC) + 0.5 * (abs(lumaNW - lumaNE) + abs(lumaSW - lumaSE));
+    let edgeV = abs(lumaW - lumaC) + abs(lumaE - lumaC) + 0.5 * (abs(lumaNW - lumaSW) + abs(lumaNE - lumaSE));
+
+    let lumaMin = min(lumaC, min(min(lumaN, lumaS), min(lumaW, lumaE)));
+    let lumaMax = max(lumaC, max(max(lumaN, lumaS), max(lumaW, lumaE)));
+    let lumaRange = lumaMax - lumaMin;
+    if (lumaRange < max(0.05, lumaMax * 0.15)) { return rgbC; }
+
+    let isHorizontal = edgeH >= edgeV;
+    let lumaPos = select(lumaE, lumaS, isHorizontal);
+    let lumaNeg = select(lumaW, lumaN, isHorizontal);
+    let gradPos = abs(lumaPos - lumaC);
+    let gradNeg = abs(lumaNeg - lumaC);
+    let gradMax = max(gradPos, gradNeg);
+    let isNegDir = gradNeg > gradPos;
+
+    var subPixel = clamp(abs((lumaN + lumaS + lumaW + lumaE) * 0.25 - lumaC) / lumaRange, 0.0, 1.0);
+    subPixel = subPixel * subPixel * (3.0 - 2.0 * subPixel);
+
+    let edgeStep = select(vec2<f32>(0.0, texelSize.y), vec2<f32>(texelSize.x, 0.0), isHorizontal);
+    let edgeSign = select(1.0, -1.0, isNegDir);
+    let normalStep = select(vec2<f32>(texelSize.x * edgeSign, 0.0), vec2<f32>(0.0, texelSize.y * edgeSign), isHorizontal);
+    let edgeUV = uv + normalStep * 0.5;
+    let lumaEdge = (lumaC + select(lumaPos, lumaNeg, isNegDir)) * 0.5;
+    let gradThreshold = gradMax * 0.25;
+
+    // The same growing step lengths as the desktop's unrolled search
+    let steps = array<f32, 11>(1.5, 2.0, 2.0, 2.0, 4.0, 4.0, 4.0, 8.0, 8.0, 8.0, 8.0);
+    var uvPos = edgeUV + edgeStep;
+    var deltaPos = smaaLuma(uvPos) - lumaEdge;
+    for (var i = 0; i < 11; i = i + 1) {
+        if (abs(deltaPos) >= gradThreshold) { break; }
+        uvPos = uvPos + edgeStep * steps[i];
+        deltaPos = smaaLuma(uvPos) - lumaEdge;
+    }
+    var uvNeg = edgeUV - edgeStep;
+    var deltaNeg = smaaLuma(uvNeg) - lumaEdge;
+    for (var i = 0; i < 11; i = i + 1) {
+        if (abs(deltaNeg) >= gradThreshold) { break; }
+        uvNeg = uvNeg - edgeStep * steps[i];
+        deltaNeg = smaaLuma(uvNeg) - lumaEdge;
+    }
+
+    let distPos = select(uvPos.y - uv.y, uvPos.x - uv.x, isHorizontal);
+    let distNeg = select(uv.y - uvNeg.y, uv.x - uvNeg.x, isHorizontal);
+    let distMin = min(distPos, distNeg);
+    var edgeBlend = 0.5 - distMin / (distPos + distNeg);
+    let centerSmaller = lumaC < lumaEdge;
+    let variation = (select(deltaNeg, deltaPos, distPos < distNeg) >= 0.0) != centerSmaller;
+    if (!variation) { edgeBlend = 0.0; }
+    let finalBlend = max(edgeBlend, subPixel * 0.75);
+    return textureSampleLevel(sceneTexture, sceneSampler, uv + normalStep * finalBlend, 0.0).rgb;
+}
+
 // Daltonization — colorblind correction (Brettel/Machado approach)
 fn applyColorblindCorrection(color: vec3<f32>) -> vec3<f32> {
     let mode = params.colorblindMode;
@@ -1997,6 +2188,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     var color: vec3<f32>;
     if (params.vhs > 0.5) {
         color = vhsSample(uv);
+    } else if (params.fxaaEnabled > 1.5) {
+        color = smaa(uv, texelSize);
     } else if (params.fxaaEnabled > 0.5) {
         color = fxaa(uv, texelSize);
     } else {
@@ -2392,6 +2585,8 @@ struct InstanceInput {
     @location(5) colorR: f32,
     @location(6) colorG: f32,
     @location(7) colorB: f32,
+    @location(8) stretch: f32,          // velocity stretch, 1 = none
+    @location(9) uvRect: vec4<f32>,     // sheet frame: xy offset, zw scale
 };
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
@@ -2405,7 +2600,9 @@ fn vs_main(vert: VertexInput, inst: InstanceInput) -> VertexOutput {
     // Extract camera right/up from view matrix (transposed rotation)
     let right = vec3<f32>(viewProj.view[0][0], viewProj.view[1][0], viewProj.view[2][0]);
     let up = vec3<f32>(viewProj.view[0][1], viewProj.view[1][1], viewProj.view[2][1]);
-    let worldPosition = inst.worldPos + right * vert.position.x * inst.size + up * vert.position.y * inst.size;
+    // Velocity stretch elongates the quad along camera up, as particle.vert does
+    let ly = vert.position.y * max(inst.stretch, 1.0);
+    let worldPosition = inst.worldPos + right * vert.position.x * inst.size + up * ly * inst.size;
 
     var out: VertexOutput;
     out.position = viewProj.proj * viewProj.view * vec4<f32>(worldPosition, 1.0);
@@ -2451,6 +2648,8 @@ struct InstanceInput {
     @location(5) colorR: f32,
     @location(6) colorG: f32,
     @location(7) colorB: f32,
+    @location(8) stretch: f32,          // velocity stretch, 1 = none
+    @location(9) uvRect: vec4<f32>,     // sheet frame: xy offset, zw scale
 };
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
@@ -2463,10 +2662,12 @@ struct VertexOutput {
 fn vs_main(vert: VertexInput, inst: InstanceInput) -> VertexOutput {
     let right = vec3<f32>(viewProj.view[0][0], viewProj.view[1][0], viewProj.view[2][0]);
     let up = vec3<f32>(viewProj.view[0][1], viewProj.view[1][1], viewProj.view[2][1]);
-    let worldPosition = inst.worldPos + right * vert.position.x * inst.size + up * vert.position.y * inst.size;
+    let ly = vert.position.y * max(inst.stretch, 1.0);
+    let worldPosition = inst.worldPos + right * vert.position.x * inst.size + up * ly * inst.size;
     var out: VertexOutput;
     out.position = viewProj.proj * viewProj.view * vec4<f32>(worldPosition, 1.0);
-    out.uv = vert.uv;
+    // The quad's own 0..1 UV mapped into this particle's sheet frame
+    out.uv = vert.uv * inst.uvRect.zw + inst.uvRect.xy;
     out.color = vec3<f32>(inst.colorR, inst.colorG, inst.colorB);
     out.alpha = inst.alpha;
     return out;

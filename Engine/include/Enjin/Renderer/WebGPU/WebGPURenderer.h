@@ -108,6 +108,10 @@ public:
         m_SamplerMipmaps = mipmaps;
         m_SamplerWrap = wrap;
     }
+    u32 GetSamplerFilter() const { return m_SamplerFilter; }
+    u32 GetSamplerAnisotropy() const { return m_SamplerAnisotropy; }
+    bool GetSamplerMipmaps() const { return m_SamplerMipmaps; }
+    u32 GetSamplerWrap() const { return m_SamplerWrap; }
 
     WebGPUTextureHandle CreateTexture(u32 width, u32 height, WGPUTextureFormat format,
                                       WGPUTextureUsage usage, const void* pixelData = nullptr);

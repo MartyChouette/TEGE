@@ -37,7 +37,7 @@ Rows carry the date they were last checked. The table as a whole was last verifi
 | Tilemaps | Same | Fixed 2026-09-13. It had never worked: mesh generation lived only in the Vulkan `RenderSystem::Update` body. |
 | Sprites, 2D | **Partly** | Gaps (2026-09-30): lit sprites draw unlit (and normal-mapped sprites lose their relief), a sprite rotated in 3D faces the camera where desktop draws it in the world plane, and there is no drop shadow. An orthographic 2D camera cannot tell the plane difference. |
 | Compute | Same | |
-| CPU particle emitters | Same | `ParticleEmitterComponent` renders through the web particle pipeline (`RenderSystem.cpp`, the web `Update` body), capped at 8192 instances shared between emitters, and draws its `texturePath` since ccc13ca8. Still missing: sheet animation and velocity stretch. |
+| CPU particle emitters | Same | `ParticleEmitterComponent` renders through the web particle pipeline (`RenderSystem.cpp`, the web `Update` body), capped at 8192 instances shared between emitters, and draws its `texturePath` since ccc13ca8, and its sprite sheet frames and velocity stretch since 2026-09-30. |
 | 3D text | Same | SDF text meshes and text-on-surface rasters both draw on web (`WebEnsureTextMeshes`). Checked 2026-09-30. |
 | Terrain auto-mesh | Same | The terrain mesh rebuild is shared (`RegenerateDirtyTerrainMeshes`), and texture layers draw since 6da29275 (web flag bit 9). |
 | Morph targets | **Absent** | |
@@ -81,10 +81,14 @@ whether the web shader reads it is the question. The list below is what does.
 Known-working on web: base colour, metallic/roughness, normal maps, emissive,
 alpha modes, vertex snapping, stipple transparency (and the post-process
 dither), palette-indexed, lightmapped, per-slot values on multi-material meshes
-(since 2026-09-30), height maps (parallax occlusion), affine texturing, and the three retro
-shading modes (`flatShading`, `uvQuantize`, `gouraudOnly`).
+(since 2026-09-30), height maps (parallax occlusion), affine texturing, the three retro
+shading modes (`flatShading`, `uvQuantize`, `gouraudOnly`), flipbook animation and trim
+sheet regions (since 2026-09-30). The scene-wide retro switches, world curvature,
+texture page size, depth-sort jitter and normal quantize apply on web since 2026-09-30,
+as do the PrePBR and Retro art styles' flags. Skinned meshes take all eight bone
+influences since 2026-09-30.
 
-The dither gradient and dithered-transparency bands, rain ripples, shadow dither
+The dither gradient and dithered-transparency bands, shadow dither
 and the rest of the `surfaceParam` band family are desktop only unless listed
 above. The two flag words do not mean
 the same thing bit for bit: 3, 4, 5, 11, 21, 22 and 23 agree, and bits 6 and 7
@@ -114,7 +118,7 @@ silent: the field saves, the scene loads, the look is wrong, and nothing says so
 | Local / couch co-op (one machine) | Same | Multiple gamepads work: the Emscripten HTML5 Gamepad API is wired in `Core/src/Platform/Input.cpp` and sampled every frame. A shared-screen co-op game needs no network and no server on web. |
 | Splitscreen | Same | Fixed 2026-09-21. It is not the desktop `RenderSplitscreen` ported: the web scene pass loops its draw issue over one view per camera, each with its own ViewProjection bind group and its own rectangle, while the object buffer, the batching and the sort are built once and shared. Two differences from desktop, both deliberate. Opaque geometry is sorted front-to-back for view 0 only, so views 1..N pay some overdraw and no correctness; and the passes AFTER the meshes -- sky, particles, sprites, outlines, the UI -- still draw once through the single camera, so a split-screen web game gets two views of the world under one sky. The detection rule (more than one active camera, at least one carrying a viewport rect) is now `RenderSystem::ApplySplitscreenFromWorld` and both players call it; it used to be inline in the desktop player, which is why web had no splitscreen at all. |
 | Simulation start | **Different, deliberately** | Fixed 2026-09-21. A browser will not run an AudioContext before a real user gesture, so an exported web game shows a "Click to Play" overlay and waits -- but the GAME did not wait. The loop ticked physics and scripts behind the overlay from the first frame, so whatever the preloader took (over eight seconds on Ropes) was simulation the player never saw. In `Examples/FixedTimestep` the wrecking ball had swung, hit the stack and come to rest before the first visible frame: the player clicks Play and is shown the aftermath of the demo whose whole subject is simulation timing. The web player now holds gameplay until `navigator.userActivation.hasBeenActive` -- the SAME fact the audio gate uses, so the two cannot lift on different conditions -- while continuing to render, so the scene sits at its authored pose behind the overlay. Desktop has no gate and nothing equivalent. |
-| Water3D foam | Same | Fixed 2026-09-21, alongside the desktop half of the same bug. The web object fill set only the water-surface bit for a `Water3DComponent` and none of its authored settings, so `enableFoam` did nothing in a browser. It needs no flag bit -- the web path gates foam on the three parameters being non-zero -- so it is three assignments, mirroring the WaterVolume branch above it. **Still absent on web:** a Water3D plane's `shallowColor`, `deepColor` and `opacity`, which the desktop builders push and the web fill does not; a browser takes those from the entity's material instead, and a Water3D entity need not have one. Not fixed here because changing it alters how every existing web scene's water looks. |
+| Water3D foam | Same | Fixed 2026-09-21, alongside the desktop half of the same bug. The web object fill set only the water-surface bit for a `Water3DComponent` and none of its authored settings, so `enableFoam` did nothing in a browser. It needs no flag bit -- the web path gates foam on the three parameters being non-zero -- so it is three assignments, mirroring the WaterVolume branch above it. A Water3D plane's `shallowColor` and `opacity` apply on web since 2026-09-30, as on desktop (neither backend reads `deepColor`). This changed how existing web water looks: it used to take the entity's material colour. Rain ripples on a WaterVolume, its ice colour and opacity as it freezes, and the Refractive style's shimmer also reached web that day. |
 | Runtime terrain sculpting | Same | Fixed 2026-09-21. `RenderSystem` has two `Update()` bodies ~5000 lines apart, and the terrain `meshDirty` rebuild was written inline in the Vulkan one -- so a heightmap edited at runtime (`TerrainGeneratorSystem`, the creative terrain tools, any script) changed the component and never the mesh in a browser. The old geometry drew forever, which reads as a terrain tool that does nothing rather than a missing render step. It is `RegenerateDirtyTerrainMeshes()` now, called from both. This is rule 1 below, in its purest form. |
 | Frame cap | Same | 2026-09-28. The project's target frame rate caps the web loop too. VSync is the browser's. |
 | Adaptive quality | Same, fewer levers | 2026-09-28. The frame-rate governor runs on web. It turns shadows off at its lowest level and scales LOD distances; web has one fixed shadow map, so the shadow-resolution and cascade levers are desktop only. Its target follows the frame cap on both. |
@@ -126,7 +130,7 @@ silent: the field saves, the scene loads, the look is wrong, and nothing says so
 | Procedural textures | Same | 2026-09-30. `ProceduralTextureComponent` pixels are uploaded as the entity's base colour, updated in place when the size is unchanged. |
 | JellyMesh | Same | 2026-09-30. The flower wobble re-uploads its deformed vertices, as on desktop. |
 | GPU particle one-shots | Same | 2026-09-30. Script presets, `SpawnGPUParticles` and footstep/impact surface bursts go to the web particle system; the burst look is shared with desktop. |
-| Texture filtering settings | Same, except per material | The scene's filter, anisotropy, mipmap and wrap settings apply on web (`SetDefaultSamplerConfig`). A material's own filter override is not read on web. |
+| Texture filtering settings | Same | The scene's filter, anisotropy, mipmap and wrap settings apply on web (`SetDefaultSamplerConfig`), and a material's own filter override since 2026-09-30. |
 | Particle textures | Same for CPU emitters | CPU emitters draw their texture on web (ccc13ca8). A GPU emitter's texture sprite (`sprite == 5`) falls back to the procedural soft circle. |
 | Hand IK, LookAt, Interaction and TwoBone IK | Same | Fixed 2026-09-27. The solves lived in the Vulkan half of `RenderSystem.cpp`, so a browser played the animation unmodified. `RenderSystem::ApplyPoseEdits` runs them in the desktop loop, the editor and the web player (6eda8daa), and hand IK has its surface query on web too (93a6581f). |
 
