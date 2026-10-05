@@ -337,10 +337,11 @@ public:
                 m_WindowWidth = manifest.value("windowWidth", 1280u);
                 m_WindowHeight = manifest.value("windowHeight", 720u);
                 m_StartScene = manifest.value("startScene", "");
-                // Startup: the engine card and the authored flow, read as the
-                // desktop player reads them (WP-9). Web opened straight into
-                // the first scene and skipped both.
-                m_EngineSplash = manifest.value("engineSplash", true);
+                // Startup: the authored flow, read as the desktop player reads
+                // it (WP-9). The "Made with TEGE" card is desktop only: on web
+                // it was a second wait straight after Click to Play (Marty,
+                // 2026-10-05), so the manifest's engineSplash is not read here.
+                m_EngineSplash = false;
                 m_StartupFlow.clear();
                 if (manifest.contains("startupFlow") && manifest["startupFlow"].is_array()) {
                     for (const auto& sj : manifest["startupFlow"]) {
@@ -1610,7 +1611,12 @@ public:
             m_FlowIndex = -1;
             AdvanceWebFlow();
         } else if (!m_AtMainMenu) {
-            ShowWebTitle();   // the authored canvas was already up if there is one
+            // No authored flow and no authored MainMenu canvas: straight into
+            // play. The built-in title is desktop only on the way in (Marty,
+            // 2026-10-05): its opaque card hid any game that draws its own
+            // title some other way, and Twister read as a black canvas. Quit
+            // and game over still return to it, since the player asked.
+            HideWebTitle();
         }
     }
 

@@ -1754,7 +1754,7 @@ void EditorLayer::DrawBuildDialog() {
         ShowNotification("Failed to save project settings", NotificationType::Error);
     }
     if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Shows a short engine intro card when the game starts.\nSkippable with any key; fades out into your title screen.");
+        ImGui::SetTooltip("Shows a short engine intro card when the game starts.\nSkippable with any key; fades out into your title screen.\nDesktop builds only: a web build goes from Click to Play straight into the game.");
     }
 
     // Target platform

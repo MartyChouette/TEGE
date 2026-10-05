@@ -2832,7 +2832,7 @@ to the web.
 | | |
 |---|---|
 | **A pause menu** | Spawned at runtime when the player pauses. You do not author it, and a project with no UI at all still has one. |
-| **A start screen** | If your project has a canvas named `MainMenu`, that is used. If it has none, the built-in title screen is used instead. Either way there is one. |
+| **A start screen** | If your project has a canvas named `MainMenu`, or a startup flow with a menu step, that is used. If it has neither, a desktop build shows the built-in title screen, and a web build goes from Click to Play straight into the first scene. Quitting from the pause menu reaches the built-in title on both. |
 | **An options screen** | Volume, fullscreen, field of view, render scale and shadows. |
 | **Accessibility controls** | Reduced motion, subtitles, dyslexia-friendly font and colorblind mode, reachable from Options in the shipped game. |
 | **Rebindable controls** | Every action can be reassigned by the player, and the rebinds persist to `bindings.json` beside the game. |
