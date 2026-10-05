@@ -1,0 +1,16 @@
+{
+  "name": "3D First Person",
+  "description": "First-person controller\nJump, crouch and climb",
+  "accentColor": [
+    0.3,
+    0.55,
+    0.85,
+    1.0
+  ],
+  "category": "3D",
+  "id": "firstperson",
+  "author": "TEGE",
+  "thumbnailPath": "",
+  "maturity": "Stable",
+  "categoryFlags": "kTMPL_3D"
+}

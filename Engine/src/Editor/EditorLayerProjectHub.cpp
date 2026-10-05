@@ -3129,7 +3129,6 @@ int EditorLayer::ValidateTemplatesDeep(const std::string& onlyId) {
         TemplateVerdict v;
         const fs::path proj = stage / t.id;
         fs::remove_all(proj, ec);
-        fs::create_directories(proj / "scenes", ec);
 
         if (!t.examplePath.empty()) {
             const std::string made = CopyExampleProject(t.examplePath, stage.string(), t.id);
@@ -3138,6 +3137,10 @@ int EditorLayer::ValidateTemplatesDeep(const std::string& onlyId) {
             AddTemplateIgnore(f, t.examplePath);
             CheckCopyCompleteness(t.examplePath, proj, f, v);
         } else {
+            // Only this kind gets its folder made first. An example copy refuses
+            // a target that is not empty, and scenes/ made up front failed every
+            // example here since that check arrived (e257b8c4).
+            fs::create_directories(proj / "scenes", ec);
             if (!CopyBuiltinTemplate(t.id, proj, "scenes/Main.enjin")) {
                 v.Fail("template copy failed");
             } else {

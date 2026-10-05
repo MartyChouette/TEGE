@@ -493,6 +493,21 @@
       "animates_off_because": "Not asserted for templates. A starting point is not a demo: several ship a static scene on purpose, and the useful question about a template is whether it still BOOTS and DRAWS after a year of engine changes, not whether it entertains you. Turn it on per template if one is meant to move."
     },
     {
+      "name": "tmpl-firstperson",
+      "template": "firstperson",
+      "frames": [
+        30,
+        90,
+        240,
+        500
+      ],
+      "claims": {
+        "draws": true,
+        "renders": true
+      },
+      "animates_off_because": "Not asserted for templates. A starting point is not a demo: several ship a static scene on purpose, and the useful question about a template is whether it still BOOTS and DRAWS after a year of engine changes, not whether it entertains you. Turn it on per template if one is meant to move."
+    },
+    {
       "name": "tmpl-datingsim",
       "template": "datingsim",
       "frames": [
