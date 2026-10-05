@@ -1330,12 +1330,10 @@ static const char* GetTemplateSymbol(const char* templateId) {
     std::string id(templateId);
     // 3D templates
     if (id == "blank")         return "[ ]";
-    if (id == "coinrush")      return "$";
     if (id == "componentsonly") return "ECS";
     if (id == "scriptonly")    return "AS";
     if (id == "thirdperson")   return "III";
     if (id == "firstperson")   return "FPS";
-    if (id == "narrative")     return "...";
     if (id == "accessibility") return "A11";
     if (id == "webdemo")       return "WWW";
     if (id == "planetgravity") return "@";
@@ -2804,8 +2802,7 @@ void EditorLayer::ApplyTemplateLayout(const std::string& templateId) {
         m_Layout.gameViewW = 680.0f;
         m_Layout.gameViewH = 440.0f;
     }
-    else if (templateId == "thirdperson" || templateId == "coinrush" ||
-             templateId == "webdemo") {
+    else if (templateId == "thirdperson" || templateId == "webdemo") {
         m_Layout.leftWidth = 0.16f;
         m_Layout.rightWidth = 0.23f;
         m_Layout.inspectorSplit = 0.65f;
@@ -2827,14 +2824,6 @@ void EditorLayer::ApplyTemplateLayout(const std::string& templateId) {
         m_Layout.bottomHeight = 0.26f;
         m_Layout.gameViewW = 760.0f;
         m_Layout.gameViewH = 470.0f;
-    }
-    else if (templateId == "narrative") {
-        m_Layout.leftWidth = 0.14f;
-        m_Layout.rightWidth = 0.24f;
-        m_Layout.bottomHeight = 0.15f;
-        m_Layout.inspectorSplit = 0.7f;
-        m_Layout.gameViewW = 750.0f;
-        m_Layout.gameViewH = 480.0f;
     }
     else if (templateId == "flower") {
         m_Layout.leftWidth = 0.14f;

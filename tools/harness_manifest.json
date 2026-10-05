@@ -478,21 +478,6 @@
       "renders_off_because": "The blank template is blank. Measured 2026-09-16: one entity in the world, zero draw calls, and a frame that is the clear colour and a sky gradient. Asserting that it draws geometry would be asserting it is not what it is. `draws` still runs, so a blank project that stops producing even a frame still fails."
     },
     {
-      "name": "tmpl-coinrush",
-      "template": "coinrush",
-      "frames": [
-        30,
-        90,
-        240,
-        500
-      ],
-      "claims": {
-        "draws": true,
-        "renders": true
-      },
-      "animates_off_because": "Not asserted for templates. A starting point is not a demo: several ship a static scene on purpose, and the useful question about a template is whether it still BOOTS and DRAWS after a year of engine changes, not whether it entertains you. Turn it on per template if one is meant to move."
-    },
-    {
       "name": "tmpl-componentsonly",
       "template": "componentsonly",
       "frames": [
@@ -555,21 +540,6 @@
     {
       "name": "tmpl-isometric",
       "template": "isometric",
-      "frames": [
-        30,
-        90,
-        240,
-        500
-      ],
-      "claims": {
-        "draws": true,
-        "renders": true
-      },
-      "animates_off_because": "Not asserted for templates. A starting point is not a demo: several ship a static scene on purpose, and the useful question about a template is whether it still BOOTS and DRAWS after a year of engine changes, not whether it entertains you. Turn it on per template if one is meant to move."
-    },
-    {
-      "name": "tmpl-narrative",
-      "template": "narrative",
       "frames": [
         30,
         90,
