@@ -113,6 +113,10 @@ struct AssimpScene {
     std::string creator;    // DCC tool that created this file (from FBX metadata)
     f32 unitScaleFactor = 1.0f; // FBX UnitScaleFactor (cm=1, m=100). Convert: scale = 1/unitScale * 0.01
     i32 sourceUpAxis = 1;   // FBX/scene up axis from metadata: 0=X, 1=Y, 2=Z. Engine is Y-up.
+    // True when the file itself stated its up axis. sourceUpAxis defaults to Y, so
+    // without this "the file says Y-up" and "the file says nothing" look the same,
+    // and only the first is a reason to overrule a source-app preset.
+    bool hasUpAxisMeta = false;
 
     // Skeletal animation data
     std::vector<AssimpBone> bones;           // Deduplicated across all meshes

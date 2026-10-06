@@ -593,6 +593,10 @@ void EditorLayer::ScanImportPreview(const std::string& filepath) {
     m_ImportPreviewHasGeometry = false;
     m_ImportPreviewMin = Math::Vector3(0.0f);
     m_ImportPreviewMax = Math::Vector3(0.0f);
+    m_ImportPreviewIsAssimp = false;
+    m_ImportPreviewStatesUpAxis = false;
+    m_ImportPreviewUpAxis = 1;
+    m_ImportPreviewUnitConv = 1.0f;
 
     // Filled by both loader branches below, then decimated once.
     std::vector<Math::Vector3> allPoints;
@@ -655,6 +659,13 @@ void EditorLayer::ScanImportPreview(const std::string& filepath) {
     } else {
         Assets::AssimpScene scene;
         if (Assets::AssimpLoader::Load(filepath, scene)) {
+            // What the importer will read to decide the turn and the size.
+            m_ImportPreviewIsAssimp = true;
+            m_ImportPreviewStatesUpAxis = scene.hasUpAxisMeta;
+            m_ImportPreviewUpAxis = scene.sourceUpAxis;
+            if (std::isfinite(scene.unitScaleFactor) && scene.unitScaleFactor > 0.0f) {
+                m_ImportPreviewUnitConv = scene.unitScaleFactor / 100.0f;
+            }
             for (usize i = 0; i < scene.nodes.size(); ++i) {
                 const auto& node = scene.nodes[i];
                 ImportPreviewNode preview;
@@ -741,11 +752,17 @@ Math::Quaternion EditorLayer::ImportPreviewRotation() const {
 
     // Z-up -> Y-up is a -90 degree turn about X, the conversion the importer
     // applies through its source-app preset.
-    if (o.convertAxes && o.sourceApp != Assets::SourceApp::Auto) {
-        Assets::SourceAppPreset preset = Assets::GetSourceAppPreset(o.sourceApp);
-        if (preset.zUpToYUp) {
-            q = Math::Quaternion::FromEulerDegrees(Math::Vector3(-90.0f, 0.0f, 0.0f)) * q;
-        }
+    // Everything Assimp loads asks the importer's own rule, so a file that states
+    // its up axis is not turned here just because a Z-up app is selected.
+    bool turn = false;
+    if (m_ImportPreviewIsAssimp) {
+        turn = Assets::SceneImporter::AssimpAppliesZUpTurn(
+            o, m_ImportPreviewStatesUpAxis, m_ImportPreviewUpAxis);
+    } else if (o.convertAxes && o.sourceApp != Assets::SourceApp::Auto) {
+        turn = Assets::GetSourceAppPreset(o.sourceApp).zUpToYUp;
+    }
+    if (turn) {
+        q = Math::Quaternion::FromEulerDegrees(Math::Vector3(-90.0f, 0.0f, 0.0f)) * q;
     }
 
     return Math::Quaternion::FromEulerDegrees(o.rotationEuler) * q;
@@ -800,8 +817,13 @@ void EditorLayer::DrawImportPreviewViewport() {
     const auto& o = m_ImportDialogOptions;
     const Math::Quaternion modelRot = ImportPreviewRotation();
 
+    // Assimp imports are sized by the file's unit metadata and never by the
+    // preset's scale (see ImportAssimp), so the preview does the same. Without
+    // this a centimetre FBX previewed 100x its imported size next to the figure.
     f32 scale = o.scale;
-    if (o.convertAxes && o.sourceApp != Assets::SourceApp::Auto) {
+    if (m_ImportPreviewIsAssimp) {
+        scale *= m_ImportPreviewUnitConv;
+    } else if (o.convertAxes && o.sourceApp != Assets::SourceApp::Auto) {
         scale *= Assets::GetSourceAppPreset(o.sourceApp).scale;
     }
     const Math::Vector3 flip(o.flipX ? -1.0f : 1.0f, o.flipY ? -1.0f : 1.0f, o.flipZ ? -1.0f : 1.0f);
@@ -854,8 +876,14 @@ void EditorLayer::DrawImportPreviewViewport() {
     auto project = [&](const Math::Vector3& w, ImVec2& out) -> bool {
         const Math::Vector4 c = viewProj * Math::Vector4(w.x, w.y, w.z, 1.0f);
         if (c.w <= 0.0001f) return false;               // behind the camera
+        // PLUS on Y. Matrix4::Perspective is the Vulkan one: it negates m[5], so
+        // clip Y already points DOWN, the same way ImGui's screen Y does. This
+        // read "center.y - ..." (the OpenGL mapping) and drew the whole preview
+        // upside down: measured, the ground landed 125 px above the head of the
+        // 1.8 m figure. An upside-down preview of a wrongly turned model is how
+        // the preview and the import came to disagree (suv.fbx, 2026-10-06).
         out = ImVec2(center.x + (c.x / c.w) * size.x * 0.5f,
-                     center.y - (c.y / c.w) * size.y * 0.5f);
+                     center.y + (c.y / c.w) * size.y * 0.5f);
         return true;
     };
     auto line = [&](const Math::Vector3& a, const Math::Vector3& b, ImU32 col, f32 thick) {

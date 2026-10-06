@@ -154,6 +154,20 @@ public:
     static ImportResult ImportAssimp(const std::string& filepath, ECS::World* world,
                                       const ImportOptions& options = {});
 
+    // Whether ImportAssimp turns the whole model Z-up -> Y-up (-90 degrees about X).
+    //
+    // One answer, asked by the importer and by the import dialog's preview, so
+    // what the preview draws is what the scene receives. The rule:
+    //   - A file that STATES its up axis (FBX does) is believed. Z-up is turned,
+    //     anything else is not, whatever source app is chosen or detected. The
+    //     app name says who wrote the file, not which way up it is: Blender's
+    //     FBX exporter writes Y-up, so the Blender preset turned an upright
+    //     model onto its face.
+    //   - A file that says nothing is turned only when a Z-up app was picked BY
+    //     HAND. A merely detected app never turns anything.
+    static bool AssimpAppliesZUpTurn(const ImportOptions& options,
+                                     bool fileStatesUpAxis, i32 fileUpAxis);
+
     // Auto-detect format and import (uses file extension)
     static ImportResult Import(const std::string& filepath, ECS::World* world,
                                const ImportOptions& options = {});

@@ -335,6 +335,25 @@ static Math::Quaternion ConvertRotation(const Math::Quaternion& q, bool zToY, bo
     return r;
 }
 
+// A node's scale is a diagonal in the SOURCE axes, so a Z-up -> Y-up change of
+// basis swaps its Y and Z entries. Handedness and the per-axis flips are sign
+// changes and leave a diagonal alone. Every site that converts a node's position
+// and rotation has to convert its scale too: position, rotation and the vertices
+// were all converted and the scale was not, which is invisible on a uniform scale
+// and stretches the wrong axis on any other. Blender exports an unapplied object
+// scale straight into the node, so a car body scaled (77, 197, 6) had its 197 of
+// length applied to its height and stood 46 m tall (suv.fbx, 2026-10-06).
+static Math::Vector3 ConvertScale(const Math::Vector3& s, bool zToY) {
+    return zToY ? Math::Vector3(s.x, s.z, s.y) : s;
+}
+
+bool SceneImporter::AssimpAppliesZUpTurn(const ImportOptions& options,
+                                         bool fileStatesUpAxis, i32 fileUpAxis) {
+    if (!options.convertAxes) return false;
+    if (fileStatesUpAxis) return fileUpAxis == 2;
+    return options.sourceApp != SourceApp::Auto && GetSourceAppPreset(options.sourceApp).zUpToYUp;
+}
+
 // --- Texture search path helper ---
 
 static std::string TryTextureSearchPaths(const std::string& filename,
@@ -635,7 +654,7 @@ ECS::Entity SceneImporter::CreateEntityFromNode(const GLTFScene& scene, i32 node
     }
     transform.position = pos * options.scale;
     transform.rotation = rot;
-    transform.scale = node.scale * options.scale;
+    transform.scale = ConvertScale(node.scale, zToY) * options.scale;
 
     // Add mesh component if node has a mesh
     if (node.meshIndex >= 0 && node.meshIndex < static_cast<i32>(scene.meshes.size())) {
@@ -1207,6 +1226,26 @@ ImportResult SceneImporter::ImportAssimp(const std::string& filepath, ECS::World
         effectiveOptions.sourceApp = resolvedApp;
     }
 
+    // Which way up. See AssimpAppliesZUpTurn for the rule and why the app name
+    // does not decide it. Measured on six Blender FBX files from four projects:
+    // every one declares Y-up, imports upright and on the ground without a turn,
+    // and face-down with the Blender preset's. A saved .enjinasset can carry
+    // "Blender" as an explicit choice, so this has to hold for a chosen app as
+    // well as a detected one (suv.fbx, 2026-10-06).
+    //
+    // The turn has two mechanisms and exactly one may run: the per-node preset
+    // conversion (effectiveOptions.sourceApp is a Z-up app) for a file that says
+    // nothing, or the root rotation below for a file that says Z-up.
+    const bool presetTurn = effectiveOptions.convertAxes && !scene.hasUpAxisMeta &&
+                            options.sourceApp != SourceApp::Auto &&
+                            GetSourceAppPreset(options.sourceApp).zUpToYUp;
+    const bool rootTurn = effectiveOptions.convertAxes && scene.hasUpAxisMeta &&
+                          scene.sourceUpAxis == 2;
+    if (!presetTurn && GetSourceAppPreset(effectiveOptions.sourceApp).zUpToYUp) {
+        resolvedApp = SourceApp::Auto;
+        effectiveOptions.sourceApp = SourceApp::Auto;
+    }
+
     // Axis conversion comes from the source-app preset. SCALE does NOT: the preset
     // scale was only ever a guess at the file's unit, and we have the real thing —
     // the FBX UnitScaleFactor metadata — which is applied below. Keeping the preset
@@ -1217,15 +1256,9 @@ ImportResult SceneImporter::ImportAssimp(const std::string& filepath, ECS::World
                        preset.name, preset.zUpToYUp, preset.leftToRight, filepath.c_str());
     }
 
-    // Auto up-axis fix: the FBX metadata says whether the file is Z-up (Blender/Max)
-    // and the engine is Y-up. The preset-driven zToY above only converts SKINNED bone
-    // poses; static (non-skinned) meshes bake node transforms and were never axis-
-    // converted, so a Z-up static model imported lying on its side. When the file is
-    // Z-up and the user hasn't picked an explicit source-app preset, rotate the root
-    // nodes -90° about X (Z-up -> Y-up) so the whole hierarchy stands up correctly.
-    // Guarded on sourceApp==Auto so it never doubles with a chosen preset's zToY.
-    if (effectiveOptions.convertAxes && options.sourceApp == SourceApp::Auto &&
-        scene.sourceUpAxis == 2) {
+    // The file says it is Z-up and the engine is Y-up: rotate the root nodes -90
+    // degrees about X so the whole hierarchy stands up.
+    if (rootTurn) {
         const Math::Quaternion zToYQ = Math::Quaternion::FromEuler(
             Math::Vector3(-1.57079633f, 0.0f, 0.0f));  // -90 deg about X
         for (i32 rootIdx : scene.rootNodes) {
@@ -1236,7 +1269,7 @@ ImportResult SceneImporter::ImportAssimp(const std::string& filepath, ECS::World
             rn.translation = Math::Vector3(rn.translation.x, rn.translation.z, -rn.translation.y);
             rn.rotation = zToYQ * rn.rotation;
         }
-        ENJIN_LOG_INFO(Asset, "Auto axis fix: Z-up source -> Y-up (rotated root nodes) for %s",
+        ENJIN_LOG_INFO(Asset, "Axis: file declares Z-up -> Y-up (rotated root nodes) for %s",
                        filepath.c_str());
     }
 
@@ -1520,7 +1553,14 @@ ImportResult SceneImporter::ImportAssimp(const std::string& filepath, ECS::World
     // auto-scale never fired and cm-unit animals imported giant, with the import
     // focus flying the camera INSIDE the model — "only see a shadow"
     // (ShibaInu/Stag/Wolf, 2026-08-08).
-    if (skelCtx.skeleton) {
+    //
+    // RIGID files are measured the same way. They used to be measured from raw
+    // vertices with no node transform, which is the size of the model only when
+    // every node scale is 1. Blender writes an unapplied object scale into the
+    // node, so suv.fbx (a 3.9 m car built from unit meshes under scales like
+    // 77, 197, 6) measured 23.7 units and logged as 0.237 m. With "Force ~1.8m
+    // size" ticked that number drives the rescale, and the car came in 7.6x too big.
+    {
         for (usize ni = 0; ni < scene.nodes.size(); ++ni) {
             const auto& n = scene.nodes[ni];
             const bool nodeHasMesh = n.meshIndex >= 0 || !n.meshIndices.empty();
@@ -1556,19 +1596,6 @@ ImportResult SceneImporter::ImportAssimp(const std::string& filepath, ECS::World
                         boundsMax.y = Math::Max(boundsMax.y, p.y);
                         boundsMax.z = Math::Max(boundsMax.z, p.z);
                     }
-                }
-            }
-        }
-    } else {
-        for (const auto& mesh : scene.meshes) {
-            for (const auto& prim : mesh.primitives) {
-                for (const auto& v : prim.vertices) {
-                    boundsMin.x = Math::Min(boundsMin.x, v.position.x);
-                    boundsMin.y = Math::Min(boundsMin.y, v.position.y);
-                    boundsMin.z = Math::Min(boundsMin.z, v.position.z);
-                    boundsMax.x = Math::Max(boundsMax.x, v.position.x);
-                    boundsMax.y = Math::Max(boundsMax.y, v.position.y);
-                    boundsMax.z = Math::Max(boundsMax.z, v.position.z);
                 }
             }
         }
@@ -2054,7 +2081,7 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
         const f32 extraScale = (pendingParent != ECS::INVALID_ENTITY) ? 1.0f : skelCtx.unitScale;
         transform.position = awPos * extraScale;
         transform.rotation = awRot;
-        transform.scale = awScale * extraScale;
+        transform.scale = ConvertScale(awScale, zToY) * extraScale;
     } else if (skelCtx.skeleton && hasMeshes) {
         // Rigid mesh in a skinned file: keep the authored FBX placement on the
         // ENTITY (accumulated through skipped ancestors) and leave the vertices
@@ -2078,7 +2105,7 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
         }
         transform.position = wpos;
         transform.rotation = wrot;
-        transform.scale = wscale;
+        transform.scale = ConvertScale(wscale, zToY);
     } else {
         // Rigid mesh in a rigid file: accumulate local transforms of all nodes
         // from parentAssimpNodeIndex down to nodeIndex (including skipped intermediate
@@ -2119,7 +2146,7 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
 
         transform.position = relPos;
         transform.rotation = relRot;
-        transform.scale = relScale;
+        transform.scale = ConvertScale(relScale, zToY);
     }
 
     // Add mesh component if node has meshes

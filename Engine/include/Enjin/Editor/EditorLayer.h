@@ -2290,6 +2290,12 @@ private:
     Math::Vector3 m_ImportPreviewMin = Math::Vector3(0.0f);
     Math::Vector3 m_ImportPreviewMax = Math::Vector3(0.0f);
     bool m_ImportPreviewHasGeometry = false;
+    // What the scanned file says about itself, so the preview applies the same
+    // turn and unit conversion the importer will (SceneImporter::AssimpAppliesZUpTurn).
+    bool m_ImportPreviewIsAssimp = false;
+    bool m_ImportPreviewStatesUpAxis = false;
+    i32 m_ImportPreviewUpAxis = 1;
+    f32 m_ImportPreviewUnitConv = 1.0f;
     static constexpr usize kImportPreviewMaxPoints = 4000;
 
     // Orbit state for the preview viewport (drag to turn, wheel to zoom).

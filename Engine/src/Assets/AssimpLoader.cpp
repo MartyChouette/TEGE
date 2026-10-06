@@ -202,6 +202,7 @@ bool AssimpLoader::Load(const std::string& filepath, AssimpScene& outScene) {
         int upAxis = 1;
         if (scene->mMetaData->Get("UpAxis", upAxis)) {
             outScene.sourceUpAxis = static_cast<i32>(upAxis);
+            outScene.hasUpAxisMeta = true;
         }
     }
 
