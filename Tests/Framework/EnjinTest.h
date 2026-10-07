@@ -347,6 +347,15 @@ inline std::string Describe(const T& value) {
     }
 }
 
+// How a comparison macro holds an operand: an lvalue by reference, anything
+// else BY VALUE. `auto&& x = (expr)` looks like it does this and does not: when
+// expr is a reference INTO a temporary -- std::get<int>(f()), f().member,
+// *f().begin() -- the temporary dies at the semicolon and x dangles before the
+// comparison reads it. ASan reports it as stack-use-after-scope; without ASan
+// it usually reads the right value off a dead stack slot and passes.
+template <typename T>
+using Hold = std::conditional_t<std::is_lvalue_reference_v<T>, T, std::remove_reference_t<T>>;
+
 } // namespace EnjinTest
 
 // Both operands are bound ONCE. A macro that evaluated (a) in the comparison and
@@ -354,7 +363,8 @@ inline std::string Describe(const T& value) {
 // assertion starts changing what it measures.
 #define ENJIN_IMPL_CMP(label, a, b, cond, onFailure)                                \
     do { EnjinTest::CountAssertion();                                               \
-         auto&& _enjinA = (a); auto&& _enjinB = (b);                                \
+         EnjinTest::Hold<decltype((a))> _enjinA = (a);                              \
+         EnjinTest::Hold<decltype((b))> _enjinB = (b);                              \
          if (!(cond)) {                                                             \
              const std::string _enjinMsg = std::string(label "(" #a "=") +          \
                  EnjinTest::Describe(_enjinA) + ", " #b "=" +                       \
