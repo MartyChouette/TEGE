@@ -92,8 +92,13 @@ void FlowerSystem::PublishParticles() {
         }
         return m_World->GetComponent<ParticleEmitterComponent>(handle);
     };
-    auto* burst = ensureEmitter(m_BurstEmitter, "Flower Particles", false);
+    ensureEmitter(m_BurstEmitter, "Flower Particles", false);
     auto* liquid = ensureEmitter(m_LiquidEmitter, "Flower Drops", true);
+    // Fetched AFTER both exist. Creating the second emitter can grow the
+    // component storage and move every emitter in it, so a pointer to the
+    // first taken before that is dangling on the frame both are created
+    // (heap-use-after-free under ASan, found by CI 2026-10-07).
+    auto* burst = m_World->GetComponent<ParticleEmitterComponent>(m_BurstEmitter);
     if (!burst || !liquid) return;
 
     burst->pool.activeCount = 0;
