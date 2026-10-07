@@ -185,7 +185,7 @@ void EditorLayer::DrawConsolePanel() {
     // ── Console output (mono face — it's a console) ──
     ImGui::BeginChild("ConsoleOutput", ImVec2(0, -ImGui::GetFrameHeightWithSpacing()), true);
     ImFont* consoleMono = m_ImGuiLayer ? m_ImGuiLayer->GetMonoFont() : nullptr;
-    if (consoleMono) ImGui::PushFont(consoleMono);
+    if (consoleMono) ImGui::PushFont(consoleMono, consoleMono->LegacySize);
 
     // Classify categories into editor vs runtime feeds
     // Editor: Editor, Asset, Assets, Build, Core
@@ -520,7 +520,7 @@ void EditorLayer::DrawScriptPeekWindow() {
     ImGui::Separator();
 
     ImFont* mono = m_ImGuiLayer ? m_ImGuiLayer->GetMonoFont() : nullptr;
-    if (mono) ImGui::PushFont(mono);
+    if (mono) ImGui::PushFont(mono, mono->LegacySize);
     ScriptEditCallbackData cb;
     cb.text = &m_ScriptPeekText;
     if (m_ScriptPeekScrollPending && m_ScriptPeekLine > 0) {
@@ -995,7 +995,7 @@ void EditorLayer::DrawAssetBrowserPanel() {
 
     if (m_AssetGridView) {
         // Thumbnail size slider
-        ImGui::SetNextItemWidth(100 * ImGui::GetIO().FontGlobalScale);
+        ImGui::SetNextItemWidth(100 * ImGui::GetStyle().FontScaleMain);
         ImGui::SliderFloat("##ThumbSize", &m_AssetThumbnailSize, 48.0f, 160.0f, "%.0f px");
     }
 
@@ -3208,7 +3208,7 @@ void EditorLayer::DrawParticleEditorPanel() {
             case ECS::ParticleEmitterComponent::EmitterShape::Box: {
                 f32 half = scale * 0.4f;
                 dl->AddRect(ImVec2(cx - half, cy - half), ImVec2(cx + half, cy + half),
-                    shapeColor, 0.0f, 0, 1.5f);
+                    shapeColor, 0.0f, 1.5f, 0);
                 break;
             }
         }
@@ -4263,7 +4263,7 @@ void EditorLayer::DrawUserManualPanel() {
                     if (end == std::string::npos) { pos = boldPos + 2; continue; }
                     std::string boldText = text.substr(boldPos + 2, end - boldPos - 2);
                     if (!firstSegment) ImGui::SameLine(0, 0);
-                    if (headingFont) ImGui::PushFont(headingFont);
+                    if (headingFont) ImGui::PushFont(headingFont, headingFont->LegacySize);
                     ImGui::TextUnformatted(boldText.c_str());
                     if (headingFont) ImGui::PopFont();
                     firstSegment = false;
@@ -4274,7 +4274,7 @@ void EditorLayer::DrawUserManualPanel() {
                     if (end == std::string::npos) { pos = codePos + 1; continue; }
                     std::string codeText = text.substr(codePos + 1, end - codePos - 1);
                     if (!firstSegment) ImGui::SameLine(0, 0);
-                    if (monoFont) ImGui::PushFont(monoFont);
+                    if (monoFont) ImGui::PushFont(monoFont, monoFont->LegacySize);
                     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.7f, 0.4f, 1.0f));
                     ImGui::TextUnformatted(codeText.c_str());
                     ImGui::PopStyleColor();
@@ -4325,7 +4325,7 @@ void EditorLayer::DrawUserManualPanel() {
                 }
 
                 if (inCodeBlock) {
-                    if (ImGui::GetIO().Fonts->Fonts.Size > 2) ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[2]);
+                    if (ImGui::GetIO().Fonts->Fonts.Size > 2) ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[2], ImGui::GetIO().Fonts->Fonts[2]->LegacySize);
                     ImGui::TextUnformatted(line.c_str());
                     if (ImGui::GetIO().Fonts->Fonts.Size > 2) ImGui::PopFont();
                     continue;
@@ -4394,7 +4394,7 @@ void EditorLayer::DrawUserManualPanel() {
                     while (!subTitle.empty() && subTitle[0] == '#') subTitle = subTitle.substr(1);
                     while (!subTitle.empty() && subTitle[0] == ' ') subTitle = subTitle.substr(1);
                     ImGui::Spacing();
-                    if (ImGui::GetIO().Fonts->Fonts.Size > 1) ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[1]);
+                    if (ImGui::GetIO().Fonts->Fonts.Size > 1) ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[1], ImGui::GetIO().Fonts->Fonts[1]->LegacySize);
                     ImGui::TextWrapped("%s", subTitle.c_str());
                     if (ImGui::GetIO().Fonts->Fonts.Size > 1) ImGui::PopFont();
                     ImGui::Separator();
@@ -4445,7 +4445,8 @@ void EditorLayer::DrawUserManualPanel() {
         };
 
         // Title
-        ImGui::PushFont(ImGui::GetIO().Fonts->Fonts.Size > 1 ? ImGui::GetIO().Fonts->Fonts[1] : nullptr);
+        ImFont* legacyBold = ImGui::GetIO().Fonts->Fonts.Size > 1 ? ImGui::GetIO().Fonts->Fonts[1] : nullptr;
+        ImGui::PushFont(legacyBold, legacyBold ? legacyBold->LegacySize : 0.0f);
         ImGui::TextWrapped("%s", section.title.c_str());
         ImGui::PopFont();
         ImGui::Separator();
@@ -4460,7 +4461,7 @@ void EditorLayer::DrawUserManualPanel() {
                 if (m_ManualSections[j].level <= section.level) break;
                 const auto& child = m_ManualSections[j];
                 ImGui::Spacing();
-                if (ImGui::GetIO().Fonts->Fonts.Size > 1) ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[1]);
+                if (ImGui::GetIO().Fonts->Fonts.Size > 1) ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[1], ImGui::GetIO().Fonts->Fonts[1]->LegacySize);
                 ImGui::TextWrapped("%s", child.title.c_str());
                 if (ImGui::GetIO().Fonts->Fonts.Size > 1) ImGui::PopFont();
                 ImGui::Separator();
@@ -4652,7 +4653,7 @@ void EditorLayer::DrawDataAssetPanel() {
 
     // Split: left = schema/asset lists, right = editor
     ImGui::Columns(2, "DataAssetColumns", true);
-    ImGui::SetColumnWidth(0, 260.0f * ImGui::GetIO().FontGlobalScale);
+    ImGui::SetColumnWidth(0, 260.0f * ImGui::GetStyle().FontScaleMain);
 
     // --- LEFT PANE: Schema list ---
     ImGui::Text("Schemas");
@@ -5602,7 +5603,7 @@ void EditorLayer::DrawNetworkPanel() {
     if (role == Networking::NetworkRole::None) {
         ImGui::Text("Player Name:");
         ImGui::SameLine();
-        ImGui::SetNextItemWidth(150 * ImGui::GetIO().FontGlobalScale);
+        ImGui::SetNextItemWidth(150 * ImGui::GetStyle().FontScaleMain);
         ImGui::InputText("##NetName", m_NetworkPlayerName, sizeof(m_NetworkPlayerName));
 
         ImGui::Separator();
@@ -5610,7 +5611,7 @@ void EditorLayer::DrawNetworkPanel() {
         // Host
         ImGui::Text("Port:");
         ImGui::SameLine();
-        ImGui::SetNextItemWidth(80 * ImGui::GetIO().FontGlobalScale);
+        ImGui::SetNextItemWidth(80 * ImGui::GetStyle().FontScaleMain);
         ImGui::InputInt("##NetPort", &m_NetworkPort, 0, 0);
         ImGui::SameLine();
         if (ImGui::Button("Host Game")) {
@@ -5623,7 +5624,7 @@ void EditorLayer::DrawNetworkPanel() {
         // adr-0007's rule is that discovery below must never become required.
         ImGui::Text("Server IP:");
         ImGui::SameLine();
-        ImGui::SetNextItemWidth(150 * ImGui::GetIO().FontGlobalScale);
+        ImGui::SetNextItemWidth(150 * ImGui::GetStyle().FontScaleMain);
         ImGui::InputText("##NetIP", m_NetworkIP, sizeof(m_NetworkIP));
         ImGui::SameLine();
         if (ImGui::Button("Join Game")) {
@@ -5655,9 +5656,9 @@ void EditorLayer::DrawNetworkPanel() {
                                          ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
                 ImGui::TableSetupColumn("Game", ImGuiTableColumnFlags_WidthStretch);
                 ImGui::TableSetupColumn("Players", ImGuiTableColumnFlags_WidthFixed,
-                                        70 * ImGui::GetIO().FontGlobalScale);
+                                        70 * ImGui::GetStyle().FontScaleMain);
                 ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed,
-                                        60 * ImGui::GetIO().FontGlobalScale);
+                                        60 * ImGui::GetStyle().FontScaleMain);
                 ImGui::TableHeadersRow();
                 for (usize i = 0; i < found.size(); ++i) {
                     const auto& sess = found[i];
@@ -5778,7 +5779,7 @@ void EditorLayer::DrawCollaborationPanel() {
     if (state == CollabSessionState::Disconnected) {
         ImGui::Text("User Name:");
         ImGui::SameLine();
-        ImGui::SetNextItemWidth(150 * ImGui::GetIO().FontGlobalScale);
+        ImGui::SetNextItemWidth(150 * ImGui::GetStyle().FontScaleMain);
         ImGui::InputText("##CollabName", m_CollabUserName, sizeof(m_CollabUserName));
 
         ImGui::Separator();
@@ -5786,7 +5787,7 @@ void EditorLayer::DrawCollaborationPanel() {
         // Host session
         ImGui::Text("Port:");
         ImGui::SameLine();
-        ImGui::SetNextItemWidth(80 * ImGui::GetIO().FontGlobalScale);
+        ImGui::SetNextItemWidth(80 * ImGui::GetStyle().FontScaleMain);
         ImGui::InputInt("##CollabPort", &m_CollabPort, 0, 0);
         ImGui::SameLine();
         if (ImGui::Button("Host Session")) {
@@ -5802,7 +5803,7 @@ void EditorLayer::DrawCollaborationPanel() {
         // Join session
         ImGui::Text("Host IP:");
         ImGui::SameLine();
-        ImGui::SetNextItemWidth(150 * ImGui::GetIO().FontGlobalScale);
+        ImGui::SetNextItemWidth(150 * ImGui::GetStyle().FontScaleMain);
         ImGui::InputText("##CollabIP", m_CollabHostIP, sizeof(m_CollabHostIP));
         ImGui::SameLine();
         if (ImGui::Button("Join Session")) {
@@ -6589,7 +6590,7 @@ void EditorLayer::DrawVectorDrawingPanel() {
     if (m_VectorDrawingEditor.HasDocument()) {
         ImGui::Separator();
         static char symbolName[128] = "MySymbol";
-        ImGui::SetNextItemWidth(150 * ImGui::GetIO().FontGlobalScale);
+        ImGui::SetNextItemWidth(150 * ImGui::GetStyle().FontScaleMain);
         ImGui::InputText("Symbol Name", symbolName, sizeof(symbolName));
         ImGui::SameLine();
         if (ImGui::Button("Save as Flash Symbol")) {
@@ -6858,14 +6859,14 @@ void EditorLayer::DrawBugReportList() {
     }
 
     // Search and filter row
-    ImGui::SetNextItemWidth(200 * ImGui::GetIO().FontGlobalScale);
+    ImGui::SetNextItemWidth(200 * ImGui::GetStyle().FontScaleMain);
     ImGui::InputTextWithHint("##BugSearch", "Search...", m_FeedbackSearchBuf, sizeof(m_FeedbackSearchBuf));
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(100 * ImGui::GetIO().FontGlobalScale);
+    ImGui::SetNextItemWidth(100 * ImGui::GetStyle().FontScaleMain);
     const char* severityOpts[] = { "All", "Low", "Medium", "High", "Critical" };
     ImGui::Combo("Severity##BugFilter", &m_BugSeverityFilter, severityOpts, 5);
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(110 * ImGui::GetIO().FontGlobalScale);
+    ImGui::SetNextItemWidth(110 * ImGui::GetStyle().FontScaleMain);
     const char* statusOpts[] = { "All", "Draft", "Submitted", "Acknowledged", "Resolved", "Closed" };
     ImGui::Combo("Status##BugFilter", &m_BugStatusFilter, statusOpts, 6);
 
@@ -7091,7 +7092,7 @@ void EditorLayer::DrawBugReportDetail(BugReport& report) {
 
     // Endpoint config
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(200 * ImGui::GetIO().FontGlobalScale);
+    ImGui::SetNextItemWidth(200 * ImGui::GetStyle().FontScaleMain);
     ImGui::InputTextWithHint("##Endpoint", "Submit endpoint URL", m_FeedbackEndpointBuf, sizeof(m_FeedbackEndpointBuf));
 
     ImGui::EndChild();
@@ -7105,13 +7106,13 @@ void EditorLayer::DrawNewBugReportForm() {
     // Type and severity on same row
     ImGui::Text("Type:");
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(120 * ImGui::GetIO().FontGlobalScale);
+    ImGui::SetNextItemWidth(120 * ImGui::GetStyle().FontScaleMain);
     const char* typeOpts[] = { "Bug", "Crash", "Performance", "Visual", "Audio", "Other" };
     ImGui::Combo("##BugType", &m_BugTypeSel, typeOpts, 6);
     ImGui::SameLine();
     ImGui::Text("Severity:");
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(100 * ImGui::GetIO().FontGlobalScale);
+    ImGui::SetNextItemWidth(100 * ImGui::GetStyle().FontScaleMain);
     const char* sevOpts[] = { "Low", "Medium", "High", "Critical" };
     // Color the severity label
     ImVec4 sevColors[] = {
@@ -7224,7 +7225,7 @@ void EditorLayer::DrawFeedbackList() {
     }
 
     // Search
-    ImGui::SetNextItemWidth(250 * ImGui::GetIO().FontGlobalScale);
+    ImGui::SetNextItemWidth(250 * ImGui::GetStyle().FontScaleMain);
     ImGui::InputTextWithHint("##FbSearch", "Search feedback...", m_FeedbackSearchBuf, sizeof(m_FeedbackSearchBuf));
 
     usize total = m_FeedbackManager.GetTotalFeedback();
@@ -7321,7 +7322,7 @@ void EditorLayer::DrawFeedbackDetail(FeedbackEntry& entry) {
     }
     ImGui::PopStyleColor();
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(200 * ImGui::GetIO().FontGlobalScale);
+    ImGui::SetNextItemWidth(200 * ImGui::GetStyle().FontScaleMain);
     ImGui::InputTextWithHint("##FbEndpoint", "Submit endpoint URL", m_FeedbackEndpointBuf, sizeof(m_FeedbackEndpointBuf));
 
     ImGui::EndChild();
@@ -7335,19 +7336,19 @@ void EditorLayer::DrawNewFeedbackForm() {
     // Type and priority
     ImGui::Text("Type:");
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(140 * ImGui::GetIO().FontGlobalScale);
+    ImGui::SetNextItemWidth(140 * ImGui::GetStyle().FontScaleMain);
     const char* typeOpts[] = { "General", "Feature Request", "Usability", "Documentation", "Praise" };
     ImGui::Combo("##FbType", &m_FeedbackTypeSel, typeOpts, 5);
     ImGui::SameLine();
     ImGui::Text("Priority:");
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(100 * ImGui::GetIO().FontGlobalScale);
+    ImGui::SetNextItemWidth(100 * ImGui::GetStyle().FontScaleMain);
     const char* prioOpts[] = { "Low", "Medium", "High" };
     ImGui::Combo("##FbPriority", &m_FeedbackPrioritySel, prioOpts, 3);
 
     ImGui::Text("Category:");
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(200 * ImGui::GetIO().FontGlobalScale);
+    ImGui::SetNextItemWidth(200 * ImGui::GetStyle().FontScaleMain);
     ImGui::InputTextWithHint("##FbCategory", "e.g. Editor, Rendering...", m_FeedbackCategoryBuf, sizeof(m_FeedbackCategoryBuf));
 
     // Satisfaction rating (clickable stars)
@@ -7477,7 +7478,7 @@ void EditorLayer::DrawGitHubIssuesTab() {
         m_FeedbackManager.FetchGitHubIssues(true);
     }
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(200 * ImGui::GetIO().FontGlobalScale);
+    ImGui::SetNextItemWidth(200 * ImGui::GetStyle().FontScaleMain);
     ImGui::InputTextWithHint("##GHSearch", "Search issues...", m_GitHubIssueSearchBuf, sizeof(m_GitHubIssueSearchBuf));
     ImGui::SameLine();
 
@@ -7910,7 +7911,7 @@ void EditorLayer::DrawAudioMixer() {
             ImGui::Indent(30);
 
             // Volume slider
-            ImGui::SetNextItemWidth(150 * ImGui::GetIO().FontGlobalScale);
+            ImGui::SetNextItemWidth(150 * ImGui::GetStyle().FontScaleMain);
             char volId[32];
             snprintf(volId, sizeof(volId), "##Vol%llu", (unsigned long long)entity);
             if (ImGui::SliderFloat(volId, &asc->volume, 0.0f, 1.0f, "Vol %.2f")) {
@@ -7922,7 +7923,7 @@ void EditorLayer::DrawAudioMixer() {
             ImGui::SameLine();
 
             // Pitch slider
-            ImGui::SetNextItemWidth(100 * ImGui::GetIO().FontGlobalScale);
+            ImGui::SetNextItemWidth(100 * ImGui::GetStyle().FontScaleMain);
             char pitchId[32];
             snprintf(pitchId, sizeof(pitchId), "##Pitch%llu", (unsigned long long)entity);
             if (ImGui::SliderFloat(pitchId, &asc->pitch, 0.1f, 3.0f, "x%.1f")) {
@@ -8690,7 +8691,7 @@ void EditorLayer::DrawDebugWorkstation() {
             } else {
                 ImGui::BeginChild("SpikeLog", ImVec2(0, 140), true);
                 ImGui::Columns(4, "SpikeColumns");
-                f32 colScale = ImGui::GetIO().FontGlobalScale;
+                f32 colScale = ImGui::GetStyle().FontScaleMain;
                 ImGui::SetColumnWidth(0, 70 * colScale);
                 ImGui::SetColumnWidth(1, 90 * colScale);
                 ImGui::SetColumnWidth(2, 90 * colScale);
@@ -9127,10 +9128,12 @@ void EditorLayer::DrawDebugOverlay() {
         ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav |
         ImGuiWindowFlags_NoDocking;
 
-    // Larger font for accessibility — scale up 1.4x
-    ImGui::SetWindowFontScale(1.4f);
+    // This overlay was meant to draw 1.4x larger and never did: the old
+    // SetWindowFontScale(1.4f) ran before Begin, so it scaled whichever window
+    // was current and not this one. The calls went with the obsolete API
+    // (2026-10-06) and the size on screen is unchanged. To make it larger, wrap
+    // Begin..End in PushFont(nullptr, style.FontSizeBase * 1.4f) / PopFont().
     if (!ImGui::Begin("##DebugOverlay", &m_ShowDebugOverlay, flags)) {
-        ImGui::SetWindowFontScale(1.0f);
         ImGui::End();
         return;
     }
@@ -9185,7 +9188,7 @@ void EditorLayer::DrawDebugOverlay() {
     {
         const char* hint = "F1 Game Debug | F2 Engine Debug";
         float hintW = ImGui::CalcTextSize(hint).x * 1.4f;
-        float rightX = ImGui::GetContentRegionMax().x - hintW - 8.0f;
+        float rightX = UI::ContentRegionRightX() - hintW - 8.0f;
         if (rightX > ImGui::GetCursorPosX()) ImGui::SameLine(rightX);
         else ImGui::SameLine(0, 16);
         ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 0.7f), "%s", hint);
@@ -9248,7 +9251,6 @@ void EditorLayer::DrawDebugOverlay() {
                          0, nullptr, 0.0f, graphMax, ImVec2(ImGui::GetContentRegionAvail().x, 36));
     }
 
-    ImGui::SetWindowFontScale(1.0f);
     ImGui::End();
 }
 

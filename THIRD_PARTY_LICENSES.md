@@ -7,7 +7,7 @@ its original license and copyright.
 
 ## Dear ImGui
 
-- **Version:** 1.92.7
+- **Version:** 1.92.9b (docking branch)
 - **License:** MIT
 - **Copyright:** (c) 2014-2026 Omar Cornut
 - **Source:** https://github.com/ocornut/imgui
@@ -19,7 +19,7 @@ its original license and copyright.
 
 ## ImGuizmo
 
-- **Version:** 1.92.5
+- **Version:** 1.10
 - **License:** MIT
 - **Copyright:** (c) 2016-2021 Cedric Guillemet
 - **Source:** https://github.com/CedricGuillemet/ImGuizmo
@@ -54,7 +54,7 @@ its original license and copyright.
 
 ## Jolt Physics
 
-- **Version:** 5.2.0
+- **Version:** 5.6.0
 - **License:** MIT
 - **Copyright:** (c) 2021 Jorrit Rouwe
 - **Source:** https://github.com/jrouwe/JoltPhysics
@@ -66,7 +66,7 @@ its original license and copyright.
 
 ## Box2D
 
-- **Version:** 3.0.0
+- **Version:** 3.1.1
 - **License:** MIT
 - **Copyright:** (c) 2022 Erin Catto
 - **Source:** https://github.com/erincatto/box2d
@@ -78,7 +78,7 @@ its original license and copyright.
 
 ## Assimp (Open Asset Import Library)
 
-- **Version:** 5.4.3
+- **Version:** 6.0.5
 - **License:** BSD 3-Clause
 - **Copyright:** (c) 2006-2021, assimp team
 - **Source:** https://github.com/assimp/assimp
@@ -90,7 +90,7 @@ its original license and copyright.
 
 ## nlohmann/json
 
-- **Version:** 3.11.3
+- **Version:** 3.12.0
 - **License:** MIT
 - **Copyright:** (c) 2013-2022 Niels Lohmann
 - **Source:** https://github.com/nlohmann/json
@@ -102,7 +102,7 @@ its original license and copyright.
 
 ## GLFW
 
-- **Version:** 3.3.8
+- **Version:** 3.5.1
 - **License:** zlib/libpng
 - **Copyright:** (c) 2002-2006 Marcus Geelnard, (c) 2006-2019 Camilla Loewy
 - **Source:** https://github.com/glfw/glfw
@@ -114,7 +114,7 @@ its original license and copyright.
 
 ## miniaudio
 
-- **Version:** 0.11.21
+- **Version:** 0.11.25
 - **License:** Public Domain (Unlicense) or MIT-0 (dual-licensed, choose either)
 - **Copyright:** (c) 2023 David Reid
 - **Source:** https://github.com/mackron/miniaudio

@@ -17,7 +17,9 @@ int VerticesDrawn(ECS::World& world, ECS::Entity active) {
     ImGuiContext* ctx = ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
     io.Fonts->AddFontDefault();
-    io.Fonts->Build();
+    // No renderer here. Saying we can take texture updates is what lets imgui
+    // rasterise glyphs on demand; ImFontAtlas::Build() is obsolete since 1.92.
+    io.BackendFlags |= ImGuiBackendFlags_RendererHasTextures;
     io.DisplaySize = ImVec2(1280.0f, 720.0f);
     io.DeltaTime = 1.0f / 60.0f;
     ImGui::NewFrame();

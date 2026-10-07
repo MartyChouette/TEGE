@@ -111,7 +111,7 @@ bool ImGuiLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer,
     colors[ImGuiCol_ResizeGripActive]     = ImVec4(0.50f, 0.70f, 0.53f, 0.90f);
     colors[ImGuiCol_Tab]                  = ImVec4(0.15f, 0.15f, 0.18f, 1.00f);
     colors[ImGuiCol_TabHovered]           = ImVec4(0.35f, 0.45f, 0.38f, 1.00f);
-    colors[ImGuiCol_TabActive]            = ImVec4(0.25f, 0.33f, 0.28f, 1.00f);
+    colors[ImGuiCol_TabSelected]            = ImVec4(0.25f, 0.33f, 0.28f, 1.00f);
     colors[ImGuiCol_TextSelectedBg]       = ImVec4(0.35f, 0.50f, 0.38f, 0.50f);
     colors[ImGuiCol_DragDropTarget]       = ImVec4(0.55f, 0.78f, 0.58f, 0.90f);
 
@@ -257,58 +257,15 @@ void ImGuiLayer::DestroyDescriptorPool() {
     }
 }
 
-// Which codepoints the atlas bakes.
+// Which codepoints the atlas bakes: whatever the text on screen asks for.
 //
-// Every font here was added with no GlyphRanges, so ImGui used its default:
-// Basic Latin and Latin-1, about 190 glyphs. That threw away most of what the
-// embedded face already contains -- Roboto-Medium carries the full Latin
-// Extended-A block, 75 Greek glyphs and 255 Cyrillic ones -- so Polish, Czech,
-// Turkish, Greek and Russian rendered as blank boxes from a font that had the
-// glyphs sitting in it. This atlas is also the one every runtime draws game
-// UI, subtitles and the announcer from, so the gap was never editor-only.
-//
-// Scripts outside Latin are NOT in any embedded face, so a project wanting
-// them ships a font (Settings > Font Library / bodyFontPath). The ranges below
-// still have to ask for those codepoints or the supplied font would be clipped
-// the same way. ImGui silently skips codepoints a face lacks, so asking is
-// free for fonts that do not have them.
-//
-// CJK is the one range with a real cost -- thousands of glyphs, and a much
-// bigger atlas texture, which matters most on web. It is therefore requested
-// only when the active locale actually needs it.
-static const ImWchar* AtlasGlyphRanges(ImFontAtlas* atlas) {
-    // ImGui reads this pointer at Build() time, well after the AddFont calls,
-    // so it has to outlive them. One shared static, built once.
-    static ImVector<ImWchar> s_Ranges;
-    if (!s_Ranges.empty()) return s_Ranges.Data;
-
-    ImFontGlyphRangesBuilder builder;
-    builder.AddRanges(atlas->GetGlyphRangesDefault());     // Basic Latin + Latin-1
-
-    static const ImWchar kEuropean[] = {
-        0x0100, 0x024F,   // Latin Extended-A and -B
-        0x0370, 0x03FF,   // Greek and Coptic
-        0x0400, 0x04FF,   // Cyrillic
-        0x2000, 0x206F,   // General Punctuation: curly quotes, dashes, ellipsis
-        0x20A0, 0x20BF,   // Currency symbols
-        0,
-    };
-    builder.AddRanges(kEuropean);
-
-    // Locale-gated scripts. Which one the locale needs is decided in
-    // GUI::ScriptForLocale so the rule is testable without an ImGui context.
-    switch (GUI::ScriptForLocale(GUI::LocalizationManager::Get().GetCurrentLocale())) {
-        case GUI::AtlasScript::Japanese:   builder.AddRanges(atlas->GetGlyphRangesJapanese()); break;
-        case GUI::AtlasScript::ChineseFull: builder.AddRanges(atlas->GetGlyphRangesChineseFull()); break;
-        case GUI::AtlasScript::Korean:     builder.AddRanges(atlas->GetGlyphRangesKorean()); break;
-        case GUI::AtlasScript::Thai:       builder.AddRanges(atlas->GetGlyphRangesThai()); break;
-        case GUI::AtlasScript::Vietnamese: builder.AddRanges(atlas->GetGlyphRangesVietnamese()); break;
-        case GUI::AtlasScript::EuropeanOnly: break;   // already added above
-    }
-
-    builder.BuildRanges(&s_Ranges);
-    return s_Ranges.Data;
-}
+// imgui 1.92 rasterises glyphs on demand when the renderer backend can update
+// textures, and both of ours can (Vulkan and WebGPU). The glyph ranges this
+// file used to build, and the locale gate that kept CJK out of the atlas, were
+// only read by the legacy pre-bake path, so they had been doing nothing since
+// the move to 1.92. They are gone. A face is still only as wide as its file:
+// scripts outside Latin, Greek and Cyrillic are in no embedded face, so a
+// project wanting them ships a font (Settings > Font Library / bodyFontPath).
 
 // Embedded-font loader: the TTF data lives in the engine, so the atlas must
 // not free it (FontDataOwnedByAtlas=false). const_cast is safe — ImGui only
@@ -316,14 +273,11 @@ static const ImWchar* AtlasGlyphRanges(ImFontAtlas* atlas) {
 static ImFont* AddEmbeddedFont(ImGuiIO& io, const unsigned char* data, unsigned int size, f32 sizePx) {
     ImFontConfig cfg;
     cfg.FontDataOwnedByAtlas = false;
-    cfg.GlyphRanges = AtlasGlyphRanges(io.Fonts);
     return io.Fonts->AddFontFromMemoryTTF(
         const_cast<unsigned char*>(data), static_cast<int>(size), sizePx, &cfg);
 }
 
-// A font from disk, with the same ranges. A project ships a face precisely
-// because it needs glyphs the embedded ones lack; loading it on the default
-// range would clip it right back down.
+// A font from disk.
 static ImFont* AddFileFont(ImGuiIO& io, const char* path, f32 sizePx) {
     // Through AssetFS, so a packed build's UI fonts come from the pak (EP-18).
     // The atlas owns and frees the copy, as AddFontFromFileTTF's would.
@@ -331,8 +285,7 @@ static ImFont* AddFileFont(ImGuiIO& io, const char* path, f32 sizePx) {
     if (!path || !Platform::AssetFS::ReadBytes(path, bytes) || bytes.empty()) return nullptr;
     void* data = IM_ALLOC(bytes.size());
     std::memcpy(data, bytes.data(), bytes.size());
-    return io.Fonts->AddFontFromMemoryTTF(data, static_cast<int>(bytes.size()), sizePx, nullptr,
-                                          AtlasGlyphRanges(io.Fonts));
+    return io.Fonts->AddFontFromMemoryTTF(data, static_cast<int>(bytes.size()), sizePx);
 }
 
 void ImGuiLayer::LoadFonts(const EditorFontConfig& fontConfig) {
@@ -516,7 +469,7 @@ void ImGuiLayer::ApplyTheme(Editor::EditorTheme theme, const Editor::AccentColor
             colors[ImGuiCol_ResizeGripActive]     = ImVec4(0.50f, 0.70f, 0.53f, 0.90f);
             colors[ImGuiCol_Tab]                  = ImVec4(0.15f, 0.15f, 0.18f, 1.00f);
             colors[ImGuiCol_TabHovered]           = ImVec4(0.35f, 0.45f, 0.38f, 1.00f);
-            colors[ImGuiCol_TabActive]            = ImVec4(0.25f, 0.33f, 0.28f, 1.00f);
+            colors[ImGuiCol_TabSelected]            = ImVec4(0.25f, 0.33f, 0.28f, 1.00f);
             colors[ImGuiCol_TextSelectedBg]       = ImVec4(0.35f, 0.50f, 0.38f, 0.50f);
             colors[ImGuiCol_DragDropTarget]       = ImVec4(0.55f, 0.78f, 0.58f, 0.90f);
             colors[ImGuiCol_Text]                 = ImVec4(1.00f, 1.00f, 1.00f, 1.00f);
@@ -557,7 +510,7 @@ void ImGuiLayer::ApplyTheme(Editor::EditorTheme theme, const Editor::AccentColor
             colors[ImGuiCol_ResizeGripActive]     = ImVec4(0.55f, 0.78f, 0.60f, 0.80f);
             colors[ImGuiCol_Tab]                  = ImVec4(0.12f, 0.14f, 0.16f, 0.70f);
             colors[ImGuiCol_TabHovered]           = ImVec4(0.28f, 0.42f, 0.35f, 0.85f);
-            colors[ImGuiCol_TabActive]            = ImVec4(0.20f, 0.32f, 0.26f, 0.90f);
+            colors[ImGuiCol_TabSelected]            = ImVec4(0.20f, 0.32f, 0.26f, 0.90f);
             colors[ImGuiCol_TextSelectedBg]       = ImVec4(0.30f, 0.55f, 0.40f, 0.40f);
             colors[ImGuiCol_DragDropTarget]       = ImVec4(0.50f, 0.82f, 0.60f, 0.85f);
             colors[ImGuiCol_Text]                 = ImVec4(0.92f, 0.95f, 0.93f, 1.00f); // Slightly warm white
@@ -604,7 +557,7 @@ void ImGuiLayer::ApplyTheme(Editor::EditorTheme theme, const Editor::AccentColor
             colors[ImGuiCol_ResizeGripActive]     = ImVec4(0.30f, 0.48f, 0.35f, 0.90f);
             colors[ImGuiCol_Tab]                  = ImVec4(0.82f, 0.82f, 0.86f, 1.00f);
             colors[ImGuiCol_TabHovered]           = ImVec4(0.60f, 0.72f, 0.63f, 1.00f);
-            colors[ImGuiCol_TabActive]            = ImVec4(0.70f, 0.80f, 0.73f, 1.00f);
+            colors[ImGuiCol_TabSelected]            = ImVec4(0.70f, 0.80f, 0.73f, 1.00f);
             colors[ImGuiCol_TextSelectedBg]       = ImVec4(0.50f, 0.65f, 0.53f, 0.50f);
             colors[ImGuiCol_DragDropTarget]       = ImVec4(0.30f, 0.60f, 0.35f, 0.90f);
             colors[ImGuiCol_Text]                 = ImVec4(0.10f, 0.10f, 0.10f, 1.00f);
@@ -643,7 +596,7 @@ void ImGuiLayer::ApplyTheme(Editor::EditorTheme theme, const Editor::AccentColor
             colors[ImGuiCol_ResizeGripActive]     = ImVec4(0.60f, 0.90f, 0.65f, 1.00f);
             colors[ImGuiCol_Tab]                  = ImVec4(0.10f, 0.12f, 0.11f, 1.00f);
             colors[ImGuiCol_TabHovered]           = ImVec4(0.30f, 0.40f, 0.33f, 1.00f);
-            colors[ImGuiCol_TabActive]            = ImVec4(0.20f, 0.30f, 0.23f, 1.00f);
+            colors[ImGuiCol_TabSelected]            = ImVec4(0.20f, 0.30f, 0.23f, 1.00f);
             colors[ImGuiCol_TextSelectedBg]       = ImVec4(0.30f, 0.55f, 0.35f, 0.60f);
             colors[ImGuiCol_DragDropTarget]       = ImVec4(0.50f, 0.90f, 0.55f, 1.00f);
             colors[ImGuiCol_Text]                 = ImVec4(1.00f, 1.00f, 1.00f, 1.00f);
@@ -687,7 +640,7 @@ void ImGuiLayer::ApplyTheme(Editor::EditorTheme theme, const Editor::AccentColor
             colors[ImGuiCol_ResizeGripActive]     = ImVec4(0.08f, 0.32f, 0.15f, 1.00f);
             colors[ImGuiCol_Tab]                  = ImVec4(0.88f, 0.91f, 0.89f, 1.00f);
             colors[ImGuiCol_TabHovered]           = ImVec4(0.65f, 0.74f, 0.67f, 1.00f);
-            colors[ImGuiCol_TabActive]            = ImVec4(0.75f, 0.84f, 0.78f, 1.00f);
+            colors[ImGuiCol_TabSelected]            = ImVec4(0.75f, 0.84f, 0.78f, 1.00f);
             colors[ImGuiCol_TextSelectedBg]       = ImVec4(0.38f, 0.55f, 0.42f, 0.50f);
             colors[ImGuiCol_DragDropTarget]       = ImVec4(0.15f, 0.55f, 0.25f, 0.90f);
             colors[ImGuiCol_Text]                 = ImVec4(0.00f, 0.00f, 0.00f, 1.00f);
@@ -734,10 +687,10 @@ void ImGuiLayer::ApplyTheme(Editor::EditorTheme theme, const Editor::AccentColor
             colors[ImGuiCol_ResizeGripActive]     = ImVec4(0.788f, 0.690f, 0.216f, 0.90f);
             colors[ImGuiCol_Tab]                  = ImVec4(0.227f, 0.208f, 0.282f, 1.00f);
             colors[ImGuiCol_TabHovered]           = ImVec4(0.420f, 0.357f, 0.584f, 1.00f);
-            colors[ImGuiCol_TabActive]            = ImVec4(0.350f, 0.300f, 0.500f, 1.00f);
+            colors[ImGuiCol_TabSelected]            = ImVec4(0.350f, 0.300f, 0.500f, 1.00f);
             colors[ImGuiCol_TextSelectedBg]       = ImVec4(0.420f, 0.357f, 0.584f, 0.45f);
             colors[ImGuiCol_DragDropTarget]       = ImVec4(0.788f, 0.690f, 0.216f, 0.90f);
-            colors[ImGuiCol_NavHighlight]         = ImVec4(0.788f, 0.690f, 0.216f, 1.00f);
+            colors[ImGuiCol_NavCursor]         = ImVec4(0.788f, 0.690f, 0.216f, 1.00f);
             colors[ImGuiCol_Text]                 = ImVec4(0.920f, 0.900f, 0.940f, 1.00f); // warm white
             colors[ImGuiCol_TextDisabled]         = ImVec4(0.500f, 0.460f, 0.560f, 1.00f);
 
@@ -789,10 +742,10 @@ void ImGuiLayer::ApplyTheme(Editor::EditorTheme theme, const Editor::AccentColor
             colors[ImGuiCol_ResizeGripActive]     = ImVec4(0.161f, 0.475f, 1.000f, 0.85f);
             colors[ImGuiCol_Tab]                  = ImVec4(0.078f, 0.106f, 0.302f, 1.00f);
             colors[ImGuiCol_TabHovered]           = ImVec4(0.161f, 0.475f, 1.000f, 0.65f);
-            colors[ImGuiCol_TabActive]            = ImVec4(0.120f, 0.300f, 0.700f, 1.00f);
+            colors[ImGuiCol_TabSelected]            = ImVec4(0.120f, 0.300f, 0.700f, 1.00f);
             colors[ImGuiCol_TextSelectedBg]       = ImVec4(0.161f, 0.475f, 1.000f, 0.35f);
             colors[ImGuiCol_DragDropTarget]       = ImVec4(0.161f, 0.475f, 1.000f, 0.90f);
-            colors[ImGuiCol_NavHighlight]         = ImVec4(0.161f, 0.475f, 1.000f, 1.00f);
+            colors[ImGuiCol_NavCursor]         = ImVec4(0.161f, 0.475f, 1.000f, 1.00f);
             colors[ImGuiCol_Text]                 = ImVec4(0.780f, 0.810f, 0.880f, 1.00f); // silver
             colors[ImGuiCol_TextDisabled]         = ImVec4(0.350f, 0.380f, 0.500f, 1.00f);
 
@@ -844,10 +797,10 @@ void ImGuiLayer::ApplyTheme(Editor::EditorTheme theme, const Editor::AccentColor
             colors[ImGuiCol_ResizeGripActive]     = ImVec4(0.063f, 0.486f, 0.063f, 0.90f);
             colors[ImGuiCol_Tab]                  = ImVec4(0.106f, 0.227f, 0.106f, 1.00f);
             colors[ImGuiCol_TabHovered]           = ImVec4(0.063f, 0.486f, 0.063f, 0.75f);
-            colors[ImGuiCol_TabActive]            = ImVec4(0.063f, 0.380f, 0.063f, 1.00f);
+            colors[ImGuiCol_TabSelected]            = ImVec4(0.063f, 0.380f, 0.063f, 1.00f);
             colors[ImGuiCol_TextSelectedBg]       = ImVec4(0.063f, 0.486f, 0.063f, 0.35f);
             colors[ImGuiCol_DragDropTarget]       = ImVec4(0.063f, 0.486f, 0.063f, 0.90f);
-            colors[ImGuiCol_NavHighlight]         = ImVec4(0.063f, 0.486f, 0.063f, 1.00f);
+            colors[ImGuiCol_NavCursor]         = ImVec4(0.063f, 0.486f, 0.063f, 1.00f);
             colors[ImGuiCol_Text]                 = ImVec4(0.950f, 0.960f, 0.950f, 1.00f); // clean white
             colors[ImGuiCol_TextDisabled]         = ImVec4(0.400f, 0.500f, 0.400f, 1.00f);
 
@@ -899,10 +852,10 @@ void ImGuiLayer::ApplyTheme(Editor::EditorTheme theme, const Editor::AccentColor
             colors[ImGuiCol_ResizeGripActive]     = ImVec4(1.000f, 0.400f, 0.000f, 0.85f);
             colors[ImGuiCol_Tab]                  = ImVec4(0.878f, 0.910f, 0.941f, 1.00f);
             colors[ImGuiCol_TabHovered]           = ImVec4(0.000f, 0.400f, 0.800f, 0.55f);
-            colors[ImGuiCol_TabActive]            = ImVec4(0.000f, 0.400f, 0.800f, 0.35f);
+            colors[ImGuiCol_TabSelected]            = ImVec4(0.000f, 0.400f, 0.800f, 0.35f);
             colors[ImGuiCol_TextSelectedBg]       = ImVec4(0.000f, 0.400f, 0.800f, 0.25f);
             colors[ImGuiCol_DragDropTarget]       = ImVec4(1.000f, 0.400f, 0.000f, 0.90f);
-            colors[ImGuiCol_NavHighlight]         = ImVec4(1.000f, 0.400f, 0.000f, 1.00f);
+            colors[ImGuiCol_NavCursor]         = ImVec4(1.000f, 0.400f, 0.000f, 1.00f);
             colors[ImGuiCol_Text]                 = ImVec4(0.100f, 0.120f, 0.160f, 1.00f); // dark text
             colors[ImGuiCol_TextDisabled]         = ImVec4(0.450f, 0.470f, 0.500f, 1.00f);
 
@@ -954,10 +907,10 @@ void ImGuiLayer::ApplyTheme(Editor::EditorTheme theme, const Editor::AccentColor
             colors[ImGuiCol_ResizeGripActive]     = ImVec4(0.200f, 0.400f, 0.667f, 0.85f);
             colors[ImGuiCol_Tab]                  = ImVec4(0.145f, 0.145f, 0.271f, 1.00f);
             colors[ImGuiCol_TabHovered]           = ImVec4(0.200f, 0.400f, 0.667f, 0.60f);
-            colors[ImGuiCol_TabActive]            = ImVec4(0.170f, 0.300f, 0.500f, 1.00f);
+            colors[ImGuiCol_TabSelected]            = ImVec4(0.170f, 0.300f, 0.500f, 1.00f);
             colors[ImGuiCol_TextSelectedBg]       = ImVec4(0.200f, 0.400f, 0.667f, 0.35f);
             colors[ImGuiCol_DragDropTarget]       = ImVec4(0.200f, 0.400f, 0.667f, 0.90f);
-            colors[ImGuiCol_NavHighlight]         = ImVec4(0.200f, 0.400f, 0.667f, 1.00f);
+            colors[ImGuiCol_NavCursor]         = ImVec4(0.200f, 0.400f, 0.667f, 1.00f);
             colors[ImGuiCol_Text]                 = ImVec4(0.700f, 0.720f, 0.780f, 1.00f); // grey-silver
             colors[ImGuiCol_TextDisabled]         = ImVec4(0.400f, 0.410f, 0.460f, 1.00f);
 
@@ -1009,10 +962,10 @@ void ImGuiLayer::ApplyTheme(Editor::EditorTheme theme, const Editor::AccentColor
             colors[ImGuiCol_ResizeGripActive]     = ImVec4(0.545f, 0.733f, 0.149f, 0.85f);
             colors[ImGuiCol_Tab]                  = ImVec4(0.239f, 0.165f, 0.361f, 1.00f);
             colors[ImGuiCol_TabHovered]           = ImVec4(0.545f, 0.733f, 0.149f, 0.60f);
-            colors[ImGuiCol_TabActive]            = ImVec4(0.380f, 0.520f, 0.120f, 1.00f);
+            colors[ImGuiCol_TabSelected]            = ImVec4(0.380f, 0.520f, 0.120f, 1.00f);
             colors[ImGuiCol_TextSelectedBg]       = ImVec4(0.545f, 0.733f, 0.149f, 0.30f);
             colors[ImGuiCol_DragDropTarget]       = ImVec4(0.545f, 0.733f, 0.149f, 0.90f);
-            colors[ImGuiCol_NavHighlight]         = ImVec4(0.545f, 0.733f, 0.149f, 1.00f);
+            colors[ImGuiCol_NavCursor]         = ImVec4(0.545f, 0.733f, 0.149f, 1.00f);
             colors[ImGuiCol_Text]                 = ImVec4(0.920f, 0.910f, 0.880f, 1.00f); // warm white
             colors[ImGuiCol_TextDisabled]         = ImVec4(0.480f, 0.440f, 0.540f, 1.00f);
 
@@ -1064,10 +1017,10 @@ void ImGuiLayer::ApplyTheme(Editor::EditorTheme theme, const Editor::AccentColor
             colors[ImGuiCol_ResizeGripActive]     = ImVec4(0.000f, 0.333f, 0.749f, 0.80f);
             colors[ImGuiCol_Tab]                  = ImVec4(0.847f, 0.867f, 0.890f, 1.00f);
             colors[ImGuiCol_TabHovered]           = ImVec4(0.000f, 0.333f, 0.749f, 0.50f);
-            colors[ImGuiCol_TabActive]            = ImVec4(0.000f, 0.333f, 0.749f, 0.30f);
+            colors[ImGuiCol_TabSelected]            = ImVec4(0.000f, 0.333f, 0.749f, 0.30f);
             colors[ImGuiCol_TextSelectedBg]       = ImVec4(0.000f, 0.333f, 0.749f, 0.25f);
             colors[ImGuiCol_DragDropTarget]       = ImVec4(0.000f, 0.333f, 0.749f, 0.90f);
-            colors[ImGuiCol_NavHighlight]         = ImVec4(0.000f, 0.333f, 0.749f, 1.00f);
+            colors[ImGuiCol_NavCursor]         = ImVec4(0.000f, 0.333f, 0.749f, 1.00f);
             colors[ImGuiCol_Text]                 = ImVec4(0.120f, 0.140f, 0.180f, 1.00f); // dark text
             colors[ImGuiCol_TextDisabled]         = ImVec4(0.420f, 0.440f, 0.480f, 1.00f);
 
@@ -1110,7 +1063,7 @@ void ImGuiLayer::ApplyTheme(Editor::EditorTheme theme, const Editor::AccentColor
             std::min(accentColors->resizeGrip.a + 0.40f, 1.0f));
         colors[ImGuiCol_TextSelectedBg]  = ToImVec4(accentColors->textSelected);
         colors[ImGuiCol_DragDropTarget]  = ToImVec4(accentColors->dragDropTarget);
-        colors[ImGuiCol_TabActive]       = ToImVec4(accentColors->tabActive);
+        colors[ImGuiCol_TabSelected]       = ToImVec4(accentColors->tabActive);
         colors[ImGuiCol_TabHovered]      = ToImVec4(accentColors->tabHovered);
     }
 
@@ -1126,15 +1079,15 @@ void ImGuiLayer::ApplyTheme(Editor::EditorTheme theme, const Editor::AccentColor
         const ImVec4 frame     = colors[ImGuiCol_FrameBg];
         const ImVec4 accent    = colors[ImGuiCol_CheckMark];
         const ImVec4 tab       = colors[ImGuiCol_Tab];
-        const ImVec4 tabActive = colors[ImGuiCol_TabActive];
+        const ImVec4 tabActive = colors[ImGuiCol_TabSelected];
         const ImVec4 border    = colors[ImGuiCol_Border];
         auto scaled = [](const ImVec4& c, f32 f, f32 a) {
             return ImVec4(std::min(c.x * f, 1.0f), std::min(c.y * f, 1.0f), std::min(c.z * f, 1.0f), a);
         };
 
         colors[ImGuiCol_TitleBgCollapsed]      = scaled(colors[ImGuiCol_TitleBg], 1.0f, 0.75f);
-        colors[ImGuiCol_TabUnfocused]          = scaled(tab, 0.85f, tab.w);
-        colors[ImGuiCol_TabUnfocusedActive]    = scaled(tabActive, 0.85f, tabActive.w);
+        colors[ImGuiCol_TabDimmed]          = scaled(tab, 0.85f, tab.w);
+        colors[ImGuiCol_TabDimmedSelected]    = scaled(tabActive, 0.85f, tabActive.w);
         colors[ImGuiCol_DockingPreview]        = ImVec4(accent.x, accent.y, accent.z, 0.55f);
         colors[ImGuiCol_DockingEmptyBg]        = scaled(win, 0.55f, 1.0f);
         colors[ImGuiCol_TableHeaderBg]         = scaled(frame, 1.10f, 1.0f);
@@ -1142,7 +1095,7 @@ void ImGuiLayer::ApplyTheme(Editor::EditorTheme theme, const Editor::AccentColor
         colors[ImGuiCol_TableBorderLight]      = ImVec4(border.x, border.y, border.z, 0.40f);
         colors[ImGuiCol_TableRowBg]            = ImVec4(0, 0, 0, 0);
         colors[ImGuiCol_TableRowBgAlt]         = ImVec4(1, 1, 1, 0.03f);
-        colors[ImGuiCol_NavHighlight]          = ImVec4(accent.x, accent.y, accent.z, 1.0f);
+        colors[ImGuiCol_NavCursor]          = ImVec4(accent.x, accent.y, accent.z, 1.0f);
         colors[ImGuiCol_NavWindowingHighlight] = ImVec4(accent.x, accent.y, accent.z, 0.70f);
         colors[ImGuiCol_NavWindowingDimBg]     = ImVec4(0.10f, 0.10f, 0.10f, 0.55f);
         colors[ImGuiCol_ModalWindowDimBg]      = ImVec4(0.05f, 0.05f, 0.05f, 0.60f);
@@ -1202,8 +1155,7 @@ void ImGuiLayer::ApplyTheme(Editor::EditorTheme theme, const Editor::AccentColor
 }
 
 void ImGuiLayer::SetGlobalScale(f32 scale) {
-    ImGuiIO& io = ImGui::GetIO();
-    io.FontGlobalScale = scale;
+    ImGui::GetStyle().FontScaleMain = scale;
 }
 
 void ImGuiLayer::ReloadFonts(const EditorFontConfig& fontConfig) {
@@ -1221,8 +1173,7 @@ void ImGuiLayer::ReloadFonts(const EditorFontConfig& fontConfig) {
     UIFontRegistry::Get().OnAtlasCleared();
     LoadFonts(fontConfig);
 
-    // Build the font atlas - backend auto-uploads on next NewFrame()
-    io.Fonts->Build();
+    // Nothing to build: the backend rasterises and uploads on the next NewFrame().
 
     ENJIN_LOG_INFO(Editor, "Reloaded editor fonts");
 }

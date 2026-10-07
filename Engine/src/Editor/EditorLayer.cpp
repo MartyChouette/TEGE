@@ -236,7 +236,8 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
     // ImGui texture callbacks — editor-only, enables RenderTarget to display in ImGui panels.
     // RenderTarget itself has no ImGui dependency; these callbacks bridge the gap.
     auto imguiRegister = [](VkSampler s, VkImageView v, VkImageLayout l) -> VkDescriptorSet {
-        return ImGui_ImplVulkan_AddTexture(s, v, l);
+        (void)s;  // the imgui backend binds its own sampler since 1.92.8
+        return ImGui_ImplVulkan_AddTexture(v, l);
     };
     auto imguiUnregister = [](VkDescriptorSet ds) {
         ImGui_ImplVulkan_RemoveTexture(ds);
@@ -5270,7 +5271,7 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         f32 blink = std::fmod(static_cast<f32>(ImGui::GetTime()), 1.0f);
         u8 alpha = static_cast<u8>(150 + 105 * (blink < 0.5f ? blink * 2.0f : 2.0f - blink * 2.0f));
         fgDL->AddRect(ImVec2(0, 0), io.DisplaySize,
-                       IM_COL32(255, 40, 40, alpha), 0.0f, 0, 3.0f);
+                       IM_COL32(255, 40, 40, alpha), 0.0f, 3.0f, 0);
     }
 
     // Draw scene transition overlay (fade to/from black/white)

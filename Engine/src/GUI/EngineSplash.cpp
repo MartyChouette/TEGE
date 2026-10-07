@@ -217,7 +217,7 @@ void DrawEngineSplash(f32 timeSeconds, f32 duration, f32 fadeStart, const char* 
                     };
                     dl->AddConvexPolyFilled(dp, 4,
                         IM_COL32(P.accent.r, P.accent.g, P.accent.b, dAlpha / 3));
-                    dl->AddPolyline(dp, 4, IM_COL32(P.accent.r, P.accent.g, P.accent.b, dAlpha), ImDrawFlags_Closed, 1.5f);
+                    dl->AddPolyline(dp, 4, IM_COL32(P.accent.r, P.accent.g, P.accent.b, dAlpha), 1.5f, ImDrawFlags_Closed);
                 }
             }
         }
@@ -241,7 +241,7 @@ void DrawEngineSplash(f32 timeSeconds, f32 duration, f32 fadeStart, const char* 
                     }
                     dl->AddConvexPolyFilled(tp, 3,
                         IM_COL32(P.accent.r, P.accent.g, P.accent.b, triAlpha / 2));
-                    dl->AddPolyline(tp, 3, IM_COL32(P.accent.r, P.accent.g, P.accent.b, triAlpha), ImDrawFlags_Closed, 1.0f);
+                    dl->AddPolyline(tp, 3, IM_COL32(P.accent.r, P.accent.g, P.accent.b, triAlpha), 1.0f, ImDrawFlags_Closed);
                 }
             }
         }

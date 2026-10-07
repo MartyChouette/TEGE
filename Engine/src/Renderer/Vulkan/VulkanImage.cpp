@@ -9,8 +9,7 @@
 #include <windows.h>
 #endif
 
-// stb_image for image loading
-#define STB_IMAGE_IMPLEMENTATION
+// stb_image for image loading. Compiled once, in Core (StbImageImpl.cpp).
 #include "stb_image.h"
 
 namespace Enjin {

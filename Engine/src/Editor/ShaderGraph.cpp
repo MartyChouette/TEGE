@@ -539,7 +539,7 @@ void ShaderGraphEditor::DrawNode(ShaderGraphNode& node) {
         headerColor, 6.0f * m_Zoom, ImDrawFlags_RoundCornersTop);
 
     // Border
-    drawList->AddRect(nodePos, nodeEnd, borderColor, 6.0f * m_Zoom, 0, 2.0f * m_Zoom);
+    drawList->AddRect(nodePos, nodeEnd, borderColor, 6.0f * m_Zoom, 2.0f * m_Zoom, 0);
 
     // Title text
     const char* name = node.label.empty() ? GetNodeName(node.type) : node.label.c_str();

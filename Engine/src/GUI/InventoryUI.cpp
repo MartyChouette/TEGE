@@ -191,7 +191,7 @@ namespace Enjin::GUI {
                     ImVec2 min = ImGui::GetItemRectMin();
                     ImVec2 max = ImGui::GetItemRectMax();
                     ImGui::GetWindowDrawList()->AddRect(min, max,
-                        IM_COL32(255, 255, 0, 255), 0.0f, 0, 2.0f);
+                        IM_COL32(255, 255, 0, 255), 0.0f, 2.0f, 0);
                 }
 
                 // Click to select

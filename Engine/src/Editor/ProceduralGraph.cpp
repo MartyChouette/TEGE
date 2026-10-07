@@ -301,7 +301,7 @@ void ProceduralGraphEditor::DrawNode(ProcGraphNode& node) {
     // Border
     ImU32 borderColor = selected ? Theme::AccentYellow : Theme::GraphNodeBorder;
     drawList->AddRect(ImVec2(x, y), ImVec2(x + w, y + h),
-                      borderColor, 4.0f * m_Zoom, 0, selected ? 2.0f : 1.0f);
+                      borderColor, 4.0f * m_Zoom, selected ? 2.0f : 1.0f, 0);
 
     // Title
     const char* name = node.label.empty() ? GetNodeName(node.type) : node.label.c_str();

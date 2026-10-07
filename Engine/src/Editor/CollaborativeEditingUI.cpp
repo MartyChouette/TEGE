@@ -101,7 +101,7 @@ void CollaborativeEditingUI::WireCallbacks() {
 //
 // There were two collaboration panels. This one used static buffers, ignored
 // the editor's panel-visibility state so its close button did nothing, and
-// sized its widgets without reading FontGlobalScale. EditorLayer's panel does
+// sized its widgets without reading style.FontScaleMain. EditorLayer's panel does
 // all three properly AND has the conflict-strategy selector, the peers table,
 // the resolve buttons and the operation log that this one never grew. Its own
 // comment called itself "an alternative integration path", which is how a
@@ -203,7 +203,7 @@ void CollaborativeEditingUI::DrawPeerOverlays(
                 { camSx - d, camSy     }
             };
             drawList->AddConvexPolyFilled(pts, 4, color.ToImU32(120));
-            drawList->AddPolyline(pts, 4, ringColor, ImDrawFlags_Closed, 1.5f);
+            drawList->AddPolyline(pts, 4, ringColor, 1.5f, ImDrawFlags_Closed);
 
             // Draw a thin line from the camera diamond to the selected entity ring
             drawList->AddLine(ImVec2(camSx, camSy), ImVec2(sx, sy),

@@ -1551,7 +1551,7 @@ static int DrawEntityWiringBoardImpl(ECS::World* world, ECS::Entity entity, floa
                                       : (n.isSink ? IM_COL32(90,100,120,255) : IM_COL32(120,150,190,255)),
                                   alpha);
         dl->AddRectFilled(p0, p1, fill, 5.0f);
-        dl->AddRect(p0, p1, border, 5.0f, 0, hot ? 2.5f : 1.5f);
+        dl->AddRect(p0, p1, border, 5.0f, hot ? 2.5f : 1.5f, 0);
         std::string label = WiringClip(n.label, boxW - 14.0f);
         ImVec2 ts = ImGui::CalcTextSize(label.c_str());
         ImVec2 tp = ImVec2(p0.x + (boxW - ts.x) * 0.5f, p0.y + (boxH - ts.y) * 0.5f);
@@ -1606,7 +1606,7 @@ void EditorLayer::DrawInspectorPanel() {
     if (m_ShowFocusRing && m_FocusedPanel == FocusedPanel::Inspector) {
         ImVec2 wMin = ImGui::GetWindowPos();
         ImVec2 wMax = ImVec2(wMin.x + ImGui::GetWindowWidth(), wMin.y + ImGui::GetWindowHeight());
-        ImGui::GetWindowDrawList()->AddRect(wMin, wMax, Theme::FocusRing, 0.0f, 0, 2.0f);
+        ImGui::GetWindowDrawList()->AddRect(wMin, wMax, Theme::FocusRing, 0.0f, 2.0f, 0);
         ImGui::SetWindowFocus();
     }
 
@@ -6034,7 +6034,7 @@ void EditorLayer::DrawQuickSetup(ECS::Entity entity) {
             const bool hov = ImGui::IsMouseHoveringRect(mn, mx, false);
             dl->AddRect(ImVec2(mn.x - 6.0f, mn.y - 4.0f), ImVec2(mx.x, mx.y + 4.0f),
                         hov ? IM_COL32(120, 160, 220, 220) : IM_COL32(74, 78, 90, 160),
-                        6.0f, 0, hov ? 2.0f : 1.0f);
+                        6.0f, hov ? 2.0f : 1.0f, 0);
             ImGui::Dummy(ImVec2(0.0f, 10.0f));
             ImGui::PopID();
             return clicked;

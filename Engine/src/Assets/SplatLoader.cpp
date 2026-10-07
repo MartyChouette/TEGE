@@ -11,7 +11,7 @@
 #include <sstream>
 #include <unordered_map>
 
-// stb_image's zlib inflate (compiled once in VulkanImage.cpp; SWFLoader uses
+// stb_image's zlib inflate (compiled once in Core's StbImageImpl.cpp; SWFLoader uses
 // the same entry points for Flash decompression)
 #include "stb_image.h"
 

@@ -547,7 +547,7 @@ void VectorDrawingEditor::DrawShape(ImDrawList* dl, const VectorShape& shape,
             ImVec2 minP(std::min(p0.x, p1.x), std::min(p0.y, p1.y));
             ImVec2 maxP(std::max(p0.x, p1.x), std::max(p0.y, p1.y));
             dl->AddRectFilled(minP, maxP, fill);
-            dl->AddRect(minP, maxP, stroke, 0, 0, sw);
+            dl->AddRect(minP, maxP, stroke, 0, sw, 0);
             break;
         }
         case VectorShapeType::Ellipse: {
@@ -565,7 +565,7 @@ void VectorDrawingEditor::DrawShape(ImDrawList* dl, const VectorShape& shape,
                 pts[i] = ImVec2(cx + std::cos(angle) * rx, cy + std::sin(angle) * ry);
             }
             dl->AddConvexPolyFilled(pts.data(), segments, fill);
-            dl->AddPolyline(pts.data(), segments, stroke, ImDrawFlags_Closed, sw);
+            dl->AddPolyline(pts.data(), segments, stroke, sw, ImDrawFlags_Closed);
             break;
         }
         case VectorShapeType::Pen: {
@@ -578,7 +578,7 @@ void VectorDrawingEditor::DrawShape(ImDrawList* dl, const VectorShape& shape,
             if (pts.size() >= 3) {
                 dl->AddConvexPolyFilled(pts.data(), (int)pts.size(), fill);
             }
-            dl->AddPolyline(pts.data(), (int)pts.size(), stroke, ImDrawFlags_Closed, sw);
+            dl->AddPolyline(pts.data(), (int)pts.size(), stroke, sw, ImDrawFlags_Closed);
             break;
         }
         case VectorShapeType::Bezier: {
@@ -629,7 +629,7 @@ void VectorDrawingEditor::DrawStarShape(ImDrawList* dl, const VectorShape& shape
     u32 stroke = (shape.strokeColor & 0x00FFFFFF) | (strokeAlpha << 24);
 
     dl->AddConvexPolyFilled(pts.data(), (int)pts.size(), fill);
-    dl->AddPolyline(pts.data(), (int)pts.size(), stroke, ImDrawFlags_Closed, shape.strokeWidth * zoom);
+    dl->AddPolyline(pts.data(), (int)pts.size(), stroke, shape.strokeWidth * zoom, ImDrawFlags_Closed);
 }
 
 void VectorDrawingEditor::DrawPolygonShape(ImDrawList* dl, const VectorShape& shape,
@@ -658,7 +658,7 @@ void VectorDrawingEditor::DrawPolygonShape(ImDrawList* dl, const VectorShape& sh
     u32 stroke = (shape.strokeColor & 0x00FFFFFF) | (strokeAlpha << 24);
 
     dl->AddConvexPolyFilled(pts.data(), (int)pts.size(), fill);
-    dl->AddPolyline(pts.data(), (int)pts.size(), stroke, ImDrawFlags_Closed, shape.strokeWidth * zoom);
+    dl->AddPolyline(pts.data(), (int)pts.size(), stroke, shape.strokeWidth * zoom, ImDrawFlags_Closed);
 }
 
 void VectorDrawingEditor::DrawSelectionHandles(ImDrawList* dl, const VectorShape& shape,
@@ -678,7 +678,7 @@ void VectorDrawingEditor::DrawSelectionHandles(ImDrawList* dl, const VectorShape
         ImVec2 p1(ox + shape.points[1].x * zoom, oy + shape.points[1].y * zoom);
         ImVec2 minP(std::min(p0.x, p1.x), std::min(p0.y, p1.y));
         ImVec2 maxP(std::max(p0.x, p1.x), std::max(p0.y, p1.y));
-        dl->AddRect(minP, maxP, IM_COL32(0, 120, 255, 128), 0, 0, 1.0f);
+        dl->AddRect(minP, maxP, IM_COL32(0, 120, 255, 128), 0, 1.0f, 0);
     }
 }
 

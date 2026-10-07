@@ -6,7 +6,7 @@ include(FetchContent)
 FetchContent_Declare(
     json
     GIT_REPOSITORY https://github.com/nlohmann/json.git
-    GIT_TAG v3.11.3
+    GIT_TAG v3.12.0
     GIT_SHALLOW TRUE
 )
 FetchContent_MakeAvailable(json)
@@ -42,7 +42,7 @@ endif()
 FetchContent_Declare(
     assimp
     GIT_REPOSITORY https://github.com/assimp/assimp.git
-    GIT_TAG v5.4.3
+    GIT_TAG v6.0.5
     GIT_SHALLOW TRUE
 )
 FetchContent_MakeAvailable(assimp)
@@ -54,11 +54,16 @@ if(TARGET assimp AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 # Fetch miniaudio (header-only, public domain audio library)
+# SOURCE_SUBDIR names a folder that does not exist on purpose. Since 0.11.22
+# miniaudio ships a CMakeLists.txt that builds a static library and five node
+# libraries; we compile the header ourselves in MiniaudioImpl.cpp and want none
+# of them. With no CMakeLists.txt there, FetchContent downloads and adds nothing.
 FetchContent_Declare(
     miniaudio
     GIT_REPOSITORY https://github.com/mackron/miniaudio.git
-    GIT_TAG 0.11.21
+    GIT_TAG 0.11.25
     GIT_SHALLOW TRUE
+    SOURCE_SUBDIR _header_only
 )
 FetchContent_MakeAvailable(miniaudio)
 
@@ -253,7 +258,9 @@ target_precompile_headers(EnjinEngine PRIVATE
 
 # --- Renderer backend selection (Vulkan vs WebGPU) ---
 if(ENJIN_PLATFORM_WEB)
-    # WebGPU backend — Emscripten provides <webgpu/webgpu.h> via -sUSE_WEBGPU=1
+    # WebGPU backend — <webgpu/webgpu.h> comes from the emdawnwebgpu port, set in
+    # cmake/EmscriptenToolchain.cmake. This line named -sUSE_WEBGPU=1 long after
+    # the switch; that flag was removed from Emscripten and is not used here.
     target_compile_definitions(EnjinEngine PUBLIC ENJIN_RENDERER_WEBGPU=1)
     message(STATUS "Renderer backend: WebGPU (Emscripten)")
 else()
@@ -287,10 +294,17 @@ if(ENJIN_PHYSICS_JOLT)
     set(JOLT_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
     set(USE_STATIC_MSVC_RUNTIME_LIBRARY ON CACHE BOOL "" FORCE)
     set(INTERPROCEDURAL_OPTIMIZATION OFF CACHE BOOL "" FORCE)
+    # Jolt 5.6 added GPU compute backends (used by its hair simulation). They are
+    # ON by default and pull in the DirectX shader compiler and Vulkan. We use
+    # none of it.
+    set(JPH_USE_DX12 OFF CACHE BOOL "" FORCE)
+    set(JPH_USE_VK OFF CACHE BOOL "" FORCE)
+    set(JPH_USE_MTL OFF CACHE BOOL "" FORCE)
+    set(JPH_USE_CPU_COMPUTE OFF CACHE BOOL "" FORCE)
     FetchContent_Declare(
         JoltPhysics
         GIT_REPOSITORY https://github.com/jrouwe/JoltPhysics.git
-        GIT_TAG v5.2.0
+        GIT_TAG v5.6.0
         GIT_SHALLOW TRUE
         SOURCE_SUBDIR Build
     )
@@ -305,10 +319,14 @@ option(ENJIN_PHYSICS_BOX2D "Enable Box2D v3 backend for 2D physics" ON)
 if(ENJIN_PHYSICS_BOX2D)
     set(BOX2D_BUILD_UNIT_TESTS OFF CACHE BOOL "" FORCE)
     set(BOX2D_BUILD_TESTBED OFF CACHE BOOL "" FORCE)
+    # 3.1 made SSE2 the default and AVX2 opt-in. Forced so a build folder that
+    # still caches the 3.0 default (ON) matches a fresh one, and so the engine
+    # runs on a CPU without AVX2.
+    set(BOX2D_AVX2 OFF CACHE BOOL "" FORCE)
     FetchContent_Declare(
         box2d
         GIT_REPOSITORY https://github.com/erincatto/box2d.git
-        GIT_TAG v3.0.0
+        GIT_TAG v3.1.1
         GIT_SHALLOW TRUE
     )
     FetchContent_MakeAvailable(box2d)

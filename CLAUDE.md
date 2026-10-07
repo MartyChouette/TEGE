@@ -253,6 +253,15 @@ A symptom shows up in a project, so the project is where you look, and project d
 
 ### Editor UI (ImGui) — three traps that each cost a session
 
+- **ImGui's obsolete API is compiled out** (`IMGUI_DISABLE_OBSOLETE_FUNCTIONS`, set in
+  `third_party/imgui/CMakeLists.txt`), so a deprecated call is a compile error on the
+  day it is written. The ones that bite: `PushFont` takes a size (`font->LegacySize`
+  for the old behaviour); the UI scale is `ImGui::GetStyle().FontScaleMain`, not
+  `io.FontGlobalScale`; and **`AddRect` / `AddPolyline` / `PathStroke` take `thickness`
+  BEFORE `flags`** since 1.92.8. A five-argument `AddRect(a, b, col, rounding, 0)` still
+  compiles and now means thickness 0, which draws nothing. `ImGui_ImplVulkan_AddTexture`
+  no longer takes a sampler: the backend binds its own linear clamp sampler, so nothing
+  drawn through ImGui can rely on repeat or nearest sampling (2026-10-06)
 - **`EditorLayer::Update` runs BEFORE `ImGui::NewFrame`.** `NewFrame` lives in
   `EditorLayer::Render`, so ANY ImGui call from Update happens outside the
   frame. Hit-tests and `GetIO()` limp along; **drawing crashes** — the
@@ -307,7 +316,7 @@ A symptom shows up in a project, so the project is where you look, and project d
   draws nothing and `GetItemRectMin()` hands back the last item of ANOTHER
   window. That is a plausible rectangle in a wrong place, so a "looks
   degenerate" guard never fires
-- **`io.FontGlobalScale` (the editor's UI scale) does not reach
+- **`style.FontScaleMain` (the editor's UI scale) does not reach
   `ImDrawList::AddText(font, size, ...)`.** It reaches `ImGui::Text` and
   `ImGui::GetFontSize()` only. Any hand-drawn surface must read the scale itself,
   author its numbers at 100%, and draw EVERY string at an explicit size — mixing
@@ -555,7 +564,7 @@ enjin/
 - **Ray tracing:** Full RT pipeline (shadows/reflections/AO/GI/path tracing, denoisers). Auto-activates on capable hardware
 
 ### Physics
-- `IPhysicsBackend`/`IPhysicsBackend2D` interfaces. Jolt v5.2.0 (3D), Box2D v3.0.0 (2D)
+- `IPhysicsBackend`/`IPhysicsBackend2D` interfaces. Jolt v5.6.0 (3D), Box2D v3.1.1 (2D)
 - `PhysicsBackendFactory` creates via `PhysicsBackendType` enum (`Auto`/`Jolt`/`Box2D`)
 - CMake: `ENJIN_PHYSICS_JOLT` (ON), `ENJIN_PHYSICS_BOX2D` (ON)
 - Collision filtering: bilateral bitmask `(A.categoryBits & B.collisionMask) && (B.categoryBits & A.collisionMask)`. Defaults: `categoryBits = 1`, `collisionMask = 0xFFFFFFFF`

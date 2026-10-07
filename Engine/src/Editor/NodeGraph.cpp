@@ -174,7 +174,7 @@ void NodeGraphEditor::Render(NodeGraphData& data, NodeGraphCallbacks& callbacks,
         ImVec2 bMax(std::max(m_BoxSelectStart.x, ImGui::GetIO().MousePos.x),
                     std::max(m_BoxSelectStart.y, ImGui::GetIO().MousePos.y));
         dl->AddRectFilled(bMin, bMax, colors.selectionFill);
-        dl->AddRect(bMin, bMax, colors.selectionBorder, 0.0f, 0, 1.5f);
+        dl->AddRect(bMin, bMax, colors.selectionBorder, 0.0f, 1.5f, 0);
     }
 
     if (m_ShowMinimap)
@@ -332,7 +332,7 @@ void NodeGraphEditor::DrawNodes(ImDrawList* dl, ImVec2 canvasPos, NodeGraphData&
             borderCol = colors.nodeError;
             borderThickness = 3.0f * s;
         }
-        dl->AddRect(nodePos, nodeEnd, borderCol, NODE_ROUNDING * s, 0, borderThickness);
+        dl->AddRect(nodePos, nodeEnd, borderCol, NODE_ROUNDING * s, borderThickness, 0);
     }
 }
 
@@ -433,10 +433,10 @@ void NodeGraphEditor::DrawMinimap(ImDrawList* dl, ImVec2 canvasPos, ImVec2 canva
     f32 vw = vpW * mmScale;
     f32 vh = vpH * mmScale;
     dl->AddRect(ImVec2(vx, vy), ImVec2(vx + vw, vy + vh),
-        colors.minimapViewport, 0.0f, 0, 1.5f);
+        colors.minimapViewport, 0.0f, 1.5f, 0);
 
     // Border
-    dl->AddRect(mmPos, mmEnd, colors.nodeBorder, 4.0f, 0, 1.0f);
+    dl->AddRect(mmPos, mmEnd, colors.nodeBorder, 4.0f, 1.0f, 0);
 }
 
 void NodeGraphEditor::DrawContextMenu(NodeGraphData& data, NodeGraphCallbacks& callbacks,

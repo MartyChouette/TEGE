@@ -30,6 +30,11 @@ target_include_directories(imgui PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/backends
 )
 
+# Compile imgui without the functions and names it has marked obsolete, for
+# everything that includes it. A call to one is then a compile error on the day
+# it is written, not a surprise on the imgui update that finally removes it.
+target_compile_definitions(imgui PUBLIC IMGUI_DISABLE_OBSOLETE_FUNCTIONS)
+
 # Link dependencies
 if(ENJIN_PLATFORM_WEB)
     target_link_libraries(imgui PUBLIC glfw)

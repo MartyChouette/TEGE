@@ -2,6 +2,7 @@
 #include "Enjin/Assets/GLBExporter.h"
 #include "Enjin/Platform/Paths.h"
 #include "Enjin/Editor/EditorTheme.h"
+#include "Enjin/Editor/EditorWidgets.h"
 #include "Enjin/Editor/InspectorUndo.h"
 #include "Enjin/Editor/ScenePicker.h"
 #include "Enjin/Core/Version.h"
@@ -194,7 +195,7 @@ void EditorLayer::DrawHierarchyPanel() {
     if (m_ShowFocusRing && m_FocusedPanel == FocusedPanel::Hierarchy) {
         ImVec2 wMin = ImGui::GetWindowPos();
         ImVec2 wMax = ImVec2(wMin.x + ImGui::GetWindowWidth(), wMin.y + ImGui::GetWindowHeight());
-        ImGui::GetWindowDrawList()->AddRect(wMin, wMax, Theme::FocusRing, 0.0f, 0, 2.0f);
+        ImGui::GetWindowDrawList()->AddRect(wMin, wMax, Theme::FocusRing, 0.0f, 2.0f, 0);
         // Auto-focus this window when keyboard-selected
         ImGui::SetWindowFocus();
     }
@@ -378,7 +379,7 @@ void EditorLayer::DrawEmptyState(const char* icon, const char* heading, const ch
     // Icon (large, 40% opacity)
     ImGui::SetCursorPosY(ImGui::GetCursorPosY() + centerY);
     ImFont* headingFont = m_ImGuiLayer ? m_ImGuiLayer->GetHeadingFont() : nullptr;
-    if (headingFont) ImGui::PushFont(headingFont);
+    if (headingFont) ImGui::PushFont(headingFont, headingFont->LegacySize);
     centerX(ImGui::CalcTextSize(icon).x);
     ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 0.4f), "%s", icon);
     if (headingFont) ImGui::PopFont();
@@ -480,7 +481,7 @@ void EditorLayer::DrawEntityNode(ECS::Entity entity, const std::string& name) {
         // icon and one gap before it. Reserving more than that truncates names
         // that would have fitted, which is its own small dishonesty -- the panel
         // claiming less room than it has.
-        const f32 roomForLabel = ImGui::GetWindowContentRegionMax().x - indent -
+        const f32 roomForLabel = UI::ContentRegionRightX() - indent -
                                  ImGui::GetTreeNodeToLabelSpacing() - iconW -
                                  ImGui::GetStyle().ItemSpacing.x;
 
@@ -810,7 +811,7 @@ void EditorLayer::DrawEntityNode(ECS::Entity entity, const std::string& name) {
             // the frame padding ImGui will add on both sides.
             const f32 iconW = ImGui::CalcTextSize("O").x +
                               ImGui::GetStyle().FramePadding.x * 2.0f;
-            ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - iconW -
+            ImGui::SameLine(UI::ContentRegionRightX() - iconW -
                             ImGui::GetStyle().ItemSpacing.x);
             ImGui::PushID(static_cast<int>((uintptr_t)entity ^ 0xEEEE));
             const char* icon = transform->visible ? "O" : "-";

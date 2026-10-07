@@ -131,14 +131,14 @@ void DrawToolIcon(ImDrawList* dl, BuildTool tool, ImVec2 c, ImU32 col, f32 ui) {
     const f32 t = std::max(1.0f, 1.6f * ui);
     switch (tool) {
         case BuildTool::Wall: {   // a standing slab
-            dl->AddRect(ImVec2(c.x - r * 0.7f, c.y - r), ImVec2(c.x + r * 0.7f, c.y + r), col, 0, 0, t);
+            dl->AddRect(ImVec2(c.x - r * 0.7f, c.y - r), ImVec2(c.x + r * 0.7f, c.y + r), col, 0, t, 0);
             dl->AddLine(ImVec2(c.x - r * 0.7f, c.y), ImVec2(c.x + r * 0.7f, c.y), col, t * 0.6f);
             break;
         }
         case BuildTool::Floor: {  // a plan-view diamond
             const ImVec2 p[4] = { ImVec2(c.x, c.y - r * 0.6f), ImVec2(c.x + r, c.y),
                                   ImVec2(c.x, c.y + r * 0.6f), ImVec2(c.x - r, c.y) };
-            dl->AddPolyline(p, 4, col, ImDrawFlags_Closed, t);
+            dl->AddPolyline(p, 4, col, t, ImDrawFlags_Closed);
             break;
         }
         case BuildTool::Stairs: { // a rising step run
@@ -150,7 +150,7 @@ void DrawToolIcon(ImDrawList* dl, BuildTool tool, ImVec2 c, ImU32 col, f32 ui) {
             break;
         }
         case BuildTool::Brush: {  // a box in three-quarter view
-            dl->AddRect(ImVec2(c.x - r * 0.85f, c.y - r * 0.35f), ImVec2(c.x + r * 0.5f, c.y + r * 0.8f), col, 0, 0, t);
+            dl->AddRect(ImVec2(c.x - r * 0.85f, c.y - r * 0.35f), ImVec2(c.x + r * 0.5f, c.y + r * 0.8f), col, 0, t, 0);
             dl->AddLine(ImVec2(c.x - r * 0.85f, c.y - r * 0.35f), ImVec2(c.x - r * 0.35f, c.y - r * 0.85f), col, t);
             dl->AddLine(ImVec2(c.x - r * 0.35f, c.y - r * 0.85f), ImVec2(c.x + r, c.y - r * 0.85f), col, t);
             dl->AddLine(ImVec2(c.x + r, c.y - r * 0.85f), ImVec2(c.x + r * 0.5f, c.y - r * 0.35f), col, t);
@@ -164,7 +164,7 @@ void DrawToolIcon(ImDrawList* dl, BuildTool tool, ImVec2 c, ImU32 col, f32 ui) {
                     const f32 fx = -r + (2.0f * r) * (static_cast<f32>(i) / 6.0f);
                     pts[i] = ImVec2(c.x + fx, y + std::sin(static_cast<f32>(i) * 1.05f) * r * 0.22f);
                 }
-                dl->AddPolyline(pts, 7, col, 0, t);
+                dl->AddPolyline(pts, 7, col, t, 0);
             }
             break;
         }
@@ -172,7 +172,7 @@ void DrawToolIcon(ImDrawList* dl, BuildTool tool, ImVec2 c, ImU32 col, f32 ui) {
             const ImVec2 p[5] = { ImVec2(c.x - r, c.y + r * 0.7f), ImVec2(c.x - r * 0.35f, c.y - r * 0.4f),
                                   ImVec2(c.x, c.y + r * 0.15f), ImVec2(c.x + r * 0.45f, c.y - r * 0.7f),
                                   ImVec2(c.x + r, c.y + r * 0.7f) };
-            dl->AddPolyline(p, 5, col, 0, t);
+            dl->AddPolyline(p, 5, col, t, 0);
             break;
         }
         case BuildTool::Cave: {  // a tunnel mouth: an arch standing on the ground
@@ -181,7 +181,7 @@ void DrawToolIcon(ImDrawList* dl, BuildTool tool, ImVec2 c, ImU32 col, f32 ui) {
             // The arch itself, drawn as a half ring so it reads as an opening
             // rather than as a filled hill.
             dl->PathArcTo(ImVec2(c.x, base), r * 0.72f, 3.14159265f, 6.28318531f, 16);
-            dl->PathStroke(col, 0, t);
+            dl->PathStroke(col, t, 0);
             break;
         }
         case BuildTool::Ladder: {  // two rails and three rungs
@@ -217,13 +217,13 @@ void DrawToolIcon(ImDrawList* dl, BuildTool tool, ImVec2 c, ImU32 col, f32 ui) {
             // things and no single silhouette is honest about that. Two objects
             // reads as "objects"; a barrel would read as "barrel".
             dl->AddRect(ImVec2(c.x - r * 0.9f, c.y + r * 0.05f),
-                        ImVec2(c.x + r * 0.15f, c.y + r * 0.95f), col, 0, 0, t);
+                        ImVec2(c.x + r * 0.15f, c.y + r * 0.95f), col, 0, t, 0);
             dl->AddCircle(ImVec2(c.x + r * 0.5f, c.y + r * 0.5f), r * 0.42f, col, 0, t);
             break;
         }
         case BuildTool::Edit: {   // a rectangle with grips on its edges
             dl->AddRect(ImVec2(c.x - r * 0.62f, c.y - r * 0.5f),
-                        ImVec2(c.x + r * 0.62f, c.y + r * 0.5f), col, 0, 0, t);
+                        ImVec2(c.x + r * 0.62f, c.y + r * 0.5f), col, 0, t, 0);
             const f32 g = 2.6f * (r / 10.0f);
             const ImVec2 grips[4] = {
                 ImVec2(c.x - r * 0.62f, c.y), ImVec2(c.x + r * 0.62f, c.y),
@@ -237,7 +237,7 @@ void DrawToolIcon(ImDrawList* dl, BuildTool tool, ImVec2 c, ImU32 col, f32 ui) {
         case BuildTool::Reduce: {  // a shape collapsing to fewer points
             const ImVec2 p[4] = { ImVec2(c.x, c.y - r), ImVec2(c.x + r, c.y),
                                   ImVec2(c.x, c.y + r), ImVec2(c.x - r, c.y) };
-            dl->AddPolyline(p, 4, col, ImDrawFlags_Closed, t);
+            dl->AddPolyline(p, 4, col, t, ImDrawFlags_Closed);
             dl->AddLine(ImVec2(c.x - r, c.y), ImVec2(c.x + r, c.y), col, t * 0.6f);
             break;
         }
@@ -273,7 +273,7 @@ bool ProjectToViewport(const Renderer::Camera* camera, const Math::Vector3& worl
 
 // How much bigger everything on this surface is drawn.
 //
-// The editor's UI scale is ImGui's io.FontGlobalScale, and that reaches
+// The editor's UI scale is ImGui's style.FontScaleMain, and that reaches
 // ImGui::Text and ImGui::GetFontSize -- but NOT ImDrawList::AddText with an
 // explicit size, which is every single label on this surface. Left alone the
 // surface half-scales: headings grow with the setting while the rail labels,
@@ -281,7 +281,7 @@ bool ProjectToViewport(const Renderer::Camera* camera, const Math::Vector3& worl
 // straight through the middle of the word "Creative" (measured, 2026-09-07).
 // Every number in the layout is authored at 100% and multiplied by this.
 f32 CreativeUIScale() {
-    const f32 s = ImGui::GetIO().FontGlobalScale;
+    const f32 s = ImGui::GetStyle().FontScaleMain;
     return (s > 0.01f) ? s : 1.0f;
 }
 
@@ -440,7 +440,7 @@ void EditorLayer::DrawCreativeSurface() {
             }
             const bool hov = ImGui::IsItemHovered();
             ImGui::PopID();
-            dl->AddRect(bMin, bMax, hov ? kInk : kLine, 3.0f, 0, 1.0f);
+            dl->AddRect(bMin, bMax, hov ? kInk : kLine, 3.0f, 1.0f, 0);
             text(kSmallText, ImVec2(bMin.x + 8.0f * ui, bMin.y + 6.0f * ui),
                  hov ? kInk : kMuted, leave);
             if (hov) ImGui::SetTooltip("Back to the full editor, with every panel (Ctrl+B)");
@@ -529,7 +529,7 @@ void EditorLayer::DrawCreativeSurface() {
             if (hov || held) ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
 
             dl->AddRectFilled(bMin, bMax, kGround, 3.0f);
-            dl->AddRect(bMin, bMax, held ? tint : (hov ? kMuted : kLine), 3.0f, 0, 1.0f);
+            dl->AddRect(bMin, bMax, held ? tint : (hov ? kMuted : kLine), 3.0f, 1.0f, 0);
 
             // A drag lands on 6.37 sides as easily as on 6, so an integral
             // field is snapped as well as printed whole. Showing "6.00 sides"
@@ -586,7 +586,7 @@ void EditorLayer::DrawCreativeSurface() {
                 const bool sel = ((m == 1) == m_Creative.IsSubtracting());
                 const ImU32 edge = sel ? (m == 1 ? kCut : kAccent) : (hov ? kMuted : kLine);
                 dl->AddRectFilled(bMin, bMax, sel ? (m == 1 ? kCutSoft : kAccentSoft) : kGround, 3.0f);
-                dl->AddRect(bMin, bMax, edge, 3.0f, 0, 1.0f);
+                dl->AddRect(bMin, bMax, edge, 3.0f, 1.0f, 0);
                 const ImVec2 ts = measure(kSmallText, modes[m]);
                 text(kSmallText, ImVec2(bMin.x + (half - ts.x) * 0.5f, bMin.y + (kBoxH - ts.y) * 0.5f),
                      sel ? edge : kMuted, modes[m]);
@@ -679,7 +679,7 @@ void EditorLayer::DrawCreativeSurface() {
             const bool sel = std::fabs(m_Creative.GetGridSize() - choice) < 0.001f &&
                              m_Creative.IsSnapEnabled();
             dl->AddRectFilled(bMin, bMax, sel ? tintSoft : kGround, 3.0f);
-            dl->AddRect(bMin, bMax, sel ? tint : (hov ? kMuted : kLine), 3.0f, 0, 1.0f);
+            dl->AddRect(bMin, bMax, sel ? tint : (hov ? kMuted : kLine), 3.0f, 1.0f, 0);
 
             char label[16];
             std::snprintf(label, sizeof(label), "%g", static_cast<double>(choice));
@@ -745,7 +745,7 @@ void EditorLayer::DrawCreativeSurface() {
             ImGui::PopID();
 
             dl->AddRectFilled(bMin, bMax, playing ? kOk : kAccent, 4.0f);
-            if (hov) dl->AddRect(bMin, bMax, kInk, 4.0f, 0, 1.0f);
+            if (hov) dl->AddRect(bMin, bMax, kInk, 4.0f, 1.0f, 0);
             const char* label = playing ? "Stop" : "Play";
             const ImVec2 ls = measure(kBodyText, label);
             text(kBodyText, ImVec2(bMin.x + (innerW - ls.x) * 0.5f, bMin.y + (btnH - ls.y) * 0.5f),
@@ -795,7 +795,7 @@ void EditorLayer::TickWalkthrough() {
 // Top-right, because the bottom edge already carries the tool name and the
 // brush/triangle readout, and the top-left has the gizmo buttons and the
 // shading row. Drawn with the same hand-rolled surface the rest of creative
-// mode uses, at the editor's UI scale -- ImGui's FontGlobalScale does not reach
+// mode uses, at the editor's UI scale -- ImGui's style.FontScaleMain does not reach
 // ImDrawList::AddText, so every size here carries the scale itself.
 void EditorLayer::DrawGuide(const ImVec2& imgMin, const ImVec2& imgMax) {
     if (m_EditorMode != EditorMode::Tutorial || !m_World) return;
@@ -832,7 +832,7 @@ void EditorLayer::DrawGuide(const ImVec2& imgMin, const ImVec2& imgMax) {
     const ImVec2 c1(c0.x + cardW, c0.y + cardH);
 
     dl->AddRectFilled(c0, c1, IM_COL32(22, 25, 33, 235), 6.0f * ui);
-    dl->AddRect(c0, c1, IM_COL32(90, 150, 210, 180), 6.0f * ui, 0, 1.5f * ui);
+    dl->AddRect(c0, c1, IM_COL32(90, 150, 210, 180), 6.0f * ui, 1.5f * ui, 0);
 
     f32 y = c0.y + pad;
     dl->AddText(font, kHead, ImVec2(c0.x + pad, y), IM_COL32(235, 240, 255, 255),
@@ -1117,7 +1117,7 @@ void EditorLayer::HandleBuildDrag() {
         const ImVec2 bMin(cx - ts.x * 0.5f - 12.0f * ui, cy - ts.y * 0.5f - 7.0f * ui);
         const ImVec2 bMax(cx + ts.x * 0.5f + 12.0f * ui, cy + ts.y * 0.5f + 7.0f * ui);
         dl->AddRectFilled(bMin, bMax, Authored(0x14, 0x18, 0x1f, 0xdd), 4.0f);
-        dl->AddRect(bMin, bMax, kLine, 4.0f, 0, 1.0f);
+        dl->AddRect(bMin, bMax, kLine, 4.0f, 1.0f, 0);
         dl->AddText(font, size, ImVec2(cx - ts.x * 0.5f, cy - ts.y * 0.5f), kMuted, why);
     }
 
@@ -1412,7 +1412,7 @@ void DrawWireSphere(ImDrawList* dl, const Renderer::Camera* cam, const ImVec2& i
             else                 { p.y += c; p.z += s2; }
             ok = ProjectToViewport(cam, p, imgMin, viewW, viewH, ring[i]);
         }
-        if (ok) dl->AddPolyline(ring, kSegments, col, ImDrawFlags_Closed, thickness);
+        if (ok) dl->AddPolyline(ring, kSegments, col, thickness, ImDrawFlags_Closed);
     }
 }
 
@@ -2318,7 +2318,7 @@ void EditorLayer::HandleCreativeTerrain(const Math::Vector3& ground, bool onGrou
                                    viewW, viewH, screen)) { ringCount = 0; break; }
             ring[ringCount++] = screen;
         }
-        if (ringCount == 32) dl->AddPolyline(ring, 32, tint, ImDrawFlags_Closed, 1.5f);
+        if (ringCount == 32) dl->AddPolyline(ring, 32, tint, 1.5f, ImDrawFlags_Closed);
         else dl->AddCircle(mouse, 24.0f, tint, 32, 1.5f);
     }
 
@@ -2842,7 +2842,7 @@ bool EditorLayer::HandleCreativeShapeHandles(f32 localX, f32 localY, f32 viewW, 
             if (handles[i].kind == kind && visible[i]) pts.push_back(screen[i]);
         }
         if (pts.size() >= 2) dl->AddPolyline(pts.data(), static_cast<int>(pts.size()), edge,
-                                             closed ? ImDrawFlags_Closed : 0, 1.5f * ui);
+                                             1.5f * ui, closed ? ImDrawFlags_Closed : 0);
     };
     outlineLoop(ShapeHandleKind::OutlinePoint, true);
 
@@ -2857,7 +2857,7 @@ bool EditorLayer::HandleCreativeShapeHandles(f32 localX, f32 localY, f32 viewW, 
             dl->AddCircle(sp, r, on ? kInk : edge, 12, 1.8f);
         } else {
             dl->AddRectFilled(ImVec2(sp.x - r, sp.y - r), ImVec2(sp.x + r, sp.y + r), kGround);
-            dl->AddRect(ImVec2(sp.x - r, sp.y - r), ImVec2(sp.x + r, sp.y + r), on ? kInk : edge, 0, 0, 1.8f);
+            dl->AddRect(ImVec2(sp.x - r, sp.y - r), ImVec2(sp.x + r, sp.y + r), on ? kInk : edge, 0, 1.8f, 0);
         }
     }
 
@@ -3095,7 +3095,7 @@ void EditorLayer::HandleCreativeEdit(f32 localX, f32 localY, f32 viewW, f32 view
         } else {
             dl->AddRectFilled(ImVec2(sp.x - r, sp.y - r), ImVec2(sp.x + r, sp.y + r), kGround);
             dl->AddRect(ImVec2(sp.x - r, sp.y - r), ImVec2(sp.x + r, sp.y + r),
-                        on ? kInk : kAccent, 0, 0, 1.8f);
+                        on ? kInk : kAccent, 0, 1.8f, 0);
         }
     }
 
@@ -3202,7 +3202,7 @@ void EditorLayer::HandleCreativePath(f32 viewW, f32 viewH,
         }
         dl->AddRectFilled(ImVec2(hs.x - grab, hs.y - grab), ImVec2(hs.x + grab, hs.y + grab), kGround);
         dl->AddRect(ImVec2(hs.x - grab, hs.y - grab), ImVec2(hs.x + grab, hs.y + grab),
-                    (held || hov) ? kInk : kCut, 0, 0, 1.8f);
+                    (held || hov) ? kInk : kCut, 0, 1.8f, 0);
     }
 
     if (m_CreativePathBow < 0 && hoveredBow >= 0 && m_EditorViewportHovered &&

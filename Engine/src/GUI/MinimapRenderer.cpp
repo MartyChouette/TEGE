@@ -50,7 +50,7 @@ namespace Enjin::GUI {
             ImVec2 topLeft(centerX - halfSize, centerY - halfSize);
             ImVec2 bottomRight(centerX + halfSize, centerY + halfSize);
             drawList->AddRectFilled(topLeft, bottomRight, bgCol);
-            drawList->AddRect(topLeft, bottomRight, borderCol, 0.0f, 0, 2.0f);
+            drawList->AddRect(topLeft, bottomRight, borderCol, 0.0f, 2.0f, 0);
         }
 
         // Helper: transform world position to minimap screen position

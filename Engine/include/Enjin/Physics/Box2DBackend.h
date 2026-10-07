@@ -16,7 +16,7 @@ namespace Enjin {
 namespace Physics {
 
 // Box2D v3 backend implementing IPhysicsBackend2D.
-// Wraps Box2D v3.0.0 C API and provides full ECS↔Box2D synchronization.
+// Wraps the Box2D v3 C API and provides full ECS↔Box2D synchronization.
 class ENJIN_API Box2DBackend : public IPhysicsBackend2D {
 public:
     void SyncAndProcessEvents() override;

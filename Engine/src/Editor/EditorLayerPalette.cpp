@@ -72,7 +72,7 @@ i32 DrawPaletteStrip(const Renderer::Palette& p, f32 width, f32 height, i32 mark
         const f32 x0 = origin.x + static_cast<f32>(markFirst) * w;
         const f32 x1 = x0 + static_cast<f32>(markCount) * w;
         dl->AddRect(ImVec2(x0, origin.y - 2.0f), ImVec2(x1, origin.y + height + 2.0f),
-                    Theme::SwatchSelected, 0.0f, 0, 2.0f);
+                    Theme::SwatchSelected, 0.0f, 2.0f, 0);
     }
     dl->AddRect(origin, ImVec2(origin.x + width, origin.y + height),
                 Theme::SwatchBorder);
@@ -86,7 +86,7 @@ void EditorLayer::DrawSettingsSection_ScenePalette() {
     if (!UI::SectionHeader("Scene Palette (indexed colour + cycling)")) return;
     if (!m_RenderSystem) { ImGui::TextDisabled("No render system."); return; }
 
-    const f32 s = ImGui::GetIO().FontGlobalScale;
+    const f32 s = ImGui::GetStyle().FontScaleMain;
 
     ImGui::TextWrapped("A palette-indexed material stores an INDEX in its base colour texture's "
                        "red channel instead of a colour, and a table here supplies the colours. "

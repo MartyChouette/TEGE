@@ -201,7 +201,7 @@ void AlternativeInputManager::RenderScanHighlight() {
     dl->AddRect(
         ImVec2(target.x - pad, target.y - pad),
         ImVec2(target.x + target.w + pad, target.y + target.h + pad),
-        borderColor, 4.0f, 0, 3.0f);
+        borderColor, 4.0f, 3.0f, 0);
 
     // Label above
     if (!target.label.empty()) {

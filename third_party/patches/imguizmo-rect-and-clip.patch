@@ -1,0 +1,33 @@
+[Enjin patch] ImGuizmo: two local fixes carried on top of upstream 1.10
+========================================================================
+Both were in our vendored copy with no record of them; found 2026-10-06 by
+diffing against upstream while updating to 1.10. Upstream 1.10 has neither.
+
+1. SetRect: mYMax was computed as mY + mXMax. It is mY + mHeight.
+2. The gizmo's PushClipRect passes intersect_with_current_clip_rect = true, so
+   the gizmo is clipped to the viewport panel and not drawn over its neighbours.
+
+Upstream keeps its sources in src/. Ours sit flat in third_party/imguizmo, so
+apply with:  git apply -p2 --directory=third_party/imguizmo <this file>
+diff --git a/src/ImGuizmo.cpp b/src/ImGuizmo.cpp
+index cf3890a..a81b1ad 100755
+--- a/src/ImGuizmo.cpp
++++ b/src/ImGuizmo.cpp
+@@ -975,7 +975,7 @@ namespace IMGUIZMO_NAMESPACE
+       gContext.mWidth = width;
+       gContext.mHeight = height;
+       gContext.mXMax = gContext.mX + gContext.mWidth;
+-      gContext.mYMax = gContext.mY + gContext.mXMax;
++      gContext.mYMax = gContext.mY + gContext.mHeight; // [Enjin patch] upstream adds mXMax, a typo
+       gContext.mDisplayRatio = width / height;
+    }
+ 
+@@ -2679,7 +2679,7 @@ namespace IMGUIZMO_NAMESPACE
+ 
+    bool Manipulate(const float* view, const float* projection, OPERATION operation, MODE mode, float* matrix, float* deltaMatrix, const float* snap, const float* localBounds, const float* boundsSnap)
+    {
+-      gContext.mDrawList->PushClipRect (ImVec2 (gContext.mX, gContext.mY), ImVec2 (gContext.mX + gContext.mWidth, gContext.mY + gContext.mHeight), false);
++      gContext.mDrawList->PushClipRect (ImVec2 (gContext.mX, gContext.mY), ImVec2 (gContext.mX + gContext.mWidth, gContext.mY + gContext.mHeight), true); // [Enjin patch] intersect with the window clip rect
+ 
+       // Scale is always local or matrix will be skewed when applying world scale or oriented matrix
+       ComputeContext(view, projection, matrix, (operation & SCALE) ? LOCAL : mode);

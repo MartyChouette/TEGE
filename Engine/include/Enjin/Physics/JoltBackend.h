@@ -32,7 +32,7 @@ struct CollisionFilterData {
 };
 
 // Jolt Physics 3D backend implementing IPhysicsBackend.
-// Wraps Jolt v5.2.0 and provides full ECS↔Jolt synchronization.
+// Wraps Jolt v5 and provides full ECS↔Jolt synchronization.
 class ENJIN_API JoltBackend : public IPhysicsBackend {
 public:
     JoltBackend();

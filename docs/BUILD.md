@@ -253,8 +253,8 @@ cmake .. \
 | `ENJIN_BUILD_TESTS` | OFF | Build unit tests |
 | `ENJIN_BUILD_EXAMPLES` | OFF | Build the `Enjin::App` examples (output: `bin/Examples/`), including OrbCollector |
 | **Physics** | | |
-| `ENJIN_PHYSICS_JOLT` | ON | Enable Jolt Physics backend for 3D (FetchContent v5.2.0) |
-| `ENJIN_PHYSICS_BOX2D` | ON | Enable Box2D v3 backend for 2D (FetchContent v3.0.0) |
+| `ENJIN_PHYSICS_JOLT` | ON | Enable Jolt Physics backend for 3D (FetchContent v5.6.0) |
+| `ENJIN_PHYSICS_BOX2D` | ON | Enable Box2D v3 backend for 2D (FetchContent v3.1.1) |
 | **Rendering** | | |
 | `ENJIN_CLUSTERED_LIGHTING` | ON | Clustered forward lighting (16x9x24 spatial grid) |
 | `ENJIN_VRS` | OFF | Variable Rate Shading (VK_KHR_fragment_shading_rate) |

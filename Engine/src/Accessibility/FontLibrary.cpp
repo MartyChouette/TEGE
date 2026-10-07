@@ -67,7 +67,6 @@ void FontLibrary::SetFont(FontFamily family) {
                     s_OpenDyslexicFont = io.Fonts->AddFontFromMemoryTTF(
                         (void*)s_OpenDyslexicFontData,
                         (int)s_OpenDyslexicFontDataSize, 17.0f, &cfg);
-                    io.Fonts->Build();
                 }
                 if (s_OpenDyslexicFont) {
                     io.FontDefault = s_OpenDyslexicFont;

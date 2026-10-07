@@ -15,12 +15,12 @@ Vulkan SDK
   License: Apache 2.0
   https://www.vulkan.org/
 
-Jolt Physics v5.2.0
+Jolt Physics v5.6.0
   Copyright (c) 2021 Jorrit Rouwe
   License: MIT
   https://github.com/jrouwe/JoltPhysics
 
-Box2D v3.0.0
+Box2D v3.1.1
   Copyright (c) 2023 Erin Catto
   License: MIT
   https://github.com/erincatto/box2d

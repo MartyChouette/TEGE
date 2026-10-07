@@ -642,7 +642,7 @@ void EditorLayer::DrawHubRecentSidebar(ImDrawList* dl, const ImVec2& area, f32 c
             dl->AddRectFilled(rPos, ImVec2(rPos.x + 3.0f, rEnd.y), accentCol, 6.0f, ImDrawFlags_RoundCornersLeft);
 
             if (hovered)
-                dl->AddRect(rPos, rEnd, accentCol, 6.0f, 0, 1.5f);
+                dl->AddRect(rPos, rEnd, accentCol, 6.0f, 1.5f, 0);
 
             // Display name (truncated for sidebar width)
             std::filesystem::path fsPath(m_EditorSettings.recentProjects[i]);
@@ -987,7 +987,7 @@ void EditorLayer::DrawHubLandingPage(ImDrawList* dl, const ImVec2& area, f32 /*c
 
                 // Border: theme accent on hover
                 if (hovered)
-                    cdl->AddRect(cMin, cMax, hubAccentStrong, 8.0f, 0, 2.0f);
+                    cdl->AddRect(cMin, cMax, hubAccentStrong, 8.0f, 2.0f, 0);
                 else
                     cdl->AddRect(cMin, cMax, IM_COL32(40, 45, 60, missing ? 80u : 150u), 8.0f);
 
@@ -1699,7 +1699,7 @@ void EditorLayer::DrawHubWizardTemplate(ImDrawList* dl, const ImVec2& area, f32 
                 u8 gb = static_cast<u8>(accent.z * 255);
                 gridDl->AddRect(ImVec2(cardPos.x - 1, cardPos.y - 1),
                     ImVec2(cardEnd.x + 1, cardEnd.y + 1),
-                    IM_COL32(gr, gg, gb, 60), 10.0f, 0, 3.0f);
+                    IM_COL32(gr, gg, gb, 60), 10.0f, 3.0f, 0);
             }
         } else {
             gridDl->AddRectFilled(cardPos, cardEnd, Theme::PanelBgDark, 8.0f);
@@ -1718,7 +1718,7 @@ void EditorLayer::DrawHubWizardTemplate(ImDrawList* dl, const ImVec2& area, f32 
 
             ImU32 borderCol = selected ? IM_COL32(140, 165, 230, 255) :
                              (hovered  ? accentCol : IM_COL32(55, 60, 75, 130));
-            gridDl->AddRect(cardPos, cardEnd, borderCol, 8.0f, 0, selected ? 2.5f : (hovered ? 2.0f : 1.0f));
+            gridDl->AddRect(cardPos, cardEnd, borderCol, 8.0f, selected ? 2.5f : (hovered ? 2.0f : 1.0f), 0);
         } else {
             ImU32 mutedAccent = IM_COL32(
                 (int)(accent.x * 80), (int)(accent.y * 80),
@@ -1727,7 +1727,7 @@ void EditorLayer::DrawHubWizardTemplate(ImDrawList* dl, const ImVec2& area, f32 
             ImVec2 thumbMax(cardEnd.x - 1, cardPos.y + 200.0f);
             DrawTemplateThumbnail(gridDl, s_BuiltinTemplates[i].id.c_str(), thumbMin, thumbMax, accent, false);
             gridDl->AddRectFilled(cardPos, ImVec2(cardEnd.x, cardPos.y + 3.0f), mutedAccent, 8.0f, ImDrawFlags_RoundCornersTop);
-            gridDl->AddRect(cardPos, cardEnd, IM_COL32(45, 48, 58, 120), 8.0f, 0, 1.0f);
+            gridDl->AddRect(cardPos, cardEnd, IM_COL32(45, 48, 58, 120), 8.0f, 1.0f, 0);
         }
 
         if (selected && isStable) {
@@ -1781,7 +1781,7 @@ void EditorLayer::DrawHubWizardTemplate(ImDrawList* dl, const ImVec2& area, f32 
             ImVec2 pillMax(pillMin.x + pillW, pillMin.y + pillH);
             f32 pillRound = pillH * 0.5f;  // full round = pill shape
             gridDl->AddRectFilled(pillMin, pillMax, tierCol, pillRound);
-            gridDl->AddRect(pillMin, pillMax, tierBorderCol, pillRound, 0, 1.0f);
+            gridDl->AddRect(pillMin, pillMax, tierBorderCol, pillRound, 1.0f, 0);
             ImVec2 tierPos(pillMin.x + pillPadX, pillMin.y + pillPadY);
             gridDl->AddText(tierPos, isStable ? IM_COL32(255, 255, 255, 245) : IM_COL32(180, 180, 180, 140), tierLabel);
         }
@@ -1844,7 +1844,7 @@ void EditorLayer::DrawHubWizardTemplate(ImDrawList* dl, const ImVec2& area, f32 
         if (hovered) {
             gridDl->AddRect(ImVec2(cardPos.x - 1, cardPos.y - 1),
                 ImVec2(cardEnd.x + 1, cardEnd.y + 1),
-                IM_COL32(0, 200, 180, 60), 10.0f, 0, 3.0f);
+                IM_COL32(0, 200, 180, 60), 10.0f, 3.0f, 0);
         }
 
         ImU32 accentCol = (hovered || selected) ? IM_COL32(0, 200, 180, 255) : IM_COL32(0, 200, 180, 150);
@@ -1857,7 +1857,7 @@ void EditorLayer::DrawHubWizardTemplate(ImDrawList* dl, const ImVec2& area, f32 
 
         ImU32 borderCol = selected ? IM_COL32(0, 220, 200, 255) :
                          (hovered  ? accentCol : IM_COL32(55, 60, 75, 130));
-        gridDl->AddRect(cardPos, cardEnd, borderCol, 8.0f, 0, selected ? 2.5f : (hovered ? 2.0f : 1.0f));
+        gridDl->AddRect(cardPos, cardEnd, borderCol, 8.0f, selected ? 2.5f : (hovered ? 2.0f : 1.0f), 0);
 
         if (selected) {
             const char* check = "✓";
@@ -3353,7 +3353,7 @@ void EditorLayer::DrawTemplateCreatorWindow() {
         ImGui::Combo("Category", &m_TmplCategory, categoryNames, IM_ARRAYSIZE(categoryNames));
 
         ImGui::ColorEdit4("Accent Color", m_TmplAccentColor,
-                          ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_AlphaPreview);
+                          ImGuiColorEditFlags_NoInputs);
 
         ImGui::InputText("Thumbnail (PNG)", m_TmplThumbnailPath, sizeof(m_TmplThumbnailPath));
         if (ImGui::IsItemHovered()) {

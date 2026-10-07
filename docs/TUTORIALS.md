@@ -516,7 +516,7 @@ Set up tile rules for automatic neighbor-aware tile selection. The editor matche
 
 ### Enabling Box2D
 
-Box2D v3.0.0 is enabled by default (`ENJIN_PHYSICS_BOX2D=ON` in CMake). The engine auto-selects Box2D for 2D project modes.
+Box2D v3.1.1 is enabled by default (`ENJIN_PHYSICS_BOX2D=ON` in CMake). The engine auto-selects Box2D for 2D project modes.
 
 ### Adding Physics Bodies
 

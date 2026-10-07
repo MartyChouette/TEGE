@@ -44,7 +44,7 @@ static void DrawRoundedRectBorder(ImDrawList* dl, const UIRect& rect, ImU32 colo
     dl->AddRect(
         ImVec2(rect.x, rect.y),
         ImVec2(rect.x + rect.w, rect.y + rect.h),
-        color, radius, 0, thickness);
+        color, radius, thickness, 0);
 }
 
 // The face the element being drawn asked for, resolved once per element by

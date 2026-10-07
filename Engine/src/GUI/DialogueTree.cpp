@@ -731,9 +731,9 @@ namespace Enjin::GUI {
 
         // Selection border (yellow) or warning border (red) or normal border
         if (isSelected) {
-            drawList->AddRect(nodeMin, nodeMax, IM_COL32(255, 255, 100, 255), 4.0f * m_Zoom, 0, 2.0f * m_Zoom);
+            drawList->AddRect(nodeMin, nodeMax, IM_COL32(255, 255, 100, 255), 4.0f * m_Zoom, 2.0f * m_Zoom, 0);
         } else if (hasWarning) {
-            drawList->AddRect(nodeMin, nodeMax, IM_COL32(255, 60, 60, 200), 4.0f * m_Zoom, 0, 2.0f * m_Zoom);
+            drawList->AddRect(nodeMin, nodeMax, IM_COL32(255, 60, 60, 200), 4.0f * m_Zoom, 2.0f * m_Zoom, 0);
         } else {
             drawList->AddRect(nodeMin, nodeMax, IM_COL32(80, 80, 80, 255), 4.0f * m_Zoom);
         }

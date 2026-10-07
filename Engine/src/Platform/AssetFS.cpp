@@ -47,8 +47,14 @@ bool HasPrefix(const std::string& s, const std::string& prefix) {
     return true;
 }
 
+// Paths arrive as UTF-8. std::filesystem::u8path did this conversion and is
+// deprecated in C++20; a char8_t string is the replacement.
+std::filesystem::path Utf8Path(const std::string& path) {
+    return std::filesystem::path(std::u8string(path.begin(), path.end()));
+}
+
 bool ReadDisk(const std::string& path, std::vector<u8>& out) {
-    std::ifstream in(std::filesystem::u8path(path), std::ios::binary | std::ios::ate);
+    std::ifstream in(Utf8Path(path), std::ios::binary | std::ios::ate);
     if (!in) return false;
     const std::streamoff size = in.tellg();
     if (size < 0) return false;
@@ -131,7 +137,7 @@ bool Exists(const std::string& path) {
         if (contains && contains(vpath)) return true;
     }
     std::error_code ec;
-    return std::filesystem::is_regular_file(std::filesystem::u8path(path), ec);
+    return std::filesystem::is_regular_file(Utf8Path(path), ec);
 }
 
 } // namespace Enjin::Platform::AssetFS

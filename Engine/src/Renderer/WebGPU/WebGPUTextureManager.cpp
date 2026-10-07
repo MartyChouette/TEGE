@@ -5,7 +5,7 @@
 #include "Enjin/Renderer/WebGPU/WebGPUTextureManager.h"
 #include "Enjin/Logging/Log.h"
 
-#define STB_IMAGE_IMPLEMENTATION
+// stb_image is compiled once, in Core (StbImageImpl.cpp).
 #include "stb_image.h"
 
 namespace Enjin::Renderer {

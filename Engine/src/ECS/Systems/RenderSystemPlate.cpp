@@ -33,7 +33,7 @@
 
 #include <array>
 
-// The implementation lives in VulkanImage.cpp; this is a plain declaration
+// The implementation lives in Core's StbImageImpl.cpp; this is a plain declaration
 // include, so no STB_IMAGE_IMPLEMENTATION and no STB_IMAGE_STATIC here.
 #include "stb_image.h"
 

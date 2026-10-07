@@ -29,7 +29,7 @@ jobs:
     runs-on: windows-2022
     timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Components stay headers+loader: asking this action for Glslang builds
       # it from source with BUILD_EXTERNAL=OFF, and glslang then refuses to
@@ -38,7 +38,7 @@ jobs:
       - name: Install Vulkan SDK
         uses: humbletim/setup-vulkan-sdk@v1.2.1
         with:
-          vulkan-query-version: 1.3.283.0
+          vulkan-query-version: 1.4.335.0
           vulkan-components: Vulkan-Headers, Vulkan-Loader
           vulkan-use-cache: true
 
@@ -71,7 +71,7 @@ jobs:
       # the CMake files that choose the versions; change one and the cache
       # rebuilds.
       - name: Cache fetched dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: build/_deps
           key: deps-windows-${{ hashFiles('Engine/CMakeLists.txt', 'CMakeLists.txt', 'Core/CMakeLists.txt') }}
@@ -265,7 +265,7 @@ jobs:
 
       - name: Upload harness captures
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: harness-captures
           path: harness_out/*.png
@@ -500,7 +500,7 @@ jobs:
 
       - name: Upload the built installer
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-installer
           path: installer/output/TEGESetup-*.exe
@@ -508,7 +508,7 @@ jobs:
           retention-days: 14
       - name: Upload golden capture
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: golden-capture
           path: |
@@ -523,7 +523,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install dependencies
         # Same package set the port was validated against (Ubuntu 24.04, GCC 13).
@@ -541,7 +541,7 @@ jobs:
             vulkan-tools vulkan-validationlayers xvfb zenity glslang-tools
 
       - name: Cache fetched dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: build-linux/_deps
           key: deps-linux-${{ hashFiles('Engine/CMakeLists.txt', 'CMakeLists.txt', 'Core/CMakeLists.txt') }}
@@ -791,7 +791,7 @@ jobs:
           ls -lh tege-linux-x86_64.tar.gz
 
       - name: Upload Linux build
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: tege-linux-x86_64
           path: tege-linux-x86_64.tar.gz
@@ -799,7 +799,7 @@ jobs:
 
       - name: Upload golden capture
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: golden-capture-linux
           path: |
@@ -837,7 +837,7 @@ jobs:
         # both are set), so they get one build each.
         sanitizer: [address, thread]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install dependencies
         run: |
@@ -847,7 +847,7 @@ jobs:
             libxcursor-dev libxi-dev libcurl4-openssl-dev
 
       - name: Cache fetched dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: build-san-${{ matrix.sanitizer }}/_deps
           key: deps-san-${{ matrix.sanitizer }}-${{ hashFiles('Engine/CMakeLists.txt', 'CMakeLists.txt', 'Core/CMakeLists.txt') }}
@@ -891,7 +891,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # The WGSL in WebShaderData.h is compiled by the BROWSER at run time, so a
       # green Emscripten build says nothing about it: a syntax error, a type
@@ -899,9 +899,9 @@ jobs:
       # as a build failure. This step runs Dawn — the same compiler Chrome uses —
       # over the same source. Dawn's node bindings ship prebuilt and fall back to
       # a software device, which is why the two graphics packages are enough.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 24
 
       - name: Install shader-check dependencies
         run: |
@@ -909,7 +909,7 @@ jobs:
           sudo apt-get install -y -qq libvulkan1 mesa-vulkan-drivers
 
       - name: Cache shader-check node modules
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: tools/node_modules
           key: wgslcheck-${{ hashFiles('tools/package.json') }}
@@ -998,13 +998,13 @@ jobs:
         run: python tools/gen_scripting_api.py --check
 
       - name: Install Emscripten
-        uses: mymindstorm/setup-emsdk@v14
+        uses: emscripten-core/setup-emsdk@v16
         with:
-          version: 5.0.5   # matches the local D:/emsdk toolchain
+          version: 6.0.11   # matches the local D:/emsdk toolchain
           actions-cache-folder: emsdk-cache
 
       - name: Cache fetched dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: build-web-ci/_deps
           key: deps-web-${{ hashFiles('Engine/CMakeLists.txt', 'CMakeLists.txt', 'Core/CMakeLists.txt') }}
@@ -1052,7 +1052,7 @@ jobs:
 
       - name: Upload the web render
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: web-render
           path: web-render.png

@@ -11,12 +11,19 @@ namespace Enjin {
 namespace Editor {
 namespace UI {
 
+// Right edge of the content region as an X in window-local coordinates: the
+// value SameLine() and SetCursorPosX() take. This is what the obsolete
+// ImGui::GetContentRegionMax().x and GetWindowContentRegionMax().x returned.
+inline float ContentRegionRightX() {
+    return ImGui::GetCursorScreenPos().x + ImGui::GetContentRegionAvail().x - ImGui::GetWindowPos().x;
+}
+
 // CollapsingHeader in the section typeface (H2). Drop-in replacement: same
 // ID, same return, context menus attached to the item keep working. This is
 // what gives panels a type hierarchy instead of walls of body text.
 inline bool SectionHeader(const char* label, ImGuiTreeNodeFlags flags = 0) {
     ImFont* f = GUI::ImGuiLayer::SectionFont();
-    if (f) ImGui::PushFont(f);
+    if (f) ImGui::PushFont(f, f->LegacySize);
     bool open = ImGui::CollapsingHeader(label, flags);
     if (f) ImGui::PopFont();
     return open;
@@ -27,7 +34,7 @@ inline bool SectionHeader(const char* label, ImGuiTreeNodeFlags flags = 0) {
 inline void SectionLabel(const char* label) {
     ImGui::Spacing();
     ImFont* f = GUI::ImGuiLayer::SectionFont();
-    if (f) ImGui::PushFont(f);
+    if (f) ImGui::PushFont(f, f->LegacySize);
     ImGui::TextDisabled("%s", label);
     if (f) ImGui::PopFont();
 }

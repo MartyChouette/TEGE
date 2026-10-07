@@ -290,8 +290,8 @@ void Box2DBackend::CreateBodyForEntity(ECS::Entity entity) {
     b2ShapeDef shapeDef = b2DefaultShapeDef();
     // P6 fix: Clamp material properties to valid ranges
     shapeDef.density = std::max(body2d->material.density, 0.0f);
-    shapeDef.friction = std::clamp(body2d->material.friction, 0.0f, 1.0f);
-    shapeDef.restitution = std::clamp(body2d->material.restitution, 0.0f, 1.0f);
+    shapeDef.material.friction = std::clamp(body2d->material.friction, 0.0f, 1.0f);
+    shapeDef.material.restitution = std::clamp(body2d->material.restitution, 0.0f, 1.0f);
     shapeDef.isSensor = body2d->isSensor;
     // Box2D v3 sensor event flags:
     // - Sensor shapes MUST have enableSensorEvents=true to generate begin/end events
@@ -302,7 +302,7 @@ void Box2DBackend::CreateBodyForEntity(ECS::Entity entity) {
     shapeDef.enableSensorEvents = body2d->isSensor || !body2d->isStatic;
     shapeDef.enableContactEvents = !body2d->isSensor;
 
-    // Collision filtering (v3.0.0 uses uint32_t)
+    // Collision filtering
     shapeDef.filter.categoryBits = body2d->categoryBits;
     shapeDef.filter.maskBits = body2d->collisionMask;
 
@@ -319,7 +319,7 @@ void Box2DBackend::CreateBodyForEntity(ECS::Entity entity) {
             f32 hx = std::max(body2d->box.halfExtents.x, 0.01f);
             f32 hy = std::max(body2d->box.halfExtents.y, 0.01f);
             b2Polygon box = b2MakeOffsetBox(hx, hy,
-                ToBox2D(body2d->box.offset), body2d->box.rotation);
+                ToBox2D(body2d->box.offset), b2MakeRot(body2d->box.rotation));
             b2CreatePolygonShape(bodyId, &shapeDef, &box);
             break;
         }
@@ -405,8 +405,8 @@ void Box2DBackend::CreateBodyForEntity(ECS::Entity entity) {
                 shapeDef.filter.categoryBits = meshCol->categoryBits;
                 shapeDef.filter.maskBits = meshCol->collisionMask;
                 shapeDef.isSensor = meshCol->isTrigger;
-                shapeDef.friction = std::clamp(meshCol->friction, 0.0f, 1.0f);
-                shapeDef.restitution = std::clamp(meshCol->bounciness, 0.0f, 1.0f);
+                shapeDef.material.friction = std::clamp(meshCol->friction, 0.0f, 1.0f);
+                shapeDef.material.restitution = std::clamp(meshCol->bounciness, 0.0f, 1.0f);
                 b2Polygon poly = b2MakePolygon(&hull, 0.0f);
                 b2CreatePolygonShape(bodyId, &shapeDef, &poly);
             } else {

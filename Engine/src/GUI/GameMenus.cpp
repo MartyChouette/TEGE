@@ -261,7 +261,7 @@ void GameMenuSystem::RenderMainMenu(f32 w, f32 h) {
     draw->AddRectFilled(ImVec2(cardX, cardY), ImVec2(cardX + cardW, cardY + cardH),
         IM_COL32(20, 24, 38, 245), 14.0f);
     draw->AddRect(ImVec2(cardX, cardY), ImVec2(cardX + cardW, cardY + cardH),
-        IM_COL32(65, 80, 120, 200), 14.0f, 0, 1.5f);
+        IM_COL32(65, 80, 120, 200), 14.0f, 1.5f, 0);
 
     ImGui::SetNextWindowPos(ImVec2(cardX, cardY + 24.0f));
     ImGui::SetNextWindowSize(ImVec2(cardW, cardH - 24.0f));
@@ -271,7 +271,7 @@ void GameMenuSystem::RenderMainMenu(f32 w, f32 h) {
         ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoSavedSettings);
 
     // Title
-    ImGui::PushFont(nullptr); // use default; engine may push a large font externally
+    ImGui::PushFont(nullptr, 0.0f); // keep font and size; engine may push a large font externally
     {
         ImVec2 titleSize = ImGui::CalcTextSize(m_GameTitle.c_str());
         ImGui::SetCursorPosX((cardW - titleSize.x) * 0.5f);

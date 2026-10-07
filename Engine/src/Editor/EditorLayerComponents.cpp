@@ -3273,7 +3273,7 @@ void EditorLayer::DrawCameraTriggerComponent(ECS::Entity entity) {
             }
         }
 
-        ImGui::SetNextItemWidth(200 * ImGui::GetIO().FontGlobalScale);
+        ImGui::SetNextItemWidth(200 * ImGui::GetStyle().FontScaleMain);
         if (ImGui::BeginCombo("Target Camera", currentName.c_str())) {
             // None option
             if (ImGui::Selectable("(None)", trigger->targetCamera == ECS::INVALID_ENTITY)) {
@@ -5491,7 +5491,7 @@ void EditorLayer::DrawSprite2DComponent(ECS::Entity entity) {
                     ImVec2 previewSize(texW * scale, texH * scale);
 
                     ImVec2 imgPos = ImGui::GetCursorScreenPos();
-                    ImGui::Image(texId, previewSize);
+                    ImGui::Image(static_cast<ImTextureID>(reinterpret_cast<uintptr_t>(texId)), previewSize);
 
                     // Draw source rect overlay if set
                     if (sprite->srcWidth > 0 && sprite->srcHeight > 0) {
@@ -5501,7 +5501,7 @@ void EditorLayer::DrawSprite2DComponent(ECS::Entity entity) {
                         f32 rw = (sprite->srcWidth / texW) * previewSize.x;
                         f32 rh = (sprite->srcHeight / texH) * previewSize.y;
                         drawList->AddRect(ImVec2(rx, ry), ImVec2(rx + rw, ry + rh),
-                                          Theme::GizmoX, 0.0f, 0, 2.0f);
+                                          Theme::GizmoX, 0.0f, 2.0f, 0);
                     }
 
                     ImGui::Text("Texture: %ux%u", tex->GetWidth(), tex->GetHeight());
@@ -5537,7 +5537,7 @@ void EditorLayer::DrawSprite2DComponent(ECS::Entity entity) {
                 ImVec2 sheetSize(texW * sheetScale, texH * sheetScale);
 
                 ImVec2 sheetPos = ImGui::GetCursorScreenPos();
-                ImGui::Image(texId, sheetSize);
+                ImGui::Image(static_cast<ImTextureID>(reinterpret_cast<uintptr_t>(texId)), sheetSize);
 
                 // Draw grid overlay and handle clicks
                 ImDrawList* drawList = ImGui::GetWindowDrawList();
@@ -5567,7 +5567,7 @@ void EditorLayer::DrawSprite2DComponent(ECS::Entity entity) {
                     drawList->AddRectFilled(ImVec2(selX, selY), ImVec2(selX + selW, selY + selH),
                                             IM_COL32(50, 150, 255, 60));
                     drawList->AddRect(ImVec2(selX, selY), ImVec2(selX + selW, selY + selH),
-                                      IM_COL32(50, 150, 255, 255), 0.0f, 0, 2.0f);
+                                      IM_COL32(50, 150, 255, 255), 0.0f, 2.0f, 0);
                 }
 
                 // Click to select frame
@@ -5819,7 +5819,7 @@ void EditorLayer::DrawAnimatedSprite2DComponent(ECS::Entity entity) {
                 ImVec2 uv0(frame.srcX / tw, frame.srcY / th);
                 ImVec2 uv1((frame.srcX + fw) / tw, (frame.srcY + fh) / th);
 
-                ImGui::Image(texId, ImVec2(64, 64), uv0, uv1);
+                ImGui::Image(static_cast<ImTextureID>(reinterpret_cast<uintptr_t>(texId)), ImVec2(64, 64), uv0, uv1);
                 ImGui::SameLine();
                 ImGui::BeginGroup();
                 ImGui::Text("Frame %u/%zu", frameIdx + 1, anim->frames.size());
@@ -6079,7 +6079,7 @@ void EditorLayer::DrawTilemapComponent(ECS::Entity entity) {
                     ImVec2 paletteSize(texW * paletteScale, texH * paletteScale);
 
                     ImVec2 palPos = ImGui::GetCursorScreenPos();
-                    ImGui::Image(texId, paletteSize);
+                    ImGui::Image(static_cast<ImTextureID>(reinterpret_cast<uintptr_t>(texId)), paletteSize);
 
                     // Grid overlay on palette
                     ImDrawList* drawList = ImGui::GetWindowDrawList();
@@ -6108,7 +6108,7 @@ void EditorLayer::DrawTilemapComponent(ECS::Entity entity) {
                         drawList->AddRectFilled(ImVec2(sx, sy), ImVec2(sx + cellW, sy + cellH),
                                                 IM_COL32(50, 150, 255, 60));
                         drawList->AddRect(ImVec2(sx, sy), ImVec2(sx + cellW, sy + cellH),
-                                          IM_COL32(50, 150, 255, 255), 0.0f, 0, 2.0f);
+                                          IM_COL32(50, 150, 255, 255), 0.0f, 2.0f, 0);
                     }
 
                     // Click palette to select brush tile
@@ -6183,7 +6183,7 @@ void EditorLayer::DrawTilemapComponent(ECS::Entity entity) {
                 f32 hx = gridOrigin.x + col * cellSize;
                 f32 hy = gridOrigin.y + row * cellSize;
                 drawList->AddRect(ImVec2(hx, hy), ImVec2(hx + cellSize, hy + cellSize),
-                                  IM_COL32(255, 255, 0, 200), 0.0f, 0, 2.0f);
+                                  IM_COL32(255, 255, 0, 200), 0.0f, 2.0f, 0);
 
                 if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
                     tilemap->SetTile(col, row, m_TileBrushIndex);
@@ -10458,8 +10458,7 @@ void EditorLayer::DrawCameraFrustum(ECS::Entity cameraEntity) {
         drawList->AddRect(
             ImVec2(screenCamPos.x - iconSize, screenCamPos.y - iconSize),
             ImVec2(screenCamPos.x + iconSize, screenCamPos.y + iconSize),
-            Theme::TextWhite, 0.0f, 0, 1.0f
-        );
+            Theme::TextWhite, 0.0f, 1.0f, 0);
     }
 }
 

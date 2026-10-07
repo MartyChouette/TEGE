@@ -6,10 +6,10 @@ not upstream's.
 
 | Library | Upstream | Pinned version |
 |---|---|---|
-| imgui | https://github.com/ocornut/imgui | 60d7fb207eeb46d6363dd4bde10b35991bae0ce7 (docking-era master, 2026-02) |
+| imgui | https://github.com/ocornut/imgui | v1.92.9b-docking (b48d1afbe8ee8b238e2961dc363a949dd7304e23) |
 | angelscript | https://www.angelcode.com/angelscript/ | SDK vendored 2026 (see source/as_config.h ANGELSCRIPT_VERSION) |
 | nanosvg | https://github.com/memononen/nanosvg | vendored 2026 |
-| imguizmo | https://github.com/CedricGuillemet/ImGuizmo | vendored 2026 |
+| imguizmo | https://github.com/CedricGuillemet/ImGuizmo | 1.10 (b796ac3b861afc6e91ca74e4611effd9c9527367), `src/ImGuizmo.{h,cpp}` only |
 
 ## Updating imgui
 
@@ -22,3 +22,9 @@ IMGUI_IMPL_VULKAN_HAS_COLOR_ATTACHMENT_COUNT guard still detects it.
 The original working clone's .git was parked as `imgui/.git-local` (ignored) so
 the exact checkout history is preserved locally without git treating the
 directory as an embedded repo.
+
+## Updating imguizmo
+
+imguizmo carries two local fixes: `patches/imguizmo-rect-and-clip.patch` (a typo in
+SetRect, and the gizmo clipped to its panel). Upstream 1.10 has neither. Copy the
+two files out of upstream `src/` and re-apply the patch.

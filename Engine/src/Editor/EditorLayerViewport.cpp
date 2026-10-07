@@ -467,8 +467,8 @@ void EditorLayer::DrawViewportPanel() {
                 dl->AddCircle(c, s, col, 0, 1.6f);
                 dl->AddTriangleFilled(ImVec2(c.x + s - 3.0f, c.y - 4.0f), ImVec2(c.x + s + 3.0f, c.y - 4.0f), ImVec2(c.x + s, c.y + 1.0f), col);
             } else {
-                dl->AddRect(ImVec2(c.x - s, c.y - s * 0.2f), ImVec2(c.x + s * 0.2f, c.y + s), col, 0.0f, 0, 1.5f);
-                dl->AddRect(ImVec2(c.x - s * 0.2f, c.y - s), ImVec2(c.x + s, c.y + s * 0.2f), col, 0.0f, 0, 1.5f);
+                dl->AddRect(ImVec2(c.x - s, c.y - s * 0.2f), ImVec2(c.x + s * 0.2f, c.y + s), col, 0.0f, 1.5f, 0);
+                dl->AddRect(ImVec2(c.x - s * 0.2f, c.y - s), ImVec2(c.x + s, c.y + s * 0.2f), col, 0.0f, 1.5f, 0);
             }
             return clicked;
         };
@@ -2065,7 +2065,7 @@ VkDescriptorSet EditorLayer::GetImGuiTexture(const std::string& path) {
     if (!tex || !tex->IsValid()) return VK_NULL_HANDLE;
 
     VkDescriptorSet ds = ImGui_ImplVulkan_AddTexture(
-        tex->GetSampler(), tex->GetImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        tex->GetImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     if (ds != VK_NULL_HANDLE) {
         m_ImGuiTextureCache[path] = ds;
     }
@@ -2095,7 +2095,7 @@ VkDescriptorSet EditorLayer::GetAssetThumbnail(const std::string& path) {
 
     // Register with ImGui
     VkDescriptorSet ds = ImGui_ImplVulkan_AddTexture(
-        tex->GetSampler(), tex->GetImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        tex->GetImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     if (ds != VK_NULL_HANDLE) {
         m_ImGuiTextureCache[cacheKey] = ds;
         m_ThumbnailTextures.push_back(tex); // Keep GPU texture alive
@@ -2361,7 +2361,7 @@ void EditorLayer::DrawUIEditorOverlay() {
 
         // Selection outline (cyan, 2px)
         ImU32 selColor = IM_COL32(0, 255, 255, 200);
-        dl->AddRect(ImVec2(r.x, r.y), ImVec2(r.x + r.w, r.y + r.h), selColor, 0.0f, 0, 2.0f);
+        dl->AddRect(ImVec2(r.x, r.y), ImVec2(r.x + r.w, r.y + r.h), selColor, 0.0f, 2.0f, 0);
 
         // 8 resize handles (white squares)
         constexpr f32 hs = 4.0f;

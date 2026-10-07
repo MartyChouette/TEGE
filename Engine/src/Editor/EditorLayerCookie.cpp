@@ -85,7 +85,7 @@ void EditorLayer::DrawCookiePreview(const std::vector<u8>& pixels, u32 res, f32 
 void EditorLayer::DrawCookieCreatorWindow() {
     if (!m_ShowCookieCreator) return;
 
-    const f32 s = ImGui::GetIO().FontGlobalScale;
+    const f32 s = ImGui::GetStyle().FontScaleMain;
     OpenToolPanel(720.0f, 620.0f);
     if (!ImGui::Begin("Light Cookie Creator", &m_ShowCookieCreator)) {
         ImGui::End();
@@ -123,7 +123,7 @@ void EditorLayer::DrawCookieCreatorWindow() {
         if (selected) {
             ImGui::GetWindowDrawList()->AddRect(
                 cursor, ImVec2(cursor.x + thumb, cursor.y + thumb),
-                Theme::SwatchSelected, 0.0f, 0, 2.0f * s);
+                Theme::SwatchSelected, 0.0f, 2.0f * s, 0);
         }
         // An invisible button over the thumbnail, so the picture is the control.
         ImGui::SetCursorScreenPos(cursor);

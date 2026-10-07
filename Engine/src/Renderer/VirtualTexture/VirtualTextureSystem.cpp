@@ -9,7 +9,7 @@
 #include <cmath>
 
 // stb_image for page loading — declarations only. The implementation lives in
-// VulkanImage.cpp's TU with EXTERNAL linkage (no STB_IMAGE_STATIC there), so we
+// Core's StbImageImpl.cpp with EXTERNAL linkage (no STB_IMAGE_STATIC there), so we
 // link against those symbols. Defining STB_IMAGE_IMPLEMENTATION here too emitted
 // duplicate stbi_* symbols across both objects (LNK4006).
 #include "stb_image.h"

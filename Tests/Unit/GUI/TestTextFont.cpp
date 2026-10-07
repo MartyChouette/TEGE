@@ -142,7 +142,9 @@ ENJIN_TEST(TextSpacing, SpacingWidensALineAndIsExactlyAddTextWhenOff) {
     ImGuiContext* ctx = ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
     ImFont* font = io.Fonts->AddFontDefault();
-    io.Fonts->Build();
+    // No renderer here. Saying we can take texture updates is what lets imgui
+    // rasterise glyphs on demand; ImFontAtlas::Build() is obsolete since 1.92.
+    io.BackendFlags |= ImGuiBackendFlags_RendererHasTextures;
     io.DisplaySize = ImVec2(800.0f, 600.0f);
 
     GUI::SetTextLetterSpacing(0.0f);

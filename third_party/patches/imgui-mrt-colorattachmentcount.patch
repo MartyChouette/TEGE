@@ -9,15 +9,16 @@ extra attachments get colorWriteMask=0) plus the feature macro
 IMGUI_IMPL_VULKAN_HAS_COLOR_ATTACHMENT_COUNT. ImGuiLayer.cpp only uses the field
 behind that macro, so a stock backend still compiles (but re-emits the error).
 
-third_party/imgui is an untracked nested git clone, so this patch is the only
-versioned copy. Re-apply after updating/re-cloning imgui:
+Regenerated against v1.92.9b-docking on 2026-10-06 (the header hunk no longer
+applied: the pool-size macros above the struct were renamed upstream).
+Re-apply after updating imgui:
 
     git -C third_party/imgui apply ../patches/imgui-mrt-colorattachmentcount.patch
 diff --git a/backends/imgui_impl_vulkan.cpp b/backends/imgui_impl_vulkan.cpp
-index 1d61e01f1..76db8523a 100644
+index 857e358..0513c25 100644
 --- a/backends/imgui_impl_vulkan.cpp
 +++ b/backends/imgui_impl_vulkan.cpp
-@@ -1023,7 +1023,13 @@ static VkPipeline ImGui_ImplVulkan_CreatePipeline(VkDevice device, const VkAlloc
+@@ -1054,7 +1054,13 @@ static VkPipeline ImGui_ImplVulkan_CreatePipeline(VkDevice device, const VkAlloc
      ms_info.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
      ms_info.rasterizationSamples = (info->MSAASamples != 0) ? info->MSAASamples : VK_SAMPLE_COUNT_1_BIT;
  
@@ -32,7 +33,7 @@ index 1d61e01f1..76db8523a 100644
      color_attachment[0].blendEnable = VK_TRUE;
      color_attachment[0].srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
      color_attachment[0].dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-@@ -1038,7 +1044,7 @@ static VkPipeline ImGui_ImplVulkan_CreatePipeline(VkDevice device, const VkAlloc
+@@ -1069,7 +1075,7 @@ static VkPipeline ImGui_ImplVulkan_CreatePipeline(VkDevice device, const VkAlloc
  
      VkPipelineColorBlendStateCreateInfo blend_info = {};
      blend_info.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
@@ -42,11 +43,11 @@ index 1d61e01f1..76db8523a 100644
  
      ImVector<VkDynamicState> dynamic_states = info->ExtraDynamicStates;
 diff --git a/backends/imgui_impl_vulkan.h b/backends/imgui_impl_vulkan.h
-index 503643130..562e3c0b0 100644
+index 3ca126c..3e651f0 100644
 --- a/backends/imgui_impl_vulkan.h
 +++ b/backends/imgui_impl_vulkan.h
-@@ -82,10 +82,15 @@
- #define IMGUI_IMPL_VULKAN_MINIMUM_IMAGE_SAMPLER_POOL_SIZE   (8)     // Minimum per atlas
+@@ -83,10 +83,15 @@
+ #define IMGUI_IMPL_VULKAN_MINIMUM_SAMPLER_POOL_SIZE         (2)     // Minimum for linear + nearest
  
  // Specify settings to create pipeline and swapchain
 +// [Enjin patch] Signals ColorAttachmentCount support so engine code can compile

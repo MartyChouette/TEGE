@@ -2959,7 +2959,7 @@ public:
         ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.04f, 0.05f, 0.07f, 0.92f));
 
         if (ImGui::Begin("##PlayerConsole", nullptr, flags)) {
-            ImGui::SetWindowFontScale(1.2f);
+            ImGui::PushFont(nullptr, ImGui::GetStyle().FontSizeBase * 1.2f);
             ImGui::TextColored(ImVec4(0.6f, 0.8f, 0.6f, 1.0f), "CONSOLE");
             ImGui::SameLine(io.DisplaySize.x - 200);
             ImGui::TextColored(ImVec4(0.4f, 0.45f, 0.5f, 1.0f), "Press ~ to close");
@@ -3025,7 +3025,7 @@ public:
                 ImGui::SetKeyboardFocusHere(-1);
             }
             ImGui::PopItemWidth();
-            ImGui::SetWindowFontScale(1.0f);
+            ImGui::PopFont();
         }
         ImGui::End();
         ImGui::PopStyleColor();
@@ -4860,7 +4860,7 @@ private:
         auto tex = m_RenderSystem->LoadTexture(path);
         if (!tex || !tex->IsValid()) return VK_NULL_HANDLE;
         VkDescriptorSet ds = ImGui_ImplVulkan_AddTexture(
-            tex->GetSampler(), tex->GetImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        tex->GetImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
         if (ds != VK_NULL_HANDLE) m_ImGuiTextureCache[path] = ds;
         return ds;
     }

@@ -17,7 +17,7 @@
 //     IM_COL32, because the swapchain is B8G8R8A8_SRGB and the hardware converts
 //     again. Picking darker constants instead would hide the transfer error in the
 //     numbers.
-//   - io.FontGlobalScale does not reach ImDrawList::AddText, so every hand-drawn
+//   - style.FontScaleMain does not reach ImDrawList::AddText, so every hand-drawn
 //     string passes an explicit size scaled by hand.
 
 #include "Enjin/Editor/EditorLayer.h"
@@ -75,7 +75,7 @@ void EditorLayer::DrawCaptionTrackPanel() {
         return;
     }
 
-    const f32 s = ImGui::GetIO().FontGlobalScale;
+    const f32 s = ImGui::GetStyle().FontScaleMain;
     auto& registry = Assets::DataAssetRegistry::Get();
 
     // --- Which track -------------------------------------------------------

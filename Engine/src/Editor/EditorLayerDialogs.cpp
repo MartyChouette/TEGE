@@ -369,7 +369,7 @@ void EditorLayer::DrawNotifications(f32 deltaTime) {
     if (m_Notifications.empty()) return;
 
     ImGuiIO& io = ImGui::GetIO();
-    // Everything scales with the editor UI scale — the font does (io.FontGlobalScale), so
+    // Everything scales with the editor UI scale — the font does (style.FontScaleMain), so
     // the box, padding and text offsets must too, or the (larger) glyphs overflow a fixed
     // box and the icon collides with the message.
     const f32 s = m_EditorSettings.uiScale > 0.0f ? m_EditorSettings.uiScale : 1.0f;
@@ -3560,9 +3560,9 @@ void EditorLayer::DrawQuitFeedbackDialog() {
         ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_AlwaysAutoResize)) {
 
         // ── Header: larger accented title + a light subtitle ──
-        ImGui::SetWindowFontScale(1.55f);
+        ImGui::PushFont(nullptr, ImGui::GetStyle().FontSizeBase * 1.55f);
         ImGui::TextColored(accent, "Before you go...");
-        ImGui::SetWindowFontScale(1.0f);
+        ImGui::PopFont();
         ImGui::TextDisabled("A few seconds of feedback helps shape TEGE. Totally optional.");
         ImGui::Dummy(ImVec2(0, 6));
         ImGui::Separator();

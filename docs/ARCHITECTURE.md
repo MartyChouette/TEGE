@@ -258,8 +258,8 @@ Alternative render path: geometry-only pass writes triangle ID + instance ID to 
 | `ENJIN_VRS` | OFF | Variable Rate Shading (`VK_KHR_fragment_shading_rate`) |
 | `ENJIN_VIRTUAL_TEXTURING` | OFF | Page-based virtual texture streaming |
 | `ENJIN_VISIBILITY_BUFFER` | OFF | Visibility buffer with deferred material resolve |
-| `ENJIN_PHYSICS_JOLT` | ON | Jolt Physics v5.2.0 (3D) |
-| `ENJIN_PHYSICS_BOX2D` | ON | Box2D v3.0.0 (2D) |
+| `ENJIN_PHYSICS_JOLT` | ON | Jolt Physics v5.6.0 (3D) |
+| `ENJIN_PHYSICS_BOX2D` | ON | Box2D v3.1.1 (2D) |
 | ~~`ENJIN_PHYSICS_SIMPLE`~~ | — | Removed (legacy backend retired) |
 | `ENJIN_RAYTRACING_OIDN` | — | Intel Open Image Denoise support |
 | `ENJIN_RAYTRACING_OPTIX` | — | NVIDIA OptiX denoiser support |
@@ -358,12 +358,12 @@ Alternative render path: geometry-only pass writes triangle ID + instance ID to 
 **Backend Abstraction** (pluggable physics engines):
 - `IPhysicsBackend` — abstract 3D interface (SetWorld, Update, Raycast, MoveAndSlide, collision events, etc.)
 - `IPhysicsBackend2D` — abstract 2D interface (Initialize, Update, Raycast2D, OverlapCircle, collision callbacks, CCD)
-- `JoltBackend` — Jolt Physics v5.2.0 backend (see below)
+- `JoltBackend` — Jolt Physics v5.6.0 backend (see below)
 - `PhysicsBackendFactory` — `CreatePhysicsBackend(type, mode)` creates backend by `PhysicsBackendType` (Auto/Jolt/Box2D) and `ProjectMode`. When `ENJIN_PHYSICS_JOLT=ON`, Auto selects Jolt for 3D/Mixed modes
-- CMake options: `ENJIN_PHYSICS_JOLT` (Jolt v5.2.0), `ENJIN_PHYSICS_BOX2D` (Box2D v3.0.0) — both ON by default
+- CMake options: `ENJIN_PHYSICS_JOLT` (Jolt v5.6.0), `ENJIN_PHYSICS_BOX2D` (Box2D v3.1.1) — both ON by default
 - PlayMode and Player own physics via `unique_ptr<IPhysicsBackend>`; all consumers accept `IPhysicsBackend*`
 
-**JoltBackend** (production-grade 3D physics via Jolt v5.2.0):
+**JoltBackend** (production-grade 3D physics via Jolt v5.6.0):
 - Full ECS↔Jolt body synchronization: per-frame reconciliation creates/destroys/updates Jolt bodies from ECS state
 - Body creation: Box/Sphere/Capsule shapes from collider components, center offset via `RotatedTranslatedShape`, capsule X/Z rotation
 - RigidbodyComponent mapping: mass, drag/angular drag → damping, gravity scale, freeze axes → `AllowedDOFs`, CCD → `LinearCast`
@@ -388,7 +388,7 @@ Alternative render path: geometry-only pass writes triangle ID + instance ID to 
 
 ### 2D Physics System
 
-**Box2DBackend** (Box2D v3.0.0 — production 2D physics):
+**Box2DBackend** (Box2D v3.1.1 — production 2D physics):
 - Full `IPhysicsBackend2D` implementation
 - Sensor bodies (`Body2DComponent::isSensor = true`): Box2D syncs positions from ECS (not to ECS), enabling collision callbacks for controller/AI/tween-driven entities without Box2D overwriting their positions
 - Bilateral collision filtering (same `categoryBits`/`collisionMask` bitmask as 3D)
@@ -450,7 +450,7 @@ Alternative render path: geometry-only pass writes triangle ID + instance ID to 
 ### Assets & Build System
 
 - `GLTFLoader` - Loads .gltf/.glb files (meshes, materials, skins, animations)
-- `AssimpLoader` - Loads FBX/OBJ/DAE/PLY/VOX via Assimp v5.4.3
+- `AssimpLoader` - Loads FBX/OBJ/DAE/PLY/VOX via Assimp v6.0.5
 - `SceneImporter` - Converts loaded models to ECS entities (auto-detect format)
 - `MeshFactory` - Primitive mesh generation (cube, sphere, plane, cylinder, cone, quad)
 - `BuildPipeline` - Full game export: scan, validate, pack `.enjpak`, copy player, manifest

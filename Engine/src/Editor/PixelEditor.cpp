@@ -519,7 +519,7 @@ void PixelEditor::DrawPalettePanel() {
         bool selected = (m_Palette.selectedIndex == static_cast<i32>(i));
         if (selected) {
             dl->AddRect(pos, ImVec2(pos.x + swatchSize, pos.y + swatchSize),
-                        IM_COL32(255, 255, 0, 255), 0, 0, 2.0f);
+                        IM_COL32(255, 255, 0, 255), 0, 2.0f, 0);
         }
 
         char id[32];

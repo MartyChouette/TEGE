@@ -139,7 +139,7 @@ VkDescriptorSet ParallaxSystem::GetLayerTexture(const std::string& path) {
     }
 
     VkDescriptorSet ds = ImGui_ImplVulkan_AddTexture(
-        tex->GetSampler(), tex->GetImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        tex->GetImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     m_TextureCache[path] = ds;
     return ds;
 }
