@@ -453,4 +453,50 @@ ENJIN_TEST(ProjectSwitch, SavingANewProjectGivesItARoot) {
     ENJIN_EXPECT_TRUE(fs::equivalent(fs::path(sm.GetProjectRoot()), dir, ec));
 }
 
+// File > New Scene added the new scene to the project from two places, so
+// every scene made that way had two rows in the manifest.
+ENJIN_TEST(SceneNormalize, AddSceneDoesNotListTheSameFileTwice) {
+    SceneManager sm;
+    sm.AddScene("Level", "scenes/Level.enjin");
+    sm.AddScene("Level", "scenes/Level.enjin");
+    sm.AddScene("Level", "scenes\\Level.enjin");   // the same file, Windows separators
+    ENJIN_EXPECT_EQ(sm.GetScenes().size(), usize(1));
+
+    sm.AddScene("Other", "scenes/Other.enjin");
+    ENJIN_EXPECT_EQ(sm.GetScenes().size(), usize(2));
+}
+
+// A manifest already holding duplicate rows is repaired when it loads.
+ENJIN_TEST(SceneNormalize, DuplicateRowsForOneFileAreRemoved) {
+    SceneManager sm;
+    sm.GetScenes().push_back(MakeEntry("Combat", 0, true));
+    sm.GetScenes().push_back(MakeEntry("NewScene", 1, false));
+    sm.GetScenes().push_back(MakeEntry("NewScene", 2, false));
+    sm.GetScenes().push_back(MakeEntry("Carnival", 3, false));
+
+    u32 corrections = sm.NormalizeSceneList();
+
+    ENJIN_EXPECT_EQ(corrections, 1u);
+    ENJIN_ASSERT_TRUE(sm.GetScenes().size() == 3);
+    ENJIN_EXPECT_TRUE(sm.GetScene(0)->name == "Combat");
+    ENJIN_EXPECT_TRUE(sm.GetScene(1)->name == "NewScene");
+    ENJIN_EXPECT_EQ(sm.GetScene(1)->buildIndex, 1);
+    ENJIN_EXPECT_TRUE(sm.GetScene(2)->name == "Carnival");
+    ENJIN_EXPECT_TRUE(sm.GetScene(0)->isStartScene);
+}
+
+// If the row that goes was the start scene, the row that stays takes the flag.
+ENJIN_TEST(SceneNormalize, ARemovedDuplicateHandsOverItsStartFlag) {
+    SceneManager sm;
+    sm.GetScenes().push_back(MakeEntry("Menu", 0, false));
+    sm.GetScenes().push_back(MakeEntry("Level", 1, false));
+    sm.GetScenes().push_back(MakeEntry("Level", 2, true));
+
+    sm.NormalizeSceneList();
+
+    ENJIN_ASSERT_TRUE(sm.GetScenes().size() == 2);
+    ENJIN_EXPECT_FALSE(sm.GetScene(0)->isStartScene);
+    ENJIN_EXPECT_TRUE(sm.GetScene(1)->isStartScene);
+}
+
 ENJIN_TEST_MAIN()

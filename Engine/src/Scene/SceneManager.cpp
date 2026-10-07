@@ -474,7 +474,21 @@ void SceneManager::AddScene(const SceneEntry& entry) {
     m_Scenes.push_back(entry);
 }
 
+// One scene file, one row. Compared with forward slashes, because the same
+// path reaches here written both ways on Windows.
+static std::string SceneListKey(const std::string& path) {
+    std::string key = path;
+    for (char& c : key) if (c == '\\') c = '/';
+    return key;
+}
+
 void SceneManager::AddScene(const std::string& name, const std::string& path) {
+    // Already listed: adding it again made a second row for the same file.
+    // File > New Scene did exactly that, from two call sites in one action.
+    const std::string key = SceneListKey(path);
+    for (const auto& scene : m_Scenes) {
+        if (SceneListKey(scene.path) == key) return;
+    }
     SceneEntry entry;
     entry.name = name;
     entry.path = path;
@@ -563,6 +577,22 @@ i32 SceneManager::NextFreeBuildIndex() const {
 
 u32 SceneManager::NormalizeSceneList() {
     u32 corrections = 0;
+
+    // Pass 0: one row per scene file. The first row for a path stays; a later
+    // one is dropped, handing over its start flag if the first had none, so a
+    // project whose start scene was the duplicate still starts where it did.
+    for (usize i = 0; i < m_Scenes.size(); ++i) {
+        const std::string key = SceneListKey(m_Scenes[i].path);
+        if (key.empty()) continue;
+        for (usize j = i + 1; j < m_Scenes.size();) {
+            if (SceneListKey(m_Scenes[j].path) != key) { ++j; continue; }
+            if (m_Scenes[j].isStartScene) m_Scenes[i].isStartScene = true;
+            ENJIN_LOG_WARN(Asset, "Scene '%s' was listed twice; the second row is removed",
+                           m_Scenes[j].path.c_str());
+            m_Scenes.erase(m_Scenes.begin() + static_cast<std::ptrdiff_t>(j));
+            ++corrections;
+        }
+    }
 
     // Pass 1: exactly one start flag — first in list wins (deterministic)
     bool seenStart = false;
