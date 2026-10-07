@@ -14,6 +14,7 @@
 // registers it ("Create Door"), so the two cannot disagree (GR-16).
 
 #include "Enjin/Editor/EditorLayer.h"
+#include "Enjin/ECS/Components/EffekseerEffect.h"
 #include "Enjin/Assets/Prefab.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Name.h"
@@ -83,6 +84,8 @@ std::vector<EditorLayer::EntityMenuEntry> EditorLayer::BuildEntityMenuTable() {
     simple("", "Audio Source", "A 3D sound in the world. Pick its clip in the inspector.",
            std::type_identity<ECS::AudioSourceComponent>{});
     simple("", "Particle Emitter", nullptr, std::type_identity<ECS::ParticleEmitterComponent>{});
+    simple("", "Effekseer Effect", "An effect made in the Effekseer editor. Pick its file in the inspector.",
+           std::type_identity<ECS::EffekseerEffectComponent>{});
     add("", "Text", "Text in the world. For screen text, use a UI Canvas.",
         [this](const Math::Vector3& at) {
             ECS::Entity e = MakeMenuEntity("Text", at);

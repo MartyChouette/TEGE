@@ -1342,6 +1342,7 @@ public:
         // indistinguishable from the feature being switched off.
         if (m_RenderSystem) {
             m_RenderSystem->TickPaletteTime(gameDt);   // a zero deposit is no tick
+            m_RenderSystem->TickEffekseer(gameDt);
         }
 
         // Apply deferred fullscreen change (safe between frames)

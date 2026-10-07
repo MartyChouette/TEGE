@@ -1382,6 +1382,29 @@ Makes the entity always face the camera, useful for sprites, health bars, and la
 | `lockY` | bool | true | Only rotate on Y axis (vertical lock, like trees). |
 | `rotationOffset` | f32 | 0.0 | Additional rotation in degrees. |
 
+#### EffekseerEffectComponent
+
+Plays an effect made in the [Effekseer](https://effekseer.github.io/) editor
+(`.efkefc`, or the older `.efk`). Add it from Entity > Effekseer Effect, or with
+Add Component > Effects, then pick the effect file in the inspector.
+
+The effect is placed, aimed and scaled by its entity's transform, so a parented
+effect follows its parent. Keep the effect's textures and models beside it in
+the folders the effect expects: it names them by path relative to itself. In a
+packed build they are read from the pak.
+
+An effect that uses a custom material (`.efkmat`) does not draw on desktop yet.
+On web the effect path builds but has not been run in a browser.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `effectPath` | string | "" | The `.efkefc` or `.efk` file. |
+| `playOnStart` | bool | true | Start the effect when the scene starts. |
+| `loop` | bool | true | Start again each time the effect finishes. |
+| `speed` | f32 | 1.0 | Playback rate. 1 is as authored, 0 holds it still. |
+| `magnification` | f32 | 1.0 | Size of the whole effect (Size in the inspector). Applied when the file loads. |
+| `visible` | bool | true | Draw the effect. A hidden effect keeps playing. |
+
 #### ParticleEmitterComponent
 
 Emits particles with configurable shape, lifetime, color, and forces.

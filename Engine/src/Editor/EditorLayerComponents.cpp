@@ -115,6 +115,7 @@ extern char** environ;
 #include "Enjin/Assets/HeightmapImage.h"
 #include "Enjin/GUI/UIFontRegistry.h"
 #include "Enjin/ECS/Components/GaussianSplat.h"
+#include "Enjin/ECS/Components/EffekseerEffect.h"
 #include "Enjin/Assets/Prefab.h"
 #include "Enjin/Build/BuildPipeline.h"
 #include "Enjin/Assets/DataAsset.h"
@@ -12204,6 +12205,66 @@ template void EditorLayer::RemoveComponentWithUndo<ECS::MaterialInteractionTable
 
 } // namespace Editor
 } // namespace Enjin
+
+void Enjin::Editor::EditorLayer::DrawEffekseerEffectComponent(ECS::Entity entity) {
+    bool open = UI::SectionHeader("[E] Effekseer Effect", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("EffekseerEffectCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            RemoveComponentWithUndo<ECS::EffekseerEffectComponent>(entity, "effekseerEffect", "Effekseer Effect");
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (!open) return;
+    auto* fx = m_World->GetComponent<ECS::EffekseerEffectComponent>(entity);
+    if (!fx) return;
+    DrawComponentHelp("effekseerEffect", m_World, entity);
+
+    if (!fx->effectPath.empty()) {
+        size_t sl = fx->effectPath.find_last_of("/\\");
+        std::string fn = (sl != std::string::npos) ? fx->effectPath.substr(sl + 1) : fx->effectPath;
+        ImGui::Text("File: %s", fn.c_str());
+        ImGui::SameLine();
+        if (ImGui::SmallButton("X##EfkFile")) { fx->effectPath.clear(); fx->dirty = true; }
+    }
+    if (ImGui::Button(fx->effectPath.empty() ? "Choose Effect File..." : "Change...")) {
+        std::string p = FileDialog::OpenFile("Effekseer Effect",
+                                             {{ "Effekseer effects", "*.efkefc;*.efk" }});
+        if (!p.empty()) { fx->effectPath = p; fx->dirty = true; }
+    }
+    ImGui::SetItemTooltip("An effect exported from the Effekseer editor (.efkefc, or the older .efk).\n"
+                          "Keep its textures and models beside it, in the folders the effect expects.");
+
+    ImGui::Checkbox("Play On Start", &fx->playOnStart);
+    ImGui::SetItemTooltip("Start the effect when the scene starts");
+    ImGui::Checkbox("Loop", &fx->loop);
+    ImGui::SetItemTooltip("Start again each time the effect finishes");
+    ImGui::SliderFloat("Speed", &fx->speed, 0.0f, 4.0f);
+    ImGui::SetItemTooltip("Playback rate. 1 is as authored, 0 holds it still");
+    f32 mag = fx->magnification;
+    if (ImGui::DragFloat("Size", &mag, 0.01f, 0.001f, 1000.0f, "%.3f")) {
+        fx->magnification = std::max(mag, 0.001f);
+    }
+    // The size is baked in when the file loads, so apply it once the drag ends
+    // and not on every frame of it.
+    if (ImGui::IsItemDeactivatedAfterEdit()) fx->dirty = true;
+    ImGui::SetItemTooltip("Size of the whole effect. Effekseer effects are often authored\n"
+                          "at a larger scale than one unit per metre");
+    ImGui::Checkbox("Visible", &fx->visible);
+
+    if (ImGui::Button("Play##Efk")) fx->Play();
+    ImGui::SameLine();
+    if (ImGui::Button("Stop##Efk")) fx->Stop();
+
+    if (!fx->loadError.empty()) {
+        ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.3f, 1.0f), "%s", fx->loadError.c_str());
+    } else if (fx->playing) {
+        ImGui::TextColored(ImVec4(0.4f, 0.85f, 0.5f, 1.0f), "Playing");
+    } else if (!fx->effectPath.empty()) {
+        ImGui::TextDisabled("Stopped");
+    }
+}
 
 void Enjin::Editor::EditorLayer::DrawGaussianSplatComponent(ECS::Entity entity) {
     bool open = UI::SectionHeader("[G] Gaussian Splat", ImGuiTreeNodeFlags_DefaultOpen);

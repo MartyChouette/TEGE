@@ -1,0 +1,29 @@
+[Enjin patch] LLGI Vulkan: only colour attachment 0 is written
+================================================================
+The engine's main pass has two colour attachments (colour + velocity).
+LLGI's Vulkan pipeline gives every attachment a full RGBA write mask, while
+Effekseer's fragment shaders write output 0 only, so attachment 1 would
+receive undefined values. This patch gives attachments past the first a write
+mask of zero and leaves their blend state at its default.
+
+Against LLGI 8c476bdea911d99dc307655be3cad1cc2b8d5a1e (the submodule commit of
+Effekseer tag 1807). The file lives at
+third_party/effekseer/3rdParty/LLGI/src/Vulkan/LLGI.PipelineStateVulkan.cpp.
+--- a/src/Vulkan/LLGI.PipelineStateVulkan.cpp
++++ b/src/Vulkan/LLGI.PipelineStateVulkan.cpp
+@@ -382,6 +382,15 @@
+ 		blendInfo.colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB |
+ 								   vk::ColorComponentFlagBits::eA;
+ 
++		// [Enjin patch] Effekseer shaders write colour output 0 only. The engine's
++		// main pass has a second attachment (velocity); leave every attachment
++		// past the first untouched instead of writing undefined values into it.
++		if (i > 0)
++		{
++			blendInfo.colorWriteMask = vk::ColorComponentFlags();
++			continue;
++		}
++
+ 		if (IsBlendEnabled)
+ 		{
+ 			blendInfo.blendEnable = true;

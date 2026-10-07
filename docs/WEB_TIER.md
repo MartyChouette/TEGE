@@ -38,6 +38,7 @@ Rows carry the date they were last checked. The table as a whole was last verifi
 | Sprites, 2D | **Partly** | Gaps (2026-09-30): lit sprites draw unlit (and normal-mapped sprites lose their relief), a sprite rotated in 3D faces the camera where desktop draws it in the world plane, and there is no drop shadow. An orthographic 2D camera cannot tell the plane difference. |
 | Compute | Same | |
 | CPU particle emitters | Same | `ParticleEmitterComponent` renders through the web particle pipeline (`RenderSystem.cpp`, the web `Update` body), capped at 8192 instances shared between emitters, and draws its `texturePath` since ccc13ca8, and its sprite sheet frames and velocity stretch since 2026-09-30. |
+| Effekseer effects | **Unverified** | `EffekseerEffectComponent`, drawn by Effekseer's own WebGPU renderer into the scene pass (`EffekseerSystem.cpp`). Compiles and links for web (2026-10-06); it has not been run in a browser, so whether anything draws is not known. Desktop draws, checked by capture the same day. |
 | 3D text | Same | SDF text meshes and text-on-surface rasters both draw on web (`WebEnsureTextMeshes`). Checked 2026-09-30. |
 | Terrain auto-mesh | Same | The terrain mesh rebuild is shared (`RegenerateDirtyTerrainMeshes`), and texture layers draw since 6da29275 (web flag bit 9). |
 | Morph targets | **Absent** | |

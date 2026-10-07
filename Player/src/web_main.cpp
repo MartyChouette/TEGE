@@ -1935,6 +1935,7 @@ public:
         // calls with a zero dt.
         if (m_RenderSystem) {
             m_RenderSystem->TickAnimatedSprites(deltaTime);
+            m_RenderSystem->TickEffekseer(deltaTime);
             m_RenderSystem->UpdateBoneAttachments();
         }
 

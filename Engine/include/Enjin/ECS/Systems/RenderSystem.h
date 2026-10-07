@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Enjin/Renderer/GpuLifetime.h"
+#include "Enjin/Effects/EffekseerSystem.h"
 
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/ECS/System.h"
@@ -374,6 +375,8 @@ private:
 
     f32 m_PaletteTime = 0.0f;
     bool m_PaletteTickedThisFrame = false;
+    bool m_EffekseerTickedThisFrame = false;
+    std::unique_ptr<Effects::EffekseerSystem> m_Effekseer;
     u32 m_PaletteBindless = UINT32_MAX;
     std::shared_ptr<Renderer::Texture> m_PaletteTexture;
     std::vector<u8> m_PaletteUploadScratch;
@@ -543,6 +546,18 @@ public:
         m_PaletteTime += dt;
     }
     f32 GetPaletteTime() const { return m_PaletteTime; }
+
+    // Effekseer effects (EffekseerEffectComponent). Same shape as the palette
+    // clock above and for the same reason: the editor never calls Update(), so
+    // every runtime deposits its own dt and the guard keeps editor play mode,
+    // which reaches this from two places, from running effects at double speed.
+    void TickEffekseer(f32 dt);
+    // Draw the live effects into the pass that is open right now, with the
+    // camera that pass is using (m_Camera). On web the two handles are the
+    // command encoder and the scene pass encoder; on desktop both are unused.
+    void RenderEffekseer(Effects::EffekseerSystem::Pass pass,
+                         void* nativeCommands = nullptr, void* nativePass = nullptr);
+    Effects::EffekseerSystem* GetEffekseer() { return m_Effekseer.get(); }
     // Active means at least one slot has colours. A scene can hold several
     // tables and have only one filled in.
     bool IsScenePaletteActive() const {

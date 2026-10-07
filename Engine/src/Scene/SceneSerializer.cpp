@@ -34,6 +34,7 @@
 #include "Enjin/ECS/Components/VoxelVolume.h"
 #include "Enjin/Geometry/VoxelFieldCodec.h"
 #include "Enjin/ECS/Components/GaussianSplat.h"
+#include "Enjin/ECS/Components/EffekseerEffect.h"
 #include "Enjin/ECS/Components/Terrain2D.h"
 #include "Enjin/ECS/Components/CameraTrigger.h"
 #include "Enjin/ECS/Components/TemperatureZone.h"
@@ -2545,6 +2546,29 @@ ECS::WFCComponent DeserializeWFCComponent(const json& j) {
         }
     }
     return g;
+}
+
+json SerializeEffekseerEffectComponent(const ECS::EffekseerEffectComponent& c) {
+    json j;
+    j["effectPath"] = c.effectPath;
+    j["playOnStart"] = c.playOnStart;
+    j["loop"] = c.loop;
+    j["speed"] = RF(c.speed);
+    j["magnification"] = RF(c.magnification);
+    j["visible"] = c.visible;
+    return j;
+}
+
+ECS::EffekseerEffectComponent DeserializeEffekseerEffectComponent(const json& j) {
+    ECS::EffekseerEffectComponent c;
+    if (j.contains("effectPath")) c.effectPath = SafeStr(j["effectPath"], MAX_STR_PATH);
+    if (j.contains("playOnStart")) c.playOnStart = JB(j["playOnStart"]);
+    if (j.contains("loop")) c.loop = JB(j["loop"]);
+    if (j.contains("speed")) c.speed = Math::Clamp(j["speed"].get<f32>(), 0.0f, 16.0f);
+    if (j.contains("magnification")) c.magnification = Math::Clamp(j["magnification"].get<f32>(), 0.001f, 1000.0f);
+    if (j.contains("visible")) c.visible = JB(j["visible"]);
+    c.dirty = true;   // a freshly loaded component always (re)loads its file
+    return c;
 }
 
 json SerializeGaussianSplatComponent(const ECS::GaussianSplatComponent& g) {
@@ -10180,6 +10204,7 @@ static const std::vector<ComponentSerdes>& ComponentRegistry() {
         ENJIN_SERDES("terrain", ECS::TerrainComponent, SerializeTerrainComponent, DeserializeTerrainComponent),
         ENJIN_SERDES("voxelVolume", ECS::VoxelVolumeComponent, SerializeVoxelVolumeComponent, DeserializeVoxelVolumeComponent),
         ENJIN_SERDES("gaussianSplat", ECS::GaussianSplatComponent, SerializeGaussianSplatComponent, DeserializeGaussianSplatComponent),
+        ENJIN_SERDES("effekseerEffect", ECS::EffekseerEffectComponent, SerializeEffekseerEffectComponent, DeserializeEffekseerEffectComponent),
         ENJIN_SERDES("terrain2d", ECS::Terrain2DComponent, SerializeTerrain2DComponent, DeserializeTerrain2DComponent),
         ENJIN_SERDES("terrainGenerator", ECS::TerrainGeneratorComponent, SerializeTerrainGeneratorComponent, DeserializeTerrainGeneratorComponent),
         ENJIN_SERDES("tether", ECS::TetherComponent, SerializeTetherComponent, DeserializeTetherComponent),

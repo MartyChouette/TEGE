@@ -284,6 +284,11 @@ else()
     endif()
 endif()
 
+# Effekseer: effect runtime plus the renderer for this platform (Vulkan on
+# desktop, WebGPU on web). PRIVATE keeps its headers out of everything that
+# includes the engine; only Effects/EffekseerSystem.cpp sees them.
+target_link_libraries(EnjinEngine PRIVATE EffekseerRendererBackend)
+
 # Optional: Find shaderc for shader compilation
 # find_package(shaderc REQUIRED)
 # target_link_libraries(EnjinEngine PUBLIC shaderc::shaderc)

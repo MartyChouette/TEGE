@@ -2259,6 +2259,7 @@ void EditorLayer::Update(f32 deltaTime) {
     // so play mode ticking it as well does not double the speed.
     if (m_RenderSystem) {
         m_RenderSystem->TickPaletteTime(gameDt);
+        m_RenderSystem->TickEffekseer(gameDt);
     }
 
     // Update skeletal animators (advance bone animation each frame).

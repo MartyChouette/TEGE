@@ -4,6 +4,7 @@
 #include "Enjin/ECS/Components/HandIKComponent.h"
 #include "Enjin/Animation/IKSolver.h"
 #include "Enjin/ECS/Components/BoneAttachment.h"
+#include "Enjin/ECS/Components/EffekseerEffect.h"
 #include "Enjin/Renderer/MaterialFlagWord.h"
 #include "Enjin/Renderer/MaterialDrawState.h"
 // Needed by EnsureTilemapMeshes, which both backend Update bodies call.
@@ -4204,6 +4205,7 @@ void RenderSystem::Update(f32 deltaTime) {
     // Palette cycling runs off the same per-frame clock. Guarded against a
     // second deposit in the same frame, because the editor ticks it too.
     TickPaletteTime(deltaTime);
+    TickEffekseer(deltaTime);
     TickAdaptiveQuality(deltaTime);
 
     // Once a second, say how much GPU memory the frame is actually holding.
@@ -7284,6 +7286,11 @@ void RenderSystem::Update(f32 deltaTime) {
         // tonemap as the scene). The web player owns the particle system, so it
         // registers this hook; the encoder is handed over just before the pass ends.
         if (m_WebScenePassHook && scenePassEncoder) m_WebScenePassHook(scenePassEncoder);
+        // Effekseer effects, in the same place and for the same reasons. After
+        // the sky, which the web draw-order rule requires of anything blended.
+        if (scenePassEncoder)
+            RenderEffekseer(Effects::EffekseerSystem::Pass::WebScene,
+                            webRenderer->GetCommandEncoder(), scenePassEncoder);
         // End offscreen scene pass
         sceneEncoder.reset();  // Release encoder wrapper
         wgpuRenderPassEncoderEnd(scenePassEncoder);
@@ -7636,6 +7643,8 @@ void RenderSystem::FlushPendingChanges() {
     // again: the palette uploaded once and then held that frame forever, which
     // reads as "cycling does not work on web" rather than as a stuck flag.
     m_PaletteTickedThisFrame = false;
+    m_EffekseerTickedThisFrame = false;
+    if (m_Effekseer) m_Effekseer->BeginFrame();
 }
 
 void RenderSystem::RefreshStorageCache() {
@@ -7784,6 +7793,32 @@ void RenderSystem::SpawnSurfaceBurst(u32 count, const Math::Vector3& position,
 }
 void RenderSystem::TickGPUEmitters(f32) {}
 void RenderSystem::RenderParticles(u32, u32, bool, u32) {}
+
+void RenderSystem::TickEffekseer(f32 dt) {
+    if (!(dt > 0.0f)) return;              // a zero deposit is no tick (see TickPaletteTime)
+    if (m_EffekseerTickedThisFrame) return;
+    m_EffekseerTickedThisFrame = true;
+    if (!m_World) return;
+    // Created on the first frame a scene actually has an effect in it, so a
+    // game that uses none pays for none.
+    if (!m_Effekseer) {
+        if (m_World->GetEntitiesWithComponent<EffekseerEffectComponent>().empty()) return;
+        auto* webRenderer = static_cast<Renderer::WebGPURenderer*>(m_Renderer);
+        if (!webRenderer) return;
+        m_Effekseer = std::make_unique<Effects::EffekseerSystem>();
+        if (!m_Effekseer->Initialize(webRenderer->GetDevice())) return;
+    }
+    m_Effekseer->Update(m_World, dt);
+}
+
+void RenderSystem::RenderEffekseer(Effects::EffekseerSystem::Pass pass,
+                                   void* nativeCommands, void* nativePass) {
+    if (!m_Effekseer || !m_Effekseer->IsInitialized() || !m_Camera) return;
+    if (!nativeCommands || !nativePass) return;
+    m_Effekseer->Draw(pass, nativeCommands, nativePass,
+                      m_Camera->GetViewMatrix(), m_Camera->GetProjectionMatrix(),
+                      m_Camera->GetPosition());
+}
 void RenderSystem::RenderElementalParticles(const Effects::ElementalSystem&, u32, u32, bool, u32) {}
 void RenderSystem::RenderFluid(u32, u32) {}
 void RenderSystem::RenderGrass(u32, u32) {}
@@ -8637,6 +8672,7 @@ void RenderSystem::Shutdown() {
     // Clean up weather, particle, grass, shrub, tree, and sprite batch renderers
     m_WeatherRenderer.reset();
     m_ParticleRenderer.reset();
+    m_Effekseer.reset();
     m_GrassRenderer.reset();
     m_ShrubRenderer.reset();
     m_TreeRenderer.reset();
@@ -9282,9 +9318,16 @@ void RenderSystem::FlushPendingChanges() {
     // post-process player, editor) passes once per frame -- NOT in Update, which
     // the editor never calls. Only if a frame was prepared since the last tick,
     // so a second flush in the same frame cannot count as a new frame.
-    if (m_FramePrepDone) ++m_RenderFrameSerial;
+    if (m_FramePrepDone) {
+        ++m_RenderFrameSerial;
+        // A new frame: Effekseer may reuse last frame's per-frame buffers.
+        // Only here, never on a second flush of the same frame, or buffers a
+        // recorded draw still points at would be handed out again.
+        if (m_Effekseer) m_Effekseer->BeginFrame();
+    }
     m_FramePrepDone = false;
     m_PaletteTickedThisFrame = false;   // re-arm the palette clock for this frame
+    m_EffekseerTickedThisFrame = false;
 
     // Script render targets (FR-4): build queued targets / apply queued material
     // binds at this pre-recording safe point, and re-arm the per-frame render.
@@ -9801,6 +9844,7 @@ void RenderSystem::Update(f32 deltaTime) {
     TickHighlightTime(frameDt);
     // Palette cycling runs off the same clock here as it does on desktop.
     TickPaletteTime(deltaTime);
+    TickEffekseer(deltaTime);
     if (!m_Renderer || !m_Initialized) {
         return;
     }
@@ -10683,6 +10727,7 @@ void RenderSystem::Update(f32 deltaTime) {
             RenderShrubs(vpW, vpH);
             RenderTrees(vpW, vpH);
             RenderParticles(vpW, vpH);
+            RenderEffekseer(Effects::EffekseerSystem::Pass::Main);
             RenderFluid(vpW, vpH);
             RenderSplats(VK_NULL_HANDLE, 2, pixelW, pixelH);
             RenderGPUParticles();
@@ -11105,6 +11150,7 @@ void RenderSystem::Update(f32 deltaTime) {
     // opaque phase (before the blend meshes) so foliage no longer overdraws the
     // transparent in-world text signs (#22).
     RenderParticles(0, 0);
+    RenderEffekseer(Effects::EffekseerSystem::Pass::Main);
     RenderFluid(0, 0);
 
     // Elemental particles (fire/smoke) in the main pass — the direct swapchain
@@ -12839,6 +12885,7 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
     u32 targetW = target->GetWidth();
     u32 targetH = target->GetHeight();
     RenderParticles(targetW, targetH);
+    RenderEffekseer(Effects::EffekseerSystem::Pass::Offscreen);
     RenderFluid(targetW, targetH);
     RenderSplats(target->GetRenderPass(), 1, static_cast<f32>(target->GetWidth()), static_cast<f32>(target->GetHeight()));
         RenderGPUParticles(target->GetRenderPass(), 1);
@@ -13199,6 +13246,7 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
         RenderShrubs(targetW, targetH);
         RenderTrees(targetW, targetH);
         RenderParticles(targetW, targetH);
+        RenderEffekseer(Effects::EffekseerSystem::Pass::Offscreen);
         RenderFluid(targetW, targetH);
         RenderSplats(target->GetRenderPass(), 1, static_cast<f32>(target->GetWidth()), static_cast<f32>(target->GetHeight()));
         RenderGPUParticles(target->GetRenderPass(), 1);
@@ -20749,6 +20797,38 @@ void RenderSystem::SpawnGPUParticlePreset(u32 count, const Math::Vector3& positi
     if (m_GPUParticleSystem)
         m_GPUParticleSystem->SpawnWithParams(count, position, direction,
                                              Effects::PresetSpawnParams(preset));
+}
+
+void RenderSystem::TickEffekseer(f32 dt) {
+    if (!(dt > 0.0f)) return;              // a zero deposit is no tick (see TickPaletteTime)
+    if (m_EffekseerTickedThisFrame) return;
+    m_EffekseerTickedThisFrame = true;
+    if (!m_World || !m_Initialized || !m_VulkanRenderer) return;
+    // Created on the first frame a scene actually has an effect in it, so a
+    // game that uses none pays for none.
+    if (!m_Effekseer) {
+        if (m_World->GetEntitiesWithComponent<EffekseerEffectComponent>().empty()) return;
+        m_Effekseer = std::make_unique<Effects::EffekseerSystem>();
+        if (!m_Effekseer->Initialize(m_VulkanRenderer)) return;
+    }
+    m_Effekseer->Update(m_World, dt);
+}
+
+void RenderSystem::RenderEffekseer(Effects::EffekseerSystem::Pass pass,
+                                   void* /*nativeCommands*/, void* /*nativePass*/) {
+    if (!m_Effekseer || !m_Effekseer->IsInitialized() || !m_Camera || !m_Initialized) return;
+    VkCommandBuffer commandBuffer = m_VulkanRenderer->GetCurrentCommandBuffer();
+    if (commandBuffer == VK_NULL_HANDLE) return;
+    // m_Camera is the camera of the pass being recorded: RenderToTarget and the
+    // splitscreen and multi-viewport loops all point it at their own for the
+    // length of their draw.
+    m_Effekseer->Draw(pass, commandBuffer, nullptr,
+                      m_Camera->GetViewMatrix(), m_Camera->GetProjectionMatrix(),
+                      m_Camera->GetPosition());
+    // Effekseer leaves its own pipeline, descriptor sets and vertex buffers
+    // bound. Everything drawn after this in the pass binds its own, except the
+    // shared geometry pool, which caches "already bound" in this flag.
+    m_GeometryPoolBound = false;
 }
 
 void RenderSystem::RenderParticles(u32 viewportWidth, u32 viewportHeight,

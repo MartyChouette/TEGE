@@ -23,6 +23,7 @@
 #include "Enjin/ECS/Components/VisualScript.h"
 #include "Enjin/ECS/Components/LOD.h"
 #include "Enjin/ECS/Components/DynamicDifficulty.h"
+#include "Enjin/ECS/Components/EffekseerEffect.h"
 #include "Enjin/ECS/Components/GPUParticleEmitter.h"
 #include "Enjin/ECS/Components/Flower.h"
 #include "Enjin/ECS/Components/Ladder.h"
@@ -1636,6 +1637,42 @@ ENJIN_TEST(SerdesCoverage, WaterVolumeReflectionStrengthSurvivesASave) {
     ENJIN_EXPECT_TRUE(Near(out->halfExtents.x, 9.0f));
     ENJIN_EXPECT_TRUE(Near(out->halfExtents.z, 11.0f));
     ENJIN_EXPECT_TRUE(out->waterType == WaterType::Pond);
+}
+
+// An Effekseer effect is placed by hand: its file, whether it loops, its speed
+// and its size are all a designer's choices. The runtime handle is not: a
+// reloaded component must come back asking to be loaded, with no instance.
+ENJIN_TEST(SerdesCoverage, EffekseerEffectSurvivesASave) {
+    World src, dst;
+    Entity e = Base(src);
+
+    EffekseerEffectComponent fx;
+    fx.effectPath = "assets/effects/Laser01.efkefc";
+    fx.playOnStart = false;
+    fx.loop = false;
+    fx.speed = 1.75f;
+    fx.magnification = 0.125f;
+    fx.visible = false;
+    fx.dirty = false;
+    fx.handle = 42;        // a live instance in the scene being saved
+    fx.playing = true;
+    src.AddComponent<EffekseerEffectComponent>(e, fx);
+
+    Entity r = RoundTrip(src, e, dst);
+    ENJIN_ASSERT_TRUE(dst.HasComponent<EffekseerEffectComponent>(r));
+    const auto* out = dst.GetComponent<EffekseerEffectComponent>(r);
+    ENJIN_ASSERT_TRUE(out != nullptr);
+
+    ENJIN_EXPECT_TRUE(out->effectPath == "assets/effects/Laser01.efkefc");
+    ENJIN_EXPECT_FALSE(out->playOnStart);
+    ENJIN_EXPECT_FALSE(out->loop);
+    ENJIN_EXPECT_TRUE(Near(out->speed, 1.75f));
+    ENJIN_EXPECT_TRUE(Near(out->magnification, 0.125f));
+    ENJIN_EXPECT_FALSE(out->visible);
+
+    ENJIN_EXPECT_TRUE(out->dirty);
+    ENJIN_EXPECT_EQ(out->handle, -1);
+    ENJIN_EXPECT_FALSE(out->playing);
 }
 
 ENJIN_TEST_MAIN()

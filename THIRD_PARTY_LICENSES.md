@@ -29,6 +29,31 @@ its original license and copyright.
 
 ---
 
+## Effekseer
+
+- **Version:** 1.80.7 (tag 1807)
+- **License:** MIT
+- **Copyright:** (c) 2011 Effekseer Project
+- **Source:** https://github.com/effekseer/Effekseer
+- **Description:** Particle effect runtime and its Vulkan and WebGPU renderers. Plays
+  effects authored in the Effekseer editor.
+- **Location:** `third_party/effekseer/` (license text in `third_party/effekseer/LICENSE`)
+
+---
+
+## LLGI
+
+- **Version:** commit 8c476bde (the version Effekseer 1.80.7 pins)
+- **License:** zlib
+- **Copyright:** (c) 2019 Altseed
+- **Source:** https://github.com/altseed/LLGI
+- **Description:** Graphics abstraction layer that Effekseer's renderers are written
+  against. Carries one local change, recorded in
+  `third_party/patches/llgi-mrt-colorwritemask.patch`.
+- **Location:** `third_party/effekseer/3rdParty/LLGI/` (license text in its `LICENSE`)
+
+---
+
 ## AngelScript
 
 - **Version:** 2.38.0

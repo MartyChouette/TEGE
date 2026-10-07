@@ -62,6 +62,7 @@
 #include "Enjin/ECS/Components/WaterVolume.h"
 #include "Enjin/ECS/Components/Water3D.h"
 #include "Enjin/ECS/Components/GaussianSplat.h"
+#include "Enjin/ECS/Components/EffekseerEffect.h"
 #include "Enjin/ECS/Components/GrassVolume.h"
 #include "Enjin/ECS/Components/ShrubVolume.h"
 #include "Enjin/ECS/Components/TreeVolume.h"
@@ -878,6 +879,11 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::GaussianSplatComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::GaussianSplatComponent>(e); },
             "gaussianSplat", DimensionTag::Only3D},
+        {"Effekseer Effect", "Effects", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::EffekseerEffectComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::EffekseerEffectComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::EffekseerEffectComponent>(e); },
+            "effekseerEffect", DimensionTag::Only3D},
         {"Water 3D", "Effects", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::Water3DComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::Water3DComponent>(e); },
@@ -1903,6 +1909,9 @@ void EditorLayer::DrawInspectorPanel() {
         // Gaussian splat component
         if (m_World->HasComponent<ECS::GaussianSplatComponent>(m_PrimarySelected)) {
             DrawGaussianSplatComponent(m_PrimarySelected);
+        }
+        if (m_World->HasComponent<ECS::EffekseerEffectComponent>(m_PrimarySelected)) {
+            DrawEffekseerEffectComponent(m_PrimarySelected);
         }
 
         // Water 3D component
