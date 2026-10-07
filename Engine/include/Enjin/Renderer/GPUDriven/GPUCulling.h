@@ -83,6 +83,22 @@ public:
 
     // Submit objects for culling
     void SubmitObjects(const std::vector<CullableObject>& objects);
+
+    // The cull shaders run in workgroups of this many objects, and their only
+    // bounds check is the object BUFFER's length, not the number submitted. So
+    // a dispatch for N objects also processes every slot up to the end of its
+    // last workgroup.
+    static constexpr u32 kCullWorkgroupSize = 64;
+
+    // How many object slots a dispatch for `count` objects will read: `count`
+    // rounded up to a whole workgroup, capped at the buffer. SubmitObjects must
+    // leave every slot in [count, this) describing nothing, or whatever a
+    // larger earlier submit left there is culled as visible and drawn. That is
+    // how a new, emptier scene kept drawing the previous scene's meshes.
+    static usize DispatchedObjectSlots(usize count, usize maxObjects) {
+        const usize rounded = (count + kCullWorkgroupSize - 1) / kCullWorkgroupSize * kCullWorkgroupSize;
+        return rounded < maxObjects ? rounded : maxObjects;
+    }
     
     // Execute culling on GPU
     // Returns indirect draw commands for visible objects
@@ -193,6 +209,7 @@ private:
     VkDescriptorSet m_DescriptorSet = VK_NULL_HANDLE;
     VkDescriptorPool m_DescriptorPool = VK_NULL_HANDLE;
     u32 m_ObjectCount = 0;
+    std::vector<CullableObject> m_SubmitScratch;   // objects + blank tail, reused each frame
     // Dispatches recorded so far, and whether the readback can be believed.
     u32 m_CullDispatches = 0;
     bool m_VisibilityValid = false;

@@ -128,6 +128,16 @@ A symptom shows up in a project, so the project is where you look, and project d
   the first reload
 
 ### Renderer
+- **The GPU cull shaders read more object slots than you submit.** `cull.comp` and
+  `cull_hiz.comp` run in workgroups of 64 and bound themselves by the object BUFFER's
+  length, so a dispatch for N objects processes every slot to the end of its last
+  workgroup. `GPUCullingSystem::SubmitObjects` uploads a blank tail over that range
+  (`DispatchedObjectSlots`). Without it, whatever a larger earlier submit left there is
+  culled as visible and DRAWN: open a 12-mesh scene, File > New Scene, add one ground
+  plane, and all twelve old meshes are back, in both editor views, in a world that holds
+  two entities. Nothing on the CPU side is stale, which is what makes it hard to find;
+  ask the editor (`list_entities` over MCP) before reading the scene-clear code
+  (2026-10-07, test: `TestGPUCullSubmit`)
 - **Particle `startSize`/`endSize` are the billboard's full WIDTH in WORLD units**, not a radius and not a multiplier, and the quad corners are `-0.5..0.5` on all four paths (CPU Vulkan, GPU compute Vulkan, WebGPU compute, WebGPU CPU). Nothing doubles them. They read SMALLER than the number because every particle fragment shader masks to an inscribed circle -- but with DIFFERENT constants per path, and the ones quoted here for years were the web path's. WebGPU (`WebShaderData.h`): `1 - smoothstep(0.3, 0.5, d)`, so full alpha to 60% of the width. Desktop CPU (`particle.frag`): `smoothstep(0.5, 0.2, dist)`, full alpha to 40%. Desktop GPU (`gpu_particle.frag`): `1 - smoothstep(0.5 - w, 0.5, d)`, where the inner radius follows the emitter's SOFTNESS rather than being fixed at all. All three reach zero at exactly the full width, which is the part that is safe to rely on
 - **Emitters are placed by their WORLD transform, and scale and rotation both apply** (`Effects::ResolveEmitterTransform`, used by the CPU emitters in ParticleSystem and the GPU emitters fed from RenderSystem). Until 2026-09-06 both paths read `transform->position` and nothing else: a parented emitter spawned at its offset from the parent, scaling the entity did nothing, and rotating it did nothing, so aiming meant typing numbers into `direction`. Scale is the largest world-scale component (the billboard is square) and multiplies size, the size-over-life curve and the emission volume; rotation aims the cone and the 2D `angle2D`. The resolver force-dirties the world matrix first, because that cache is only invalidated per frame by `RenderSystem::Update` and a headless runtime would otherwise freeze every emitter at its first-frame transform. The GPU emission VOLUME (`ShapeSpawnOffset`) is still axis-aligned; only the direction is oriented
 - **Web draw order: the procedural sky must come after the opaque meshes and BEFORE anything alpha-blended.** It is a fullscreen triangle at z=1 with `LessEqual`, and particles/sprites do not write depth, so a sky drawn last paints over everything silhouetted against open sky. Any new transparent pass goes after the sky block in `RenderSystem::Update`'s web path

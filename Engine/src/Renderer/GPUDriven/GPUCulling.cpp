@@ -179,9 +179,19 @@ void GPUCullingSystem::SubmitObjects(const std::vector<CullableObject>& objects)
     }
 
     usize count = std::min(objects.size(), static_cast<usize>(m_MaxObjects));
-    usize bufferSize = count * sizeof(CullableObject);
 
-    if (!m_ObjectBuffer->UploadData(objects.data(), bufferSize)) {
+    // Upload the objects AND a blank tail to the end of the last workgroup.
+    // The shaders process whole workgroups and stop only at the buffer's
+    // length, so without the tail they also cull whatever an earlier, larger
+    // submit left in those slots, and draw it: delete objects or open a
+    // smaller scene and the old ones stayed on screen (2026-10-07). A
+    // default CullableObject has indirectEligible = 0 and emits no draw.
+    const usize slots = DispatchedObjectSlots(count, m_MaxObjects);
+    m_SubmitScratch.assign(objects.begin(), objects.begin() + count);
+    m_SubmitScratch.resize(slots);
+    usize bufferSize = slots * sizeof(CullableObject);
+
+    if (!m_ObjectBuffer->UploadData(m_SubmitScratch.data(), bufferSize)) {
         ENJIN_LOG_ERROR(Renderer, "Failed to upload object data for culling");
         return;
     }
