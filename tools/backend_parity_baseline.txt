@@ -2,7 +2,6 @@
 # Regenerate with: python tools/backend_parity.py --record
 # A diff here is where you explain why a divergence is intended.
 vulkan:AccumulateArenaInstance
-vulkan:ApplyAdaptiveQualityLevel
 vulkan:ApplyCameraClearColor
 vulkan:ApplyDDGISettings
 vulkan:ApplyGPUParticleSettings
@@ -159,7 +158,6 @@ vulkan:RunComputeSkinningPass
 vulkan:RunLateOcclusion
 vulkan:SelectCullView
 vulkan:SelectShadowLights
-vulkan:SetAdaptiveQualityEnabled
 vulkan:SetCullTarget
 vulkan:SetEntityCustomShader
 vulkan:SetHDREnabled
@@ -175,7 +173,6 @@ vulkan:ShouldUpdateCascade
 vulkan:ShutdownComputeSkinning
 vulkan:ShutdownRayTracing
 vulkan:SkinUniquePoses
-vulkan:SolveHandIK
 vulkan:SwapCullViewState
 vulkan:TemporalReuseRTOutputs
 vulkan:TransitionDepthImagesToReadable
@@ -201,16 +198,23 @@ vulkan:UploadObjectData
 vulkan:UploadRTMaterials
 vulkan:WriteRTDescriptors
 web:EnsureWebOITTargets
+web:EnsureWebSkyCubemap
 web:RecreateWebSizedTargets
 web:UploadWebInstances
+web:WebAcquireSharedMesh
 web:WebActivePlate
+web:WebDropSharedMeshes
 web:WebDropSplitViewportResources
+web:WebEnsureProceduralTextures
 web:WebEnsureSplitViewportResources
 web:WebEnsureTextMeshes
+web:WebFilterCarrier
 web:WebGetOrBuildFontAtlas
 web:WebGetOrCreateSpriteBindGroup
 web:WebGetOrLoadTexture
 web:WebPreparePlate
+web:WebReadFileBytes
+web:WebReleaseMeshBuffers
 web:WebScaledDim
 web:WebUpdateLightCookies
 web:WebUpdateSceneLightmap

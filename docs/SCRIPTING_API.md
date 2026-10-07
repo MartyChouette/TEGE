@@ -930,7 +930,7 @@ Per-entity (Braid-style) and scene-wide (Sands of Time-style) time rewind.
 
 ## Every registered binding
 
-1356 global functions, grouped by where they are registered. These lines are
+1359 global functions, grouped by where they are registered. These lines are
 GENERATED from the registration strings themselves, so a signature here is the
 one the engine accepts -- if it disagrees with the prose above, the prose is
 wrong. Regenerate with `python tools/gen_scripting_api.py` after adding a
@@ -1068,7 +1068,7 @@ merely absent.
 - `void RTPC_SetParameter(uint64, const string &in, float)`
 - `void Sidechain_SetEnabled(uint64, bool)`
 
-### Components  (352)
+### Components  (355)
 
 - `Vector3 BoxCollider_GetCenter(uint64)`
 - `Vector3 BoxCollider_GetSize(uint64)`
@@ -1276,8 +1276,8 @@ merely absent.
 - `void Animator_Resume(uint64)`
 - `void Animator_SetBool(uint64, const string &in, bool)`
 - `void Animator_SetFloat(uint64, const string &in, float)`
-- `void Animator_SetTrigger(uint64, const string &in)`
 - `void Animator_SetSpeed(uint64, float)`
+- `void Animator_SetTrigger(uint64, const string &in)`
 - `void Animator_Stop(uint64)`
 - `void AudioSource_Play(uint64)`
 - `void AudioSource_SetClip(uint64, const string &in)`

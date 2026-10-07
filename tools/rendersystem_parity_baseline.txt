@@ -13,21 +13,27 @@
 
 # --- web only ---
 EnsureWebOITTargets
+EnsureWebSkyCubemap
 RecreateWebSizedTargets
 UploadWebInstances
+WebAcquireSharedMesh
 WebActivePlate
+WebDropSharedMeshes
 WebDropSplitViewportResources
+WebEnsureProceduralTextures
 WebEnsureSplitViewportResources
 WebEnsureTextMeshes
+WebFilterCarrier
 WebGetOrBuildFontAtlas
 WebGetOrCreateSpriteBindGroup
 WebGetOrLoadTexture
 WebPreparePlate
+WebReadFileBytes
+WebReleaseMeshBuffers
 WebScaledDim
 
 # --- vulkan only ---
 AccumulateArenaInstance
-ApplyAdaptiveQualityLevel
 ApplyCameraClearColor
 ApplyDDGISettings
 ApplyGPUParticleSettings
@@ -178,7 +184,6 @@ RunComputeSkinningPass
 RunLateOcclusion
 SelectCullView
 SelectShadowLights
-SetAdaptiveQualityEnabled
 SetCullTarget
 SetEntityCustomShader
 SetHDREnabled
@@ -194,7 +199,6 @@ ShouldUpdateCascade
 ShutdownComputeSkinning
 ShutdownRayTracing
 SkinUniquePoses
-SolveHandIK
 SwapCullViewState
 TemporalReuseRTOutputs
 TransitionDepthImagesToReadable
