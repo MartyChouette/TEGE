@@ -1393,10 +1393,13 @@ static bool FindWaterAt(World* world, const Math::Vector3& pos, f32* outSurfaceY
         if (!wv || !tf) continue;
         // The footprint, outline included. Testing halfExtents here is what let
         // a swimmer start swimming in the dry corners of a kidney-shaped lake.
-        if (!wv->FootprintContainsXZ(tf->position,
+        // World position: the surface mesh is drawn through the world matrix,
+        // so a volume under a parent has to be swum in where it is drawn
+        const Math::Vector3 waterPos = WorldPosition(world, e, *tf);
+        if (!wv->FootprintContainsXZ(waterPos,
                                      world->GetComponent<BoundaryPolygonComponent>(e),
                                      pos.x, pos.z)) continue;
-        f32 surf = tf->position.y;
+        f32 surf = waterPos.y;
         f32 bottom = surf - wv->halfExtents.y * 2.0f;
         if (pos.y >= bottom && pos.y <= surf) {
             if (outSurfaceY) *outSurfaceY = surf;
@@ -1417,12 +1420,13 @@ static bool FindWaterSurfaceXZ(World* world, f32 x, f32 z, f32* outSurfaceY, Ent
         auto* wv = world->GetComponent<WaterVolumeComponent>(e);
         auto* tf = world->GetComponent<TransformComponent>(e);
         if (!wv || !tf) continue;
-        if (!wv->FootprintContainsXZ(tf->position,
+        const Math::Vector3 waterPos = WorldPosition(world, e, *tf);
+        if (!wv->FootprintContainsXZ(waterPos,
                                      world->GetComponent<BoundaryPolygonComponent>(e),
                                      x, z)) continue;
         // Overlapping volumes resolve by priority, the same rule buoyancy uses.
         if (!found || wv->priority > bestPriority) {
-            found = true; best = tf->position.y; bestE = e; bestPriority = wv->priority;
+            found = true; best = waterPos.y; bestE = e; bestPriority = wv->priority;
         }
     }
     if (found) { if (outSurfaceY) *outSurfaceY = best; if (outEntity) *outEntity = bestE; }
@@ -1858,13 +1862,13 @@ bool ControllerSystem::ResolveZoneGravity(const Math::Vector3& position,
         if (!gz || !gz->isActive) continue;
         auto* zt = m_World->GetComponent<TransformComponent>(zone);
         if (!zt) continue;
-        if (!gz->ContainsPoint(zt->position, position)) continue;
+        if (!gz->ContainsPoint(WorldPosition(m_World, zone, *zt), position)) continue;
 
         // Overlapping zones resolve by priority, as the component documents.
         // Ties go to the first found, which is stable for a given scene.
         if (found && gz->priority <= best->priority) continue;
         best = gz;
-        bestCenter = zt->position;
+        bestCenter = WorldPosition(m_World, zone, *zt);
         found = true;
     }
 
@@ -2801,11 +2805,11 @@ void ControllerSystem::UpdateSurfaceAligned(Entity entity, SurfaceAlignedControl
             if (!gz || !gz->isActive || gz->mode != GravityZoneMode::Point) continue;
             auto* zt = m_World->GetComponent<TransformComponent>(zone);
             if (!zt) continue;
-            if (!gz->ContainsPoint(zt->position, transform.position)) continue;
+            if (!gz->ContainsPoint(WorldPosition(m_World, zone, *zt), transform.position)) continue;
 
-            f32 dist = (zt->position - transform.position).Length();
+            f32 dist = (WorldPosition(m_World, zone, *zt) - transform.position).Length();
             if (dist < bestDist) {
-                gravity = gz->GetGravityAt(zt->position, transform.position);
+                gravity = gz->GetGravityAt(WorldPosition(m_World, zone, *zt), transform.position);
                 bestDist = dist;
             }
         }
@@ -2918,17 +2922,17 @@ void ControllerSystem::UpdateSurfaceAligned(Entity entity, SurfaceAlignedControl
             if (!gz || !gz->isActive || gz->mode != GravityZoneMode::Point) continue;
             auto* zt = m_World->GetComponent<TransformComponent>(zone);
             if (!zt) continue;
-            if (!gz->ContainsPoint(zt->position, transform.position)) continue;
+            if (!gz->ContainsPoint(WorldPosition(m_World, zone, *zt), transform.position)) continue;
 
             f32 zoneRadius = gz->halfExtents.x * 0.1f;
             auto* sphereCol = m_World->GetComponent<SphereColliderComponent>(zone);
             if (sphereCol) zoneRadius = sphereCol->radius;
 
-            Math::Vector3 toCenter = zt->position - transform.position;
+            Math::Vector3 toCenter = WorldPosition(m_World, zone, *zt) - transform.position;
             f32 distToSurface = toCenter.Length() - zoneRadius;
             if (distToSurface < closestSurfaceDist) {
                 closestSurfaceDist = distToSurface;
-                planetCenter = zt->position;
+                planetCenter = WorldPosition(m_World, zone, *zt);
                 planetRadius = zoneRadius;
                 hasZone = true;
             }
@@ -3001,12 +3005,13 @@ void ControllerSystem::UpdateSurfaceAligned(Entity entity, SurfaceAlignedControl
                 if (sphereCol) zoneRadius = sphereCol->radius;
 
                 f32 zoneStandRadius = zoneRadius + capsuleOffset;
-                Math::Vector3 toCenter = zt->position - transform.position;
+                Math::Vector3 toCenter = WorldPosition(m_World, zone, *zt) - transform.position;
                 f32 dist = toCenter.Length();
                 if (dist <= zoneStandRadius) {
                     // Land on this planet
-                    Math::Vector3 outward = (transform.position - zt->position).Normalized();
-                    transform.position = zt->position + outward * zoneStandRadius;
+                    const Math::Vector3 zoneWorldPos = WorldPosition(m_World, zone, *zt);
+                    Math::Vector3 outward = (transform.position - zoneWorldPos).Normalized();
+                    transform.position = zoneWorldPos + outward * zoneStandRadius;
                     ctrl.localUp = outward;
                     ctrl.velocity = Math::Vector3(0, 0, 0);
                     ctrl.isGrounded = true;

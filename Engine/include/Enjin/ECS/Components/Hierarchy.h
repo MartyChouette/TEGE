@@ -238,6 +238,79 @@ inline void GetWorldTransform(World* world, Entity entity,
     outRot = Math::Quaternion::FromMatrix(m);
 }
 
+// ---------------------------------------------------------------------------
+// WorldPosition / WorldRotation: where an entity IS, for any system that places
+// something in the world.
+//
+// `transform->position` is the offset from the PARENT. Reading it directly is
+// right for a root entity and silently wrong for a child, and until 2026-10-07
+// nearly every system did: a light, an audio source, a trigger zone, a gravity
+// zone, a spawn point, a grass volume or a 2D body parented under something
+// stayed at its local offset, near the origin, while its parent moved. Only
+// meshes, 3D bodies and waypoints followed. Use these two, not the field.
+//
+// Two properties the callers rely on:
+//   - A ROOT entity returns its own position and rotation untouched, bit for
+//     bit, so an unparented scene renders exactly as it did.
+//   - A child is computed FRESH from the parent chain and nothing is cached.
+//     `cachedWorldMatrix` is only reset once a frame inside RenderSystem, so a
+//     gameplay system reading it earlier in the frame gets last frame's parent,
+//     and the editor (which never runs RenderSystem::Update) can get an older
+//     one still. Not caching also makes these safe from any thread.
+// ---------------------------------------------------------------------------
+inline Math::Matrix4 ComputeWorldMatrixFresh(World* world, Entity entity) {
+    auto* transform = world->GetComponent<TransformComponent>(entity);
+    if (!transform) return Math::Matrix4::Identity();
+    Math::Matrix4 m = transform->ToMatrix();
+    Entity cur = entity;
+    for (u32 depth = 0; depth < kMaxHierarchyDepth; ++depth) {
+        auto* pc = world->GetComponent<ParentComponent>(cur);
+        if (!pc || pc->parent == INVALID_ENTITY) break;
+        auto* pt = world->GetComponent<TransformComponent>(pc->parent);
+        if (!pt) break;
+        m = pt->ToMatrix() * m;
+        cur = pc->parent;
+    }
+    return m;
+}
+
+inline Math::Vector3 WorldPosition(World* world, Entity entity, const TransformComponent& local) {
+    if (!HasParent(world, entity)) return local.position;
+    const Math::Matrix4 m = ComputeWorldMatrixFresh(world, entity);
+    return Math::Vector3(m.m[12], m.m[13], m.m[14]);
+}
+
+inline Math::Quaternion WorldRotation(World* world, Entity entity, const TransformComponent& local) {
+    if (!HasParent(world, entity)) return local.rotation;
+    return Math::Quaternion::FromMatrix(ComputeWorldMatrixFresh(world, entity));
+}
+
+inline Math::Vector3 WorldPosition(World* world, Entity entity) {
+    auto* t = world->GetComponent<TransformComponent>(entity);
+    return t ? WorldPosition(world, entity, *t) : Math::Vector3(0.0f, 0.0f, 0.0f);
+}
+
+inline Math::Quaternion WorldRotation(World* world, Entity entity) {
+    auto* t = world->GetComponent<TransformComponent>(entity);
+    return t ? WorldRotation(world, entity, *t) : Math::Quaternion();
+}
+
+// Where a collider's `center` offset lands in the world: the entity's WORLD
+// position plus the offset turned by its WORLD rotation, unscaled. That is what
+// the Jolt body is built from (world transform + a RotatedTranslatedShape), so
+// anything drawing or testing a collider must use this and not
+// `transform->position + center`. The editor wireframes did the latter: a
+// collider on a child stayed at the child's local offset, near the origin, while
+// the model and the real body moved with the parent (2026-10-07).
+inline Math::Vector3 ColliderWorldCenter(World* world, Entity entity,
+                                         const Math::Vector3& localCenter,
+                                         Math::Quaternion* outWorldRot = nullptr) {
+    Math::Vector3 pos; Math::Quaternion rot;
+    GetWorldTransform(world, entity, pos, rot);
+    if (outWorldRot) *outWorldRot = rot;
+    return pos + rot.Rotate(localCenter);
+}
+
 // Inverse: express a WORLD position/rotation in the entity's parent space, so a
 // value produced in world terms (a physics body's resting place) can be written
 // back into a local TransformComponent without teleporting it by the parent's

@@ -1,4 +1,5 @@
 #include "Enjin/Platform/Platform.h"
+#include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/Audio/AudioEngine.h"
 #include "Enjin/Audio/AcousticScene.h"
 #include "Enjin/Acoustics/ReverbDSP.h"
@@ -1794,7 +1795,8 @@ void AudioEngine::UpdateAudioSources(f32 deltaTime) {
         if (!audio) continue;
         auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
 
-        Math::Vector3 position = transform ? transform->position : Math::Vector3(0, 0, 0);
+        // World position: a source parented to a moving thing is heard where that thing is
+        Math::Vector3 position = transform ? ECS::WorldPosition(m_World, entity, *transform) : Math::Vector3(0, 0, 0);
 
         // Handle playOnAwake.
         //

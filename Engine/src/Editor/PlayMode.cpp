@@ -1,4 +1,5 @@
 #include "Enjin/Editor/PlayMode.h"
+#include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/Core/Version.h"
 #include "Enjin/ECS/CameraZones.h"
 #include "Enjin/ECS/EntityEventBridge.h"
@@ -1305,9 +1306,10 @@ void PlayMode::Update(f32 deltaTime) {
             if (cam != ECS::INVALID_ENTITY) {
                 auto* camT = m_World->GetComponent<ECS::TransformComponent>(cam);
                 if (camT) {
-                    m_AudioEngine.SetListenerPosition(camT->position,
-                                                      camT->rotation.GetForward(),
-                                                      camT->rotation.GetUp());
+                    const Math::Quaternion camWorldRot = ECS::WorldRotation(m_World, cam, *camT);
+                    m_AudioEngine.SetListenerPosition(ECS::WorldPosition(m_World, cam, *camT),
+                                                      camWorldRot.GetForward(),
+                                                      camWorldRot.GetUp());
                 }
             }
         }

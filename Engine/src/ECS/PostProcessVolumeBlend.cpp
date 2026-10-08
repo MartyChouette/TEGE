@@ -1,4 +1,5 @@
 #include "Enjin/ECS/PostProcessVolumeBlend.h"
+#include "Enjin/ECS/Components/Hierarchy.h"
 
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Transform.h"
@@ -34,7 +35,7 @@ bool BlendPostProcessVolumes(World* world,
         if (!vol->isGlobal) {
             auto* transform = world->GetComponent<TransformComponent>(entity);
             if (!transform) continue;
-            center = transform->position;
+            center = WorldPosition(world, entity, *transform);
         }
 
         const f32 w = vol->GetBlendWeight(center, cameraPosition);

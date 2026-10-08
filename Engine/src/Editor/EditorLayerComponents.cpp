@@ -10369,10 +10369,12 @@ void EditorLayer::DrawCameraFrustum(ECS::Entity cameraEntity) {
     ImDrawList* drawList = GetViewportOverlayDrawList();
 
     // Calculate camera orientation
-    Math::Vector3 camPos = transform->position;
-    Math::Vector3 forward = transform->rotation.Rotate(Math::Vector3(0.0f, 0.0f, -1.0f));
-    Math::Vector3 up = transform->rotation.Rotate(Math::Vector3(0.0f, 1.0f, 0.0f));
-    Math::Vector3 right = transform->rotation.Rotate(Math::Vector3(1.0f, 0.0f, 0.0f));
+    // World pose, the one the game camera renders from
+    Math::Vector3 camPos = ECS::WorldPosition(m_World, cameraEntity, *transform);
+    const Math::Quaternion camWorldRot = ECS::WorldRotation(m_World, cameraEntity, *transform);
+    Math::Vector3 forward = camWorldRot.Rotate(Math::Vector3(0.0f, 0.0f, -1.0f));
+    Math::Vector3 up = camWorldRot.Rotate(Math::Vector3(0.0f, 1.0f, 0.0f));
+    Math::Vector3 right = camWorldRot.Rotate(Math::Vector3(1.0f, 0.0f, 0.0f));
 
     // Frustum parameters
     f32 fov = camComp->fieldOfView * (3.14159f / 180.0f);

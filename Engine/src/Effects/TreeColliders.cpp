@@ -21,7 +21,8 @@ void TreeRenderer::GenerateColliders(ECS::World* world, ECS::Entity volumeEntity
     auto* transform = world->GetComponent<ECS::TransformComponent>(volumeEntity);
     if (!tree || !transform) return;
 
-    Math::Vector3 volumeCenter = transform->position;
+    // World position, the same one the tree renderer plants the trunks around
+    Math::Vector3 volumeCenter = ECS::WorldPosition(world, volumeEntity, *transform);
     f32 halfX = tree->halfExtents.x;
     f32 halfZ = tree->halfExtents.z;
 
@@ -79,13 +80,20 @@ void TreeRenderer::GenerateColliders(ECS::World* world, ECS::Entity volumeEntity
 
         // Nest the collider under the volume so all trunk colliders live INSIDE the
         // tree volume in the hierarchy instead of scattering across the scene root
-        // ("a ton shot out"). SetParent only wires the parent/children links — it does
-        // NOT touch the transform, so transform.position stays WORLD-space. That's
-        // deliberate: the physics backend places bodies from the local transform, and
-        // the collider debug draw reads it directly too, so leaving the world value in
-        // place keeps both correct with no physics change. (These entities have no mesh,
-        // so the parent-relative ComputeWorldMatrix is never consumed.)
+        // ("a ton shot out"). SetParent only wires the parent/children links, so the
+        // WORLD position written above has to be re-expressed in the volume's space.
+        // It used to be left as it was, on the grounds that physics placed bodies
+        // from the local transform. Physics has used the world transform since the
+        // parented-body fix, so every trunk collider sat at the volume's position
+        // TWICE over: right for a volume at the origin, and off by the volume's own
+        // offset anywhere else (2026-10-07).
         ECS::SetParent(world, collider, volumeEntity);
+        if (auto* placed = world->GetComponent<ECS::TransformComponent>(collider)) {
+            const Math::Vector3 trunkWorldPos = placed->position;
+            ECS::WorldToLocalTransform(world, collider, trunkWorldPos, Math::Quaternion(),
+                                       placed->position, placed->rotation);
+            placed->worldMatrixDirty = true;
+        }
     }
 
     ENJIN_LOG_INFO(Renderer, "Generated %u tree trunk colliders under the volume", tree->density);

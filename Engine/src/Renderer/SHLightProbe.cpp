@@ -1,4 +1,5 @@
 #include "Enjin/Renderer/SHLightProbe.h"
+#include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Light.h"
 #include "Enjin/ECS/Components/Transform.h"
@@ -141,8 +142,8 @@ void SHLightingSystem::BakeProbe(u32 probeId, ECS::World* world) {
 
             LightInfo info;
             info.light = *lc;
-            info.position = tc->position;
-            info.direction = tc->rotation.GetForward();
+            info.position = ECS::WorldPosition(world, entity, *tc);
+            info.direction = ECS::WorldRotation(world, entity, *tc).GetForward();
             lights.push_back(info);
         }
 

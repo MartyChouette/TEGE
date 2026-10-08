@@ -180,6 +180,20 @@ static inline Math::Quaternion FromJolt(const JPH::Quat& q) {
 
 static constexpr f32 DEG_TO_RAD = 3.14159265358979323846f / 180.0f;
 
+// Where a body really is: its own world-space box, straight from Jolt.
+//
+// The spatial queries below used to rebuild this from the ECS instead, as
+// `transform->position + collider->center` (times transform scale for a box and
+// a sphere, not for a capsule). A TransformComponent is LOCAL, so a collider on
+// a child was tested at its offset from the parent, near the origin, while the
+// body sat where the parent had been moved; and the scale contradicted
+// CreateBody, where collider sizes are world units. The body is the one thing
+// that cannot disagree with the simulation (2026-10-07).
+static AABB BodyWorldBounds(JPH::PhysicsSystem& system, JPH::BodyID id) {
+    const JPH::AABox box = system.GetBodyInterface().GetTransformedShape(id).GetWorldSpaceBounds();
+    return AABB(FromJolt(box.mMin), FromJolt(box.mMax));
+}
+
 // ============================================================================
 // JoltBackend Implementation
 // ============================================================================
@@ -1027,7 +1041,7 @@ void JoltBackend::ApplyGravityZones() {
             auto* zone = zoneStorage ? zoneStorage->Get(zoneEntity) : nullptr;
             auto* zoneTransform = xformStorage ? xformStorage->Get(zoneEntity) : nullptr;
             if (zone && zoneTransform && zone->isActive) {
-                activeZones.push_back({ zone, zoneTransform->position });
+                activeZones.push_back({ zone, ECS::WorldPosition(m_World, zoneEntity, *zoneTransform) });
             }
         }
     }
@@ -1116,16 +1130,18 @@ void JoltBackend::ApplyBuoyancy() {
             auto* tf = xformStorage ? xformStorage->Get(e) : nullptr;
             if (!wv || !tf || !wv->enableBuoyancy) continue;
             BuoyZone z{};
-            z.surfaceY = tf->position.y;
-            z.bottomY  = tf->position.y - wv->halfExtents.y * 2.0f;
-            z.minX = tf->position.x - wv->halfExtents.x; z.maxX = tf->position.x + wv->halfExtents.x;
-            z.minZ = tf->position.z - wv->halfExtents.z; z.maxZ = tf->position.z + wv->halfExtents.z;
+            // World position, where the surface mesh is drawn
+            const Math::Vector3 waterPos = ECS::WorldPosition(m_World, e, *tf);
+            z.surfaceY = waterPos.y;
+            z.bottomY  = waterPos.y - wv->halfExtents.y * 2.0f;
+            z.minX = waterPos.x - wv->halfExtents.x; z.maxX = waterPos.x + wv->halfExtents.x;
+            z.minZ = waterPos.z - wv->halfExtents.z; z.maxZ = waterPos.z + wv->halfExtents.z;
             z.strength = wv->buoyancyStrength;
             z.drag     = wv->buoyancyDrag;
             z.priority = wv->priority;
             z.volume  = wv;
             z.outline = m_World->GetComponent<ECS::BoundaryPolygonComponent>(e);
-            z.origin  = tf->position;
+            z.origin  = waterPos;
             // A WaterVolume has no animated surface, so its level stays flat.
             // Nothing to sample.
             zones.push_back(z);
@@ -1255,8 +1271,9 @@ void JoltBackend::SyncJointsToJolt() {
             auto* tA = m_World->GetComponent<ECS::TransformComponent>(sj->entityA);
             auto* tB = m_World->GetComponent<ECS::TransformComponent>(sj->entityB);
             if (tA && tB) {
-                Math::Vector3 wA = tA->position + sj->anchorA;
-                Math::Vector3 wB = tB->position + sj->anchorB;
+                // World positions, as the constraint itself was built from
+                Math::Vector3 wA = ECS::WorldPosition(m_World, sj->entityA, *tA) + sj->anchorA;
+                Math::Vector3 wB = ECS::WorldPosition(m_World, sj->entityB, *tB) + sj->anchorB;
                 f32 dist = (wB - wA).Length();
                 f32 displacement = dist - sj->restLength;
                 f32 springForce = sj->springConstant * displacement;
@@ -1990,57 +2007,10 @@ Math::Vector3 JoltBackend::MoveAndSlide(const Math::Vector3& position, const Mat
                 if (!(filterIt->second.categoryBits & layerMask)) continue;
             }
 
-            // Get entity AABB from Jolt body bounds
-            auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
-            if (!transform) continue;
+            // A trigger does not block movement
+            if (GetColliderInfo(entity).isTrigger) continue;
 
-            // Check if entity has a collider that isn't a trigger
-            ColliderInfo info = GetColliderInfo(entity);
-            if (info.isTrigger) continue;
-
-            // Build world AABB for this entity
-            AABB entityAABB;
-            if (auto* box = m_World->GetComponent<ECS::BoxColliderComponent>(entity)) {
-                Math::Vector3 worldCenter = transform->position + box->center;
-                Math::Vector3 worldSize(
-                    box->size.x * transform->scale.x,
-                    box->size.y * transform->scale.y,
-                    box->size.z * transform->scale.z
-                );
-                entityAABB = AABB::FromCenterSize(worldCenter, worldSize);
-            } else if (auto* sphere = m_World->GetComponent<ECS::SphereColliderComponent>(entity)) {
-                Math::Vector3 worldCenter = transform->position + sphere->center;
-                f32 r = sphere->radius * Math::Max(transform->scale.x, Math::Max(transform->scale.y, transform->scale.z));
-                entityAABB = AABB::FromCenterSize(worldCenter, Math::Vector3(r * 2, r * 2, r * 2));
-            } else if (auto* capsule = m_World->GetComponent<ECS::CapsuleColliderComponent>(entity)) {
-                Math::Vector3 worldCenter = transform->position + capsule->center;
-                // Collider sizes are WORLD SPACE: no transform scale, the same rule
-                // the shape in CreateBody follows. And `height` is the cylinder, so
-                // the box has to be the TOTAL or the trigger is 2*radius short.
-                f32 r = capsule->radius;
-                f32 h = capsule->TotalHeight();
-                entityAABB = AABB::FromCenterSize(worldCenter, Math::Vector3(r * 2, h, r * 2));
-            } else if (auto* meshCol = m_World->GetComponent<ECS::MeshColliderComponent>(entity)) {
-                // Compute AABB from cached mesh vertices
-                if (meshCol->generated && !meshCol->vertices.empty()) {
-                    Math::Vector3 mn = meshCol->vertices[0], mx = meshCol->vertices[0];
-                    for (const auto& v : meshCol->vertices) {
-                        mn.x = std::min(mn.x, v.x); mn.y = std::min(mn.y, v.y); mn.z = std::min(mn.z, v.z);
-                        mx.x = std::max(mx.x, v.x); mx.y = std::max(mx.y, v.y); mx.z = std::max(mx.z, v.z);
-                    }
-                    Math::Vector3 worldCenter = transform->position + (mn + mx) * 0.5f;
-                    Math::Vector3 worldSize(
-                        (mx.x - mn.x) * transform->scale.x,
-                        (mx.y - mn.y) * transform->scale.y,
-                        (mx.z - mn.z) * transform->scale.z
-                    );
-                    entityAABB = AABB::FromCenterSize(worldCenter, worldSize);
-                } else {
-                    continue;
-                }
-            } else {
-                continue;
-            }
+            const AABB entityAABB = BodyWorldBounds(*m_PhysicsSystem, bodyID);
 
             CollisionResult result;
             if (CheckAABBCollision(movedCollider, entityAABB, result)) {
@@ -2061,21 +2031,27 @@ Math::Vector3 JoltBackend::MoveAndSlide(const Math::Vector3& position, const Mat
 
 std::vector<ECS::Entity> JoltBackend::GetCollidersInRadius(const Math::Vector3& center, f32 radius, u32 layerMask) {
     std::vector<ECS::Entity> result;
-    if (!m_World) return result;
+    if (!m_World || !m_Initialized) return result;
 
     f32 radiusSq = radius * radius;
 
     for (auto& [entity, bodyID] : m_EntityToBody) {
-        auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
-        if (!transform) continue;
-
         // Layer mask filter
         auto filterIt = m_BodyFilterData.find(bodyID.GetIndex());
         if (filterIt != m_BodyFilterData.end()) {
             if (!(filterIt->second.categoryBits & layerMask)) continue;
         }
 
-        Math::Vector3 diff = transform->position - center;
+        // Distance from the sphere's centre to the nearest point of the body's
+        // box. This tested the entity's ORIGIN before, so a floor whose centre
+        // was farther away than the radius was never found, however much of it
+        // lay inside the sphere.
+        const AABB bounds = BodyWorldBounds(*m_PhysicsSystem, bodyID);
+        const Math::Vector3 nearest(
+            Math::Max(bounds.min.x, Math::Min(center.x, bounds.max.x)),
+            Math::Max(bounds.min.y, Math::Min(center.y, bounds.max.y)),
+            Math::Max(bounds.min.z, Math::Min(center.z, bounds.max.z)));
+        Math::Vector3 diff = nearest - center;
         f32 distSq = diff.x * diff.x + diff.y * diff.y + diff.z * diff.z;
         if (distSq <= radiusSq) {
             result.push_back(entity);
@@ -2087,21 +2063,19 @@ std::vector<ECS::Entity> JoltBackend::GetCollidersInRadius(const Math::Vector3& 
 
 std::vector<ECS::Entity> JoltBackend::OverlapBox(const Math::Vector3& center, const Math::Vector3& halfExtents, u32 layerMask) {
     std::vector<ECS::Entity> result;
-    if (!m_World) return result;
+    if (!m_World || !m_Initialized) return result;
 
     AABB queryBox(center - halfExtents, center + halfExtents);
 
     for (auto& [entity, bodyID] : m_EntityToBody) {
-        auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
-        if (!transform) continue;
-
         auto filterIt = m_BodyFilterData.find(bodyID.GetIndex());
         if (filterIt != m_BodyFilterData.end()) {
             if (!(filterIt->second.categoryBits & layerMask)) continue;
         }
 
-        // Simple point-in-box check (could use Jolt broad phase query for more accuracy)
-        if (queryBox.Contains(transform->position)) {
+        // Box against the body's box. This asked whether the entity's ORIGIN
+        // was inside the query, which is a point test, not an overlap.
+        if (queryBox.Intersects(BodyWorldBounds(*m_PhysicsSystem, bodyID))) {
             result.push_back(entity);
         }
     }

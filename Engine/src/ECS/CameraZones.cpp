@@ -40,7 +40,8 @@ Entity ResolveCameraZone(World* world, Entity player, Entity* outTrigger) {
         const auto* trigger = world->GetComponent<CameraTriggerComponent>(entity);
         const auto* trigTransform = world->GetComponent<TransformComponent>(entity);
         if (!trigger || !trigTransform || trigger->priority <= bestPriority) continue;
-        if (!trigger->ContainsPoint(trigTransform->position, playerTransform->position)) continue;
+        if (!trigger->ContainsPoint(WorldPosition(world, entity, *trigTransform),
+                                   WorldPosition(world, player, *playerTransform))) continue;
         if (trigger->targetCamera == INVALID_ENTITY ||
             !world->HasComponent<CameraComponent>(trigger->targetCamera)) continue;
         best = trigger->targetCamera;

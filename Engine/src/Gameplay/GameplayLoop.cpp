@@ -1,4 +1,5 @@
 #include "Enjin/Gameplay/GameplayLoop.h"
+#include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/ECS/Components/DynamicDifficulty.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/ECS/Components/Gameplay.h"
@@ -938,7 +939,7 @@ void UpdateTriggerZones(ECS::World* world, ECS::VisualScriptSystem* vsSystem,
             f32 pr = 0.5f;
             if (auto* cap = world->GetComponent<ECS::CapsuleColliderComponent>(player)) pr = cap->radius;
 
-            Math::Vector3 d = pt->position - zoneT->position;
+            Math::Vector3 d = ECS::WorldPosition(world, player, *pt) - ECS::WorldPosition(world, zoneE, *zoneT);
             bool inside = false;
             if (zone->shape == ECS::TriggerZoneComponent::Shape::Sphere) {
                 f32 dist = std::sqrt(d.x * d.x + d.y * d.y + d.z * d.z);

@@ -1,4 +1,5 @@
 #include "Enjin/Effects/GrassRenderer.h"
+#include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/Effects/VegetationTemplates.h"
 #include "Enjin/Renderer/Vulkan/ShaderData.h"
 #include "Enjin/Renderer/Vulkan/VulkanPipeline.h"
@@ -325,9 +326,11 @@ void GrassRenderer::Render(VkCommandBuffer commandBuffer,
         model.m[0] = grass->halfExtents.x;   // col0.x = half extent X
         model.m[5] = 1.0f;                    // col1.y = Y scale unused
         model.m[10] = grass->halfExtents.z;   // col2.z = half extent Z
-        model.m[12] = transform->position.x;  // translation X
-        model.m[13] = transform->position.y;  // translation Y
-        model.m[14] = transform->position.z;  // translation Z
+        // World position: a volume under a parent grows where the parent is
+        const Math::Vector3 volumeWorldPos = ECS::WorldPosition(world, entity, *transform);
+        model.m[12] = volumeWorldPos.x;  // translation X
+        model.m[13] = volumeWorldPos.y;  // translation Y
+        model.m[14] = volumeWorldPos.z;  // translation Z
 
         // Pack grass parameters into push constants
         Renderer::PushConstants pc{};

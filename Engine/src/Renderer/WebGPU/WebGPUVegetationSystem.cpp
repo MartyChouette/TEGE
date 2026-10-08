@@ -1,4 +1,5 @@
 #include "Enjin/Effects/TreeSeason.h"
+#include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/Platform/Platform.h"
 
 #if ENJIN_PLATFORM_WEB
@@ -473,7 +474,7 @@ u32 WebGPUVegetationSystem::BuildVolumeParams(ECS::World* world,
         if (!g || !t || !t->visible) continue;
         VolumeParamsCPU& p = params[count];
         p.treeScale[2] = m_SnowAccumulation;   // shared with grass and shrubs
-        put3(p.posHalfX, t->position); p.posHalfX[3] = g->halfExtents.x;
+        put3(p.posHalfX, WorldPosition(world, e, *t)); p.posHalfX[3] = g->halfExtents.x;
         put3(p.baseColorHalfZ, g->baseColor); p.baseColorHalfZ[3] = g->halfExtents.z;
         put3(p.tipColorHeight, g->tipColor); p.tipColorHeight[3] = g->bladeHeight;
         p.misc[0] = g->bladeHeightVariance; p.misc[1] = g->bladeWidth;
@@ -492,7 +493,7 @@ u32 WebGPUVegetationSystem::BuildVolumeParams(ECS::World* world,
         if (!g || !t || !t->visible) continue;
         VolumeParamsCPU& p = params[count];
         p.treeScale[2] = m_SnowAccumulation;   // shared with grass and shrubs
-        put3(p.posHalfX, t->position); p.posHalfX[3] = g->halfExtents.x;
+        put3(p.posHalfX, WorldPosition(world, e, *t)); p.posHalfX[3] = g->halfExtents.x;
         put3(p.baseColorHalfZ, g->baseColor); p.baseColorHalfZ[3] = g->halfExtents.z;
         put3(p.tipColorHeight, g->tipColor); p.tipColorHeight[3] = g->shrubHeight;
         p.misc[0] = g->heightVariance; p.misc[1] = g->width;
@@ -513,7 +514,7 @@ u32 WebGPUVegetationSystem::BuildVolumeParams(ECS::World* world,
         p.treeScale[2] = m_SnowAccumulation;   // shared with grass and shrubs
         // The season's canopy, the same numbers the desktop TreeRenderer uses
         const Effects::SeasonalCanopy seasonal = Effects::ComputeSeasonalCanopy(*g, m_Season, m_SeasonProgress);
-        put3(p.posHalfX, t->position); p.posHalfX[3] = g->halfExtents.x;
+        put3(p.posHalfX, WorldPosition(world, e, *t)); p.posHalfX[3] = g->halfExtents.x;
         put3(p.baseColorHalfZ, seasonal.base); p.baseColorHalfZ[3] = g->halfExtents.z;
         put3(p.tipColorHeight, seasonal.tip);
         // Overall extent, used only for the wind clamp; the shader scales trunk

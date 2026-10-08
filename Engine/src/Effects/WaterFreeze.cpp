@@ -1,4 +1,5 @@
 #include "Enjin/Effects/WaterFreeze.h"
+#include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/WaterVolume.h"
@@ -22,7 +23,8 @@ void UpdateWaterFreeze(ECS::World* world, f32 snowIntensity, f32 dt) {
             auto* tz = world->GetComponent<ECS::TemperatureZoneComponent>(tzEntity);
             auto* tzTransform = world->GetComponent<ECS::TransformComponent>(tzEntity);
             if (tz && tzTransform && tz->priority > bestPriority &&
-                tz->ContainsPoint(tzTransform->position, waterTransform->position)) {
+                tz->ContainsPoint(ECS::WorldPosition(world, tzEntity, *tzTransform),
+                                 ECS::WorldPosition(world, waterEntity, *waterTransform))) {
                 zone = tz;
                 bestPriority = tz->priority;
             }

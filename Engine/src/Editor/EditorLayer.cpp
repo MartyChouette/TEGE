@@ -3345,7 +3345,7 @@ void EditorLayer::UpdateGameViewSims(f32 simDt) {
         auto* zone = m_World->GetComponent<ECS::WeatherZoneComponent>(entity);
         auto* zoneTransform = m_World->GetComponent<ECS::TransformComponent>(entity);
         if (zone && zoneTransform && zone->priority > bestWeatherPriority) {
-            if (zone->ContainsPoint(zoneTransform->position, simViewPos)) {
+            if (zone->ContainsPoint(ECS::WorldPosition(m_World, entity, *zoneTransform), simViewPos)) {
                 activeWeatherZone = zone;
                 bestWeatherPriority = zone->priority;
             }
@@ -3360,7 +3360,7 @@ void EditorLayer::UpdateGameViewSims(f32 simDt) {
         auto* zone = m_World->GetComponent<ECS::TemperatureZoneComponent>(entity);
         auto* zoneTransform = m_World->GetComponent<ECS::TransformComponent>(entity);
         if (zone && zoneTransform && zone->priority > bestTempPriority) {
-            if (zone->ContainsPoint(zoneTransform->position, simViewPos)) {
+            if (zone->ContainsPoint(ECS::WorldPosition(m_World, entity, *zoneTransform), simViewPos)) {
                 activeTempZone = zone;
                 bestTempPriority = zone->priority;
             }
@@ -5409,13 +5409,13 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                             auto* tr = m_World->GetComponent<ECS::TransformComponent>(it->second);
                             if (!tr) continue;
                             ImVec2 sp;
-                            if (worldToScreen(tr->position, sp)) {
+                            if (worldToScreen(ECS::WorldPosition(m_World, it->second, *tr), sp)) {
                                 bgDrawList->AddCircleFilled(sp, 5.0f, col);
                                 bgDrawList->AddCircle(sp, 9.0f, col, 0, 2.0f);
                             }
                             // Wrap the object when it has a box collider (world-space size).
                             if (auto* bc = m_World->GetComponent<ECS::BoxColliderComponent>(it->second)) {
-                                drawWireBox(bgDrawList, tr->position + bc->center, bc->size * 0.5f, col, 1.5f);
+                                drawWireBox(bgDrawList, ECS::ColliderWorldCenter(m_World, it->second, bc->center), bc->size * 0.5f, col, 1.5f);
                             }
                         }
                     }
@@ -5430,7 +5430,7 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                     bool isSelected = IsSelected(entity);
                     ImU32 color = isSelected ? IM_COL32(100, 180, 255, 200) : IM_COL32(100, 180, 255, 80);
                     f32 thickness = isSelected ? 2.0f : 1.0f;
-                    drawWireBox(bgDrawList, transform->position, zone->halfExtents, color, thickness);
+                    drawWireBox(bgDrawList, ECS::WorldPosition(m_World, entity, *transform), zone->halfExtents, color, thickness);
                 }
             }
             // Water volume wireframe (cyan/teal)
@@ -5441,7 +5441,13 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                     bool isSelected = IsSelected(entity);
                     ImU32 color = isSelected ? IM_COL32(50, 220, 200, 200) : IM_COL32(50, 220, 200, 80);
                     f32 thickness = isSelected ? 2.0f : 1.0f;
-                    drawWireBox(bgDrawList, transform->position, volume->halfExtents, color, thickness);
+                    // The entity's Y is the SURFACE and the water goes down from
+                    // it: that is what swimming and buoyancy test. This drew the
+                    // box centred on the entity, half of it above the water.
+                    drawWireBox(bgDrawList,
+                                ECS::WorldPosition(m_World, entity, *transform) -
+                                    Math::Vector3(0.0f, volume->halfExtents.y, 0.0f),
+                                volume->halfExtents, color, thickness);
                 }
             }
             // Grass volume wireframe (green)
@@ -5452,7 +5458,7 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                     bool isSelected = IsSelected(entity);
                     ImU32 color = isSelected ? IM_COL32(80, 200, 80, 200) : IM_COL32(80, 200, 80, 60);
                     f32 thickness = isSelected ? 2.0f : 1.0f;
-                    drawWireBox(bgDrawList, transform->position, grass->halfExtents, color, thickness);
+                    drawWireBox(bgDrawList, ECS::WorldPosition(m_World, entity, *transform), grass->halfExtents, color, thickness);
                 }
             }
             // Shrub volume wireframe (yellow-green)
@@ -5463,7 +5469,7 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                     bool isSelected = IsSelected(entity);
                     ImU32 color = isSelected ? IM_COL32(160, 200, 60, 200) : IM_COL32(160, 200, 60, 60);
                     f32 thickness = isSelected ? 2.0f : 1.0f;
-                    drawWireBox(bgDrawList, transform->position, shrub->halfExtents, color, thickness);
+                    drawWireBox(bgDrawList, ECS::WorldPosition(m_World, entity, *transform), shrub->halfExtents, color, thickness);
                 }
             }
             // Tree volume wireframe (dark green)
@@ -5474,7 +5480,7 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                     bool isSelected = IsSelected(entity);
                     ImU32 color = isSelected ? IM_COL32(40, 160, 40, 200) : IM_COL32(40, 160, 40, 60);
                     f32 thickness = isSelected ? 2.0f : 1.0f;
-                    drawWireBox(bgDrawList, transform->position, tree->halfExtents, color, thickness);
+                    drawWireBox(bgDrawList, ECS::WorldPosition(m_World, entity, *transform), tree->halfExtents, color, thickness);
                 }
             }
 
@@ -5528,17 +5534,26 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                         }
                         const f32 thick = target ? 2.5f : 1.0f;
 
-                        const Math::Vector3 worldCenter =
-                            transform->position + transform->rotation.Rotate(b.center);
-                        const Math::Quaternion worldRot = transform->rotation * b.rotation;
+                        // Through the entity's WORLD matrix, the way the built
+                        // mesh is drawn: parent chain and scale included.
+                        const Math::Matrix4 solidWorld = ECS::ComputeWorldMatrixFresh(m_World, entity);
+                        const Math::Vector4 wc = solidWorld * Math::Vector4(b.center.x, b.center.y, b.center.z, 1.0f);
+                        const Math::Vector3 worldCenter(wc.x, wc.y, wc.z);
+                        const Math::Quaternion worldRot = Math::Quaternion::FromMatrix(solidWorld) * b.rotation;
+                        const Math::Vector3 solidScale(
+                            Math::Vector3(solidWorld.m[0], solidWorld.m[1], solidWorld.m[2]).Length(),
+                            Math::Vector3(solidWorld.m[4], solidWorld.m[5], solidWorld.m[6]).Length(),
+                            Math::Vector3(solidWorld.m[8], solidWorld.m[9], solidWorld.m[10]).Length());
 
                         // A prism is drawn as its bounding box: the wireframe is
                         // here to say where a brush IS and what it does, and an
                         // n-gon outline costs more than it explains.
-                        const Math::Vector3 half =
+                        const Math::Vector3 halfLocal =
                             (b.shape == ECS::BrushSolidComponent::Shape::Prism)
                                 ? Math::Vector3(b.radius, b.halfHeight, b.radius)
                                 : b.halfExtents;
+                        const Math::Vector3 half(halfLocal.x * solidScale.x, halfLocal.y * solidScale.y,
+                                                 halfLocal.z * solidScale.z);
 
                         drawWireBox(bgDrawList, worldCenter, half, color, thick, worldRot);
 
@@ -5562,8 +5577,11 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                         ImU32 color = sel ? Theme::BoneIKTarget : IM_COL32(255, 220, 50, 100);
                         f32 thick = sel ? 2.0f : 1.0f;
                         Math::Vector3 halfExt = box->size * 0.5f;
-                        Math::Vector3 worldCenter = transform->position + transform->rotation.Rotate(box->center);
-                        drawWireBox(bgDrawList, worldCenter, halfExt, color, thick, transform->rotation);
+                        // World transform, as physics uses: a collider on a child
+                        // was drawn at the child's local offset.
+                        Math::Quaternion worldRot;
+                        Math::Vector3 worldCenter = ECS::ColliderWorldCenter(m_World, entity, box->center, &worldRot);
+                        drawWireBox(bgDrawList, worldCenter, halfExt, color, thick, worldRot);
                         if (sel) {
                             ImVec2 lp;
                             if (worldToScreen(worldCenter, lp))
@@ -5581,7 +5599,7 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                         if (!m_ShowColliderWireframes && !sel) continue;
                         ImU32 color = sel ? IM_COL32(180, 230, 50, 220) : IM_COL32(180, 230, 50, 100);
                         f32 thick = sel ? 2.0f : 1.0f;
-                        Math::Vector3 c = transform->position + sphere->center;
+                        Math::Vector3 c = ECS::ColliderWorldCenter(m_World, entity, sphere->center);
                         f32 r = sphere->radius;
                         drawWireCircle(bgDrawList, c, r, {1,0,0}, {0,1,0}, color, thick); // XY
                         drawWireCircle(bgDrawList, c, r, {1,0,0}, {0,0,1}, color, thick); // XZ
@@ -5598,7 +5616,8 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                         if (!m_ShowColliderWireframes && !sel) continue;
                         ImU32 color = sel ? IM_COL32(255, 160, 40, 220) : IM_COL32(255, 160, 40, 100);
                         f32 thick = sel ? 2.0f : 1.0f;
-                        Math::Vector3 c = transform->position + transform->rotation.Rotate(capsule->center);
+                        Math::Quaternion capsuleWorldRot;
+                        Math::Vector3 c = ECS::ColliderWorldCenter(m_World, entity, capsule->center, &capsuleWorldRot);
                         f32 r = capsule->radius;
                         // Draw what physics BUILDS. This read `height` as the total,
                         // so the wireframe was 2*radius shorter than the real capsule
@@ -5616,9 +5635,9 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                                 localAxis = {0,1,0}; localU = {1,0,0}; localV = {0,0,1}; break;
                         }
                         // Apply entity rotation
-                        Math::Vector3 axis = transform->rotation.Rotate(localAxis);
-                        Math::Vector3 u = transform->rotation.Rotate(localU);
-                        Math::Vector3 v = transform->rotation.Rotate(localV);
+                        Math::Vector3 axis = capsuleWorldRot.Rotate(localAxis);
+                        Math::Vector3 u = capsuleWorldRot.Rotate(localU);
+                        Math::Vector3 v = capsuleWorldRot.Rotate(localV);
 
                         Math::Vector3 top = c + axis * stemHalf;
                         Math::Vector3 bot = c - axis * stemHalf;
@@ -5683,10 +5702,14 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                     auto* bxf   = m_World->GetComponent<ECS::TransformComponent>(m_PrimarySelected);
                     if (bpoly && bxf && bpoly->points.size() >= 3) {
                         const ImVec2 mp = ImGui::GetMousePos();
+                        // The outline hangs off the entity's WORLD position, which
+                        // is where swimming and buoyancy test it
+                        const Math::Vector3 boundaryWorldPos =
+                            ECS::WorldPosition(m_World, m_PrimarySelected, *bxf);
                         auto ptWorld = [&](usize i) {
-                            return Math::Vector3(bxf->position.x + bpoly->points[i].x,
-                                                 bxf->position.y,
-                                                 bxf->position.z + bpoly->points[i].y);
+                            return Math::Vector3(boundaryWorldPos.x + bpoly->points[i].x,
+                                                 boundaryWorldPos.y,
+                                                 boundaryWorldPos.z + bpoly->points[i].y);
                         };
                         // Edges
                         for (usize i = 0; i < bpoly->points.size(); ++i)
@@ -5715,11 +5738,11 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                             Ray r = ScenePicker::ScreenToRay(m_Camera, mp.x - m_EditorViewportImageMinX,
                                                              mp.y - m_EditorViewportImageMinY, sw, sh);
                             if (std::abs(r.direction.y) > 1e-6f) {
-                                f32 t = (bxf->position.y - r.origin.y) / r.direction.y;
+                                f32 t = (boundaryWorldPos.y - r.origin.y) / r.direction.y;
                                 if (t > 0.0f) {
                                     Math::Vector3 hit = r.origin + r.direction * t;
                                     bpoly->points[static_cast<usize>(m_BoundaryDragPoint)] =
-                                        Math::Vector2(hit.x - bxf->position.x, hit.z - bxf->position.z);
+                                        Math::Vector2(hit.x - boundaryWorldPos.x, hit.z - boundaryWorldPos.z);
                                     bpoly->dirty = true;
                                 }
                             }
@@ -5767,9 +5790,12 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                         // matching how the box/sphere/capsule wireframes treat
                         // their world-space sizes.
                         if (!meshCol->indices.empty() && meshCol->indices.size() % 3 == 0) {
+                            // WORLD position and rotation, the same as the body
+                            Math::Vector3 meshWorldPos; Math::Quaternion meshWorldRot;
+                            ECS::GetWorldTransform(m_World, entity, meshWorldPos, meshWorldRot);
                             for (size_t i = 0; i + 2 < meshCol->indices.size(); i += 3) {
                                 auto transformVert = [&](const Math::Vector3& v) {
-                                    return transform->position + transform->rotation.Rotate(v);
+                                    return meshWorldPos + meshWorldRot.Rotate(v);
                                 };
                                 Math::Vector3 a = transformVert(meshCol->vertices[meshCol->indices[i]]);
                                 Math::Vector3 b = transformVert(meshCol->vertices[meshCol->indices[i + 1]]);
@@ -5791,7 +5817,7 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                         if (!m_ShowColliderWireframes && !sel) continue;
                         ImU32 color = sel ? IM_COL32(50, 220, 255, 220) : IM_COL32(50, 220, 255, 100);
                         f32 thick = sel ? 2.0f : 1.0f;
-                        Math::Vector3 pos = transform->position;
+                        Math::Vector3 pos = ECS::WorldPosition(m_World, entity, *transform);
                         if (body2d->shapeType == Physics::Shape2DType::Box) {
                             Math::Vector3 offset(body2d->box.offset.x, body2d->box.offset.y, 0.0f);
                             Math::Vector3 halfExt(body2d->box.halfExtents.x, body2d->box.halfExtents.y, 0.01f);
@@ -5812,7 +5838,7 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                     auto* tA = m_World->GetComponent<ECS::TransformComponent>(eA);
                     auto* tB = m_World->GetComponent<ECS::TransformComponent>(eB);
                     if (!tA || !tB) return;
-                    drawLine3D(dl, tA->position + anchorA, tB->position + anchorB, color, 1.5f);
+                    drawLine3D(dl, ECS::WorldPosition(m_World, eA, *tA) + anchorA, ECS::WorldPosition(m_World, eB, *tB) + anchorB, color, 1.5f);
                 };
 
                 // Joints draw when the flag is on OR either connected entity is selected
@@ -5860,15 +5886,15 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                     ImU32 color = sel ? IM_COL32(180, 100, 255, 220) : IM_COL32(180, 100, 255, 80);
                     f32 thick = sel ? 2.0f : 1.0f;
                     if (vol->shape == ECS::PPVolumeShape::Box) {
-                        drawWireBox(bgDrawList, transform->position, vol->halfExtents, color, thick);
+                        drawWireBox(bgDrawList, ECS::WorldPosition(m_World, e, *transform), vol->halfExtents, color, thick);
                         // Blend radius outer box (dashed feel via thinner line)
                         if (vol->blendRadius > 0.01f) {
                             Math::Vector3 outer = vol->halfExtents + Math::Vector3(vol->blendRadius, vol->blendRadius, vol->blendRadius);
-                            drawWireBox(bgDrawList, transform->position, outer,
+                            drawWireBox(bgDrawList, ECS::WorldPosition(m_World, e, *transform), outer,
                                 sel ? IM_COL32(180, 100, 255, 120) : IM_COL32(180, 100, 255, 40), thick * 0.5f);
                         }
                     } else {
-                        Math::Vector3 c = transform->position;
+                        Math::Vector3 c = ECS::WorldPosition(m_World, e, *transform);
                         f32 r = vol->halfExtents.x;
                         drawWireCircle(bgDrawList, c, r, {1,0,0}, {0,1,0}, color, thick);
                         drawWireCircle(bgDrawList, c, r, {1,0,0}, {0,0,1}, color, thick);
@@ -5890,13 +5916,13 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                     ImU32 color = sel ? IM_COL32(100, 80, 255, 200) : IM_COL32(100, 80, 255, 60);
                     f32 thick = sel ? 2.0f : 1.0f;
                     if (gz->shape == ECS::GravityZoneShape::Sphere) {
-                        Math::Vector3 c = transform->position;
+                        Math::Vector3 c = ECS::WorldPosition(m_World, e, *transform);
                         f32 r = gz->halfExtents.x;
                         drawWireCircle(bgDrawList, c, r, {1,0,0}, {0,1,0}, color, thick);
                         drawWireCircle(bgDrawList, c, r, {1,0,0}, {0,0,1}, color, thick);
                         drawWireCircle(bgDrawList, c, r, {0,1,0}, {0,0,1}, color, thick);
                     } else {
-                        drawWireBox(bgDrawList, transform->position, gz->halfExtents, color, thick);
+                        drawWireBox(bgDrawList, ECS::WorldPosition(m_World, e, *transform), gz->halfExtents, color, thick);
                     }
                 }
 
@@ -5910,19 +5936,18 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                     if (lc->type == ECS::LightType::Point) {
                         ImU32 color = sel ? IM_COL32(255, 220, 50, 180) : IM_COL32(255, 220, 50, 40);
                         f32 thick = sel ? 1.5f : 0.8f;
-                        Math::Vector3 c = transform->position;
+                        Math::Vector3 c = ECS::WorldPosition(m_World, e, *transform);
                         drawWireCircle(bgDrawList, c, lc->range, {1,0,0}, {0,1,0}, color, thick);
                         drawWireCircle(bgDrawList, c, lc->range, {1,0,0}, {0,0,1}, color, thick);
                         drawWireCircle(bgDrawList, c, lc->range, {0,1,0}, {0,0,1}, color, thick);
                     } else if (lc->type == ECS::LightType::Spot && sel) {
                         ImU32 color = IM_COL32(255, 180, 50, 180);
-                        Math::Vector3 c = transform->position;
-                        // Spot direction from rotation
-                        Math::Vector3 dir(
-                            2.0f * (transform->rotation.x * transform->rotation.z + transform->rotation.w * transform->rotation.y),
-                            2.0f * (transform->rotation.y * transform->rotation.z - transform->rotation.w * transform->rotation.x),
-                            1.0f - 2.0f * (transform->rotation.x * transform->rotation.x + transform->rotation.y * transform->rotation.y)
-                        );
+                        Math::Vector3 c = ECS::WorldPosition(m_World, e, *transform);
+                        // The direction the light actually shines: forward is -Z,
+                        // the same call the renderer makes. This expanded the
+                        // rotation's +Z axis by hand, so the cone was drawn
+                        // pointing out of the BACK of every spot light.
+                        Math::Vector3 dir = ECS::WorldRotation(m_World, e, *transform).GetForward();
                         f32 outerRad = lc->range * std::tan(Math::Radians(lc->outerConeAngle));
                         Math::Vector3 tip = c + dir * lc->range;
                         // Draw 4 lines from source to cone edge
@@ -5947,7 +5972,7 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                     if (!src || !src->is3D || !transform) continue;
                     bool sel = IsSelected(e);
                     if (!m_ShowColliderWireframes && !sel) continue;
-                    Math::Vector3 c = transform->position;
+                    Math::Vector3 c = ECS::WorldPosition(m_World, e, *transform);
                     ImU32 innerColor = IM_COL32(50, 200, 255, 140);
                     ImU32 outerColor = IM_COL32(50, 200, 255, 80);
                     drawWireCircle(bgDrawList, c, src->minDistance, {1,0,0}, {0,0,1}, innerColor, 1.5f);
@@ -5964,9 +5989,9 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                     ImU32 color = sel ? IM_COL32(100, 255, 100, 180) : IM_COL32(100, 255, 100, 50);
                     f32 thick = sel ? 2.0f : 1.0f;
                     if (tz->shape == ECS::TriggerZoneComponent::Shape::Sphere) {
-                        drawWireCircle(bgDrawList, transform->position, tz->sphereRadius, {1,0,0}, {0,0,1}, color, thick);
+                        drawWireCircle(bgDrawList, ECS::WorldPosition(m_World, e, *transform), tz->sphereRadius, {1,0,0}, {0,0,1}, color, thick);
                     } else {
-                        drawWireBox(bgDrawList, transform->position, tz->boxSize * 0.5f, color, thick);
+                        drawWireBox(bgDrawList, ECS::WorldPosition(m_World, e, *transform), tz->boxSize * 0.5f, color, thick);
                     }
                 }
 
@@ -5978,7 +6003,7 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                     if (!m_ShowColliderWireframes && !sel) continue;
                     ImU32 color = sel ? IM_COL32(255, 50, 200, 220) : IM_COL32(255, 50, 200, 80);
                     f32 sz = 0.5f;
-                    Math::Vector3 c = transform->position;
+                    Math::Vector3 c = ECS::WorldPosition(m_World, e, *transform);
                     ImVec2 s0, s1;
                     if (worldToScreen(c + Math::Vector3(sz,0,0), s0) && worldToScreen(c - Math::Vector3(sz,0,0), s1))
                         bgDrawList->AddLine(s0, s1, color, 2.0f);
@@ -6005,7 +6030,7 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                     bool sel = IsSelected(e);
                     ImU32 color = sel ? IM_COL32(50, 255, 220, 220) : IM_COL32(50, 255, 220, 100);
                     ImVec2 sp;
-                    if (worldToScreen(transform->position, sp)) {
+                    if (worldToScreen(ECS::WorldPosition(m_World, e, *transform), sp)) {
                         bgDrawList->AddCircleFilled(sp, sel ? 5.0f : 3.0f, color);
                     }
                     // Draw line to next waypoint if set
@@ -6013,7 +6038,7 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                         auto* nextTransform = m_World->GetComponent<ECS::TransformComponent>(wp->nextWaypoint);
                         if (nextTransform) {
                             ImVec2 sp2;
-                            if (worldToScreen(transform->position, sp) && worldToScreen(nextTransform->position, sp2)) {
+                            if (worldToScreen(ECS::WorldPosition(m_World, e, *transform), sp) && worldToScreen(ECS::WorldPosition(m_World, wp->nextWaypoint, *nextTransform), sp2)) {
                                 bgDrawList->AddLine(sp, sp2, IM_COL32(50, 255, 220, 120), 1.5f);
                             }
                         }

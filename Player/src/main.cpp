@@ -1,4 +1,5 @@
 #include "Enjin/Core/Application.h"
+#include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/ECS/EntityEventBridge.h"
 #include "Enjin/ECS/Timers.h"
 #include "Enjin/Animation/Timeline.h"
@@ -1861,7 +1862,7 @@ public:
                     auto* lc = m_World->GetComponent<Enjin::ECS::LightComponent>(e);
                     if (lc && lc->type == Enjin::ECS::LightType::Directional) {
                         auto* tc = m_World->GetComponent<Enjin::ECS::TransformComponent>(e);
-                        if (tc) lightDir = tc->rotation.GetForward();
+                        if (tc) lightDir = Enjin::ECS::WorldRotation(m_World.get(), e, *tc).GetForward();
                         break;
                     }
                 }
@@ -3190,7 +3191,7 @@ private:
             auto* zone = m_World->GetComponent<ECS::WeatherZoneComponent>(entity);
             auto* zoneTransform = m_World->GetComponent<ECS::TransformComponent>(entity);
             if (zone && zoneTransform && zone->priority > bestWeatherPriority) {
-                if (zone->ContainsPoint(zoneTransform->position, camPos)) {
+                if (zone->ContainsPoint(ECS::WorldPosition(m_World.get(), entity, *zoneTransform), camPos)) {
                     activeWeatherZone = zone;
                     bestWeatherPriority = zone->priority;
                 }
@@ -3203,7 +3204,7 @@ private:
             auto* zone = m_World->GetComponent<ECS::TemperatureZoneComponent>(entity);
             auto* zoneTransform = m_World->GetComponent<ECS::TransformComponent>(entity);
             if (zone && zoneTransform && zone->priority > bestTempPriority) {
-                if (zone->ContainsPoint(zoneTransform->position, camPos)) {
+                if (zone->ContainsPoint(ECS::WorldPosition(m_World.get(), entity, *zoneTransform), camPos)) {
                     activeTempZone = zone;
                     bestTempPriority = zone->priority;
                 }

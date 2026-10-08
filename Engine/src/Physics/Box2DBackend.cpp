@@ -4,6 +4,7 @@
 #include "Enjin/Physics/Polygon2D.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Transform.h"
+#include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/Assets/MeshAssetCache.h"   // reload freed CPU verts for collider gen (task #3)
 #include "Enjin/ECS/Components/Mesh.h"
@@ -31,12 +32,19 @@ static inline Math::Vector2 FromBox2D(b2Vec2 v) {
 
 // Extract Z-axis Euler angle (radians) from a quaternion
 // Uses direct extraction instead of full Euler decomposition for performance
-static f32 GetRotationZ(const ECS::TransformComponent& t) {
-    return t.rotation.GetRotationZ();
+//
+// Both read the WORLD transform. A TransformComponent is local, so a body on a
+// child was created and synced at its offset from the parent: a sensor or a
+// platform parented under something that moves stayed near the origin while
+// its sprite went with the parent. The 3D backend was fixed for this earlier;
+// this one never called a world-transform function at all (2026-10-07).
+static f32 GetRotationZ(ECS::World* world, ECS::Entity entity, const ECS::TransformComponent& t) {
+    return ECS::WorldRotation(world, entity, t).GetRotationZ();
 }
 
-static Math::Vector2 GetPosition2D(const ECS::TransformComponent& t) {
-    return Math::Vector2(t.position.x, t.position.y);
+static Math::Vector2 GetPosition2D(ECS::World* world, ECS::Entity entity, const ECS::TransformComponent& t) {
+    const Math::Vector3 p = ECS::WorldPosition(world, entity, t);
+    return Math::Vector2(p.x, p.y);
 }
 
 // Encode entity ID into a void* for Box2D userData
@@ -213,8 +221,8 @@ void Box2DBackend::SyncECSToBox2D() {
             // Using SetLinearVelocity instead of SetTransform ensures Box2D
             // properly detects sensor overlaps during the step.
             b2Vec2 currentPos = b2Body_GetPosition(bodyId);
-            Math::Vector2 ecsPos = GetPosition2D(*transform);
-            f32 ecsAngle = GetRotationZ(*transform);
+            Math::Vector2 ecsPos = GetPosition2D(m_World, entity, *transform);
+            f32 ecsAngle = GetRotationZ(m_World, entity, *transform);
             f32 dt = m_LastDeltaTime > 0.0f ? m_LastDeltaTime : (1.0f / 60.0f);
 
             b2Vec2 vel = {(ecsPos.x - currentPos.x) / dt, (ecsPos.y - currentPos.y) / dt};
@@ -229,8 +237,8 @@ void Box2DBackend::SyncECSToBox2D() {
         } else if (body2d->isStatic || body2d->isSensor) {
             // Static/sensor bodies: teleport is fine (they don't need smooth motion)
             b2Vec2 currentPos = b2Body_GetPosition(bodyId);
-            Math::Vector2 ecsPos = GetPosition2D(*transform);
-            f32 ecsAngle = GetRotationZ(*transform);
+            Math::Vector2 ecsPos = GetPosition2D(m_World, entity, *transform);
+            f32 ecsAngle = GetRotationZ(m_World, entity, *transform);
 
             if (std::abs(currentPos.x - ecsPos.x) > 0.001f ||
                 std::abs(currentPos.y - ecsPos.y) > 0.001f) {
@@ -252,8 +260,8 @@ void Box2DBackend::CreateBodyForEntity(ECS::Entity entity) {
         DestroyBodyForEntity(entity);
     }
 
-    Math::Vector2 pos = GetPosition2D(*transform);
-    f32 angle = GetRotationZ(*transform);
+    Math::Vector2 pos = GetPosition2D(m_World, entity, *transform);
+    f32 angle = GetRotationZ(m_World, entity, *transform);
 
     // Body definition
     b2BodyDef bodyDef = b2DefaultBodyDef();
@@ -469,13 +477,26 @@ void Box2DBackend::SyncBox2DToECS() {
 
         // Position
         b2Vec2 pos = b2Body_GetPosition(bodyId);
-        transform->position.x = pos.x;
-        transform->position.y = pos.y;
 
         // Rotation (Z axis only for 2D) — construct quaternion directly from Z angle
         b2Rot rot = b2Body_GetRotation(bodyId);
         f32 newAngle = b2Rot_GetAngle(rot);
-        transform->rotation = Math::Quaternion(Math::Vector3(0.0f, 0.0f, 1.0f), newAngle);
+        const Math::Quaternion bodyRot(Math::Vector3(0.0f, 0.0f, 1.0f), newAngle);
+
+        if (!ECS::HasParent(m_World, entity)) {
+            transform->position.x = pos.x;
+            transform->position.y = pos.y;
+            transform->rotation = bodyRot;
+        } else {
+            // The body lives in the world; the transform is an offset from the
+            // parent. Writing the body's position straight in would move the
+            // child by the parent's offset every step. World Z is kept: Box2D
+            // has no say in depth.
+            const Math::Vector3 worldNow = ECS::WorldPosition(m_World, entity, *transform);
+            ECS::WorldToLocalTransform(m_World, entity, Math::Vector3(pos.x, pos.y, worldNow.z), bodyRot,
+                                       transform->position, transform->rotation);
+            transform->worldMatrixDirty = true;
+        }
 
         // Velocity
         b2Vec2 linearVel = b2Body_GetLinearVelocity(bodyId);
@@ -791,7 +812,7 @@ bool Box2DBackend::OverlapCircle(const Math::Vector2& center, f32 radius,
         auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
         if (!transform) continue;
 
-        Math::Vector2 pos = GetPosition2D(*transform);
+        Math::Vector2 pos = GetPosition2D(m_World, entity, *transform);
         Math::Vector2 diff = pos - center;
         if (diff.LengthSquared() <= radiusSq) {
             outEntities.push_back(entity);
@@ -839,7 +860,8 @@ void Box2DBackend::ApplyGravityZones() {
         if (!transform) continue;
 
         // Build a Vector3 with z=0 for ContainsPoint compatibility
-        Math::Vector3 bodyPos(transform->position.x, transform->position.y, 0.0f);
+        const Math::Vector2 bodyPos2D = GetPosition2D(m_World, entity, *transform);
+        Math::Vector3 bodyPos(bodyPos2D.x, bodyPos2D.y, 0.0f);
 
         // Find highest-priority active gravity zone containing this body
         i32 bestPriority = INT_MIN;
@@ -852,7 +874,8 @@ void Box2DBackend::ApplyGravityZones() {
             if (!zone || !zoneTransform || !zone->isActive) continue;
             if (zone->priority <= bestPriority) continue;
 
-            Math::Vector3 zoneCenter(zoneTransform->position.x, zoneTransform->position.y, 0.0f);
+            const Math::Vector3 zoneWorldPos = ECS::WorldPosition(m_World, zoneEntity, *zoneTransform);
+            Math::Vector3 zoneCenter(zoneWorldPos.x, zoneWorldPos.y, 0.0f);
             if (zone->ContainsPoint(zoneCenter, bodyPos)) {
                 customGravity = zone->GetGravityAt(zoneCenter, bodyPos);
                 bestPriority = zone->priority;

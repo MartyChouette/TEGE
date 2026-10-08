@@ -331,7 +331,7 @@ void GatherWindZones(World* world, std::vector<FrameWindZone>& out) {
         auto* zone = zoneStore->Get(ze);
         auto* zxf = xformStore->Get(ze);
         if (!zone || !zxf) continue;
-        out.push_back({ zxf->position, zone->halfExtents, zone->windDirection,
+        out.push_back({ WorldPosition(world, ze, *zxf), zone->halfExtents, zone->windDirection,
                         zone->windStrength, zone->priority });
     }
 }

@@ -1,4 +1,5 @@
 #include "Enjin/ECS/Systems/GameplaySystem.h"
+#include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/ECS/Components/Material.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Name.h"
@@ -973,7 +974,7 @@ void GameplaySystem::UpdateSpawnPoints(World* world, f32 dt) {
         }
 
         Math::Vector3 at(0, 0, 0);
-        if (auto* t = world->GetComponent<TransformComponent>(e)) at = t->position;
+        if (auto* t = world->GetComponent<TransformComponent>(e)) at = WorldPosition(world, e, *t);
         if (spawn->spawnRadius > 0.0f) {
             // Uniform over the DISC, not over (angle, radius) -- the naive version
             // clusters everything at the centre, which reads as a broken radius.

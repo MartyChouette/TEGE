@@ -1,4 +1,5 @@
 #include "Enjin/Effects/ShrubRenderer.h"
+#include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/Effects/VegetationTemplates.h"
 #include "Enjin/Renderer/Vulkan/ShaderData.h"
 #include "Enjin/Renderer/Vulkan/VulkanPipeline.h"
@@ -319,9 +320,11 @@ void ShrubRenderer::Render(VkCommandBuffer commandBuffer,
         model.m[0] = shrub->halfExtents.x;
         model.m[5] = 1.0f;
         model.m[10] = shrub->halfExtents.z;
-        model.m[12] = transform->position.x;
-        model.m[13] = transform->position.y;
-        model.m[14] = transform->position.z;
+        // World position: a volume under a parent grows where the parent is
+        const Math::Vector3 volumeWorldPos = ECS::WorldPosition(world, entity, *transform);
+        model.m[12] = volumeWorldPos.x;
+        model.m[13] = volumeWorldPos.y;
+        model.m[14] = volumeWorldPos.z;
 
         // Pack shrub parameters into push constants (same layout as grass)
         Renderer::PushConstants pc{};

@@ -742,7 +742,7 @@ void EditorLayer::DrawGameViewPanel() {
                     auto* zone = m_World->GetComponent<ECS::WeatherZoneComponent>(entity);
                     auto* zoneTransform = m_World->GetComponent<ECS::TransformComponent>(entity);
                     if (zone && zoneTransform && zone->priority > bestWeatherPriority) {
-                        if (zone->ContainsPoint(zoneTransform->position, gameCameraTransform->position)) {
+                        if (zone->ContainsPoint(ECS::WorldPosition(m_World, entity, *zoneTransform), gameCameraTransform->position)) {
                             activeWeatherZone = zone;
                             bestWeatherPriority = zone->priority;
                         }

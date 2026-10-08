@@ -4666,7 +4666,7 @@ void RenderSystem::Update(f32 deltaTime) {
                 const auto* lc = m_World->GetComponent<LightComponent>(e);
                 const auto* xf = m_CachedTransformStorage->Get(e);
                 if (!lc || !xf || lc->type == LightType::Directional) return 0.0f;
-                return std::max(0.0f, (xf->position - camPos).Length() - std::max(lc->range, 0.0f));
+                return std::max(0.0f, (WorldPosition(m_World, e, *xf) - camPos).Length() - std::max(lc->range, 0.0f));
             };
             std::stable_sort(orderedLights.begin() + fixedCount, orderedLights.end(),
                              [&](Entity a, Entity b) { return reachFromCamera(a) < reachFromCamera(b); });
@@ -4676,20 +4676,20 @@ void RenderSystem::Update(f32 deltaTime) {
                 if (!lc || !xf) continue;
 
                 if (lc->type == LightType::Directional && dirCount < 4) {
-                    Math::Vector3 fwd = xf->rotation.GetForward();
+                    Math::Vector3 fwd = WorldRotation(m_World, lightEntity, *xf).GetForward();
                     lit.lightDir[dirCount] = {fwd.x, fwd.y, fwd.z, 0.0f};
                     lit.lightColor[dirCount] = {lc->color.x, lc->color.y, lc->color.z, lc->intensity};
                     dirCount++;
                 } else if (lc->type == LightType::Point && pointCount < WEB_MAX_POINT_LIGHTS) {
                     u32 idx = 4 + pointCount;
-                    Math::Vector3 pos = xf->position;
+                    Math::Vector3 pos = WorldPosition(m_World, lightEntity, *xf);
                     lit.lightDir[idx] = {pos.x, pos.y, pos.z, 1.0f};
                     lit.lightColor[idx] = {lc->color.x, lc->color.y, lc->color.z, lc->intensity};
                     lit.lightParams[idx] = {lc->range, lc->linearAttenuation, lc->quadraticAttenuation, lc->constantAttenuation};
                     pointCount++;
                 } else if (lc->type == LightType::Spot && spotCount < WEB_MAX_SPOT_LIGHTS) {
-                    Math::Vector3 pos = xf->position;
-                    Math::Vector3 fwd = xf->rotation.GetForward();
+                    Math::Vector3 pos = WorldPosition(m_World, lightEntity, *xf);
+                    Math::Vector3 fwd = WorldRotation(m_World, lightEntity, *xf).GetForward();
                     lit.spotPos[spotCount] = {pos.x, pos.y, pos.z, lc->range};
                     lit.spotDir[spotCount] = {fwd.x, fwd.y, fwd.z, 0.0f};
                     lit.spotColor[spotCount] = {lc->color.x, lc->color.y, lc->color.z, lc->intensity};
@@ -4907,7 +4907,7 @@ void RenderSystem::Update(f32 deltaTime) {
         bool hasShadowLight = false;
         if (shadowCasterLight != INVALID_ENTITY && m_CachedTransformStorage) {
             if (auto* xf = m_CachedTransformStorage->Get(shadowCasterLight)) {
-                shadowLightDir = xf->rotation.GetForward();
+                shadowLightDir = WorldRotation(m_World, shadowCasterLight, *xf).GetForward();
                 hasShadowLight = true;
             }
         }
@@ -5094,8 +5094,8 @@ void RenderSystem::Update(f32 deltaTime) {
                 auto* xf = m_CachedTransformStorage->Get(lightEntity);
                 if (!lc || !xf || lc->type != LightType::Spot || !lc->castShadows) continue;
 
-                Math::Vector3 pos = xf->position;
-                Math::Vector3 dir = xf->rotation.GetForward();
+                Math::Vector3 pos = WorldPosition(m_World, lightEntity, *xf);
+                Math::Vector3 dir = WorldRotation(m_World, lightEntity, *xf).GetForward();
                 f32 fov = lc->outerConeAngle * 2.0f * 3.14159265f / 180.0f;
                 fov = std::max(fov, 0.1f);
                 f32 range = lc->range > 0.0f ? lc->range : 50.0f;
@@ -5232,7 +5232,7 @@ void RenderSystem::Update(f32 deltaTime) {
                 auto* xf = m_CachedTransformStorage->Get(lightEntity);
                 if (!lc || !xf || lc->type != LightType::Point || !lc->castShadows) continue;
 
-                Math::Vector3 pos = xf->position;
+                Math::Vector3 pos = WorldPosition(m_World, lightEntity, *xf);
                 f32 range = lc->range > 0.0f ? lc->range : 50.0f;
                 f32 nearZ = 0.1f;
                 Math::Matrix4 faceProj = WebGPUCubemapPerspective(3.14159265f * 0.5f, 1.0f, nearZ, range);
@@ -5457,10 +5457,13 @@ void RenderSystem::Update(f32 deltaTime) {
                 view.camera.SetOrthographic(-halfH * aspect, halfH * aspect, -halfH, halfH,
                                             cc->nearPlane, cc->farPlane);
             }
-            const Math::Vector3 fwd = xf->rotation.Rotate(Math::Vector3(0.0f, 0.0f, -1.0f));
-            const Math::Vector3 up  = xf->rotation.Rotate(Math::Vector3(0.0f, 1.0f, 0.0f));
-            view.camera.SetPosition(xf->position);
-            view.camera.SetLookAt(xf->position, xf->position + fwd, up);
+            // World pose: a camera under a rig is where the rig carries it
+            const Math::Vector3 camWorldPos = WorldPosition(m_World, vc.entity, *xf);
+            const Math::Quaternion camWorldRot = WorldRotation(m_World, vc.entity, *xf);
+            const Math::Vector3 fwd = camWorldRot.Rotate(Math::Vector3(0.0f, 0.0f, -1.0f));
+            const Math::Vector3 up  = camWorldRot.Rotate(Math::Vector3(0.0f, 1.0f, 0.0f));
+            view.camera.SetPosition(camWorldPos);
+            view.camera.SetLookAt(camWorldPos, camWorldPos + fwd, up);
             webViews.push_back(view);
         }
         // Any failure to resolve a split view falls back to the single camera
@@ -10639,10 +10642,13 @@ void RenderSystem::Update(f32 deltaTime) {
                                             cameraComp->nearPlane, cameraComp->farPlane);
             }
 
-            viewCamera.SetPosition(cameraTransform->position);
-            Math::Vector3 forward = cameraTransform->rotation.Rotate(Math::Vector3(0.0f, 0.0f, -1.0f));
-            Math::Vector3 up = cameraTransform->rotation.Rotate(Math::Vector3(0.0f, 1.0f, 0.0f));
-            viewCamera.SetLookAt(cameraTransform->position, cameraTransform->position + forward, up);
+            // World pose: a camera under a rig is where the rig carries it
+            const Math::Vector3 camWorldPos = WorldPosition(m_World, vc.entity, *cameraTransform);
+            const Math::Quaternion camWorldRot = WorldRotation(m_World, vc.entity, *cameraTransform);
+            viewCamera.SetPosition(camWorldPos);
+            Math::Vector3 forward = camWorldRot.Rotate(Math::Vector3(0.0f, 0.0f, -1.0f));
+            Math::Vector3 up = camWorldRot.Rotate(Math::Vector3(0.0f, 1.0f, 0.0f));
+            viewCamera.SetLookAt(camWorldPos, camWorldPos + forward, up);
 
             m_Camera = &viewCamera;
             UpdateFrameUniforms();
@@ -11291,13 +11297,13 @@ void RenderSystem::RecordComputePrePass(f32 deltaTime) {
                 if (!light || light->type == LightType::Directional) continue;
 
                 Renderer::ClusterLight cl{};
-                cl.position = xform ? xform->position : Math::Vector3(0.0f);
+                cl.position = xform ? WorldPosition(m_World, e, *xform) : Math::Vector3(0.0f);
                 cl.range = light->range;
                 cl.color = light->color;
                 cl.intensity = light->intensity;
                 if (light->type == LightType::Spot) {
                     Math::Vector3 fwd(0.0f, 0.0f, -1.0f);
-                    cl.direction = xform ? xform->rotation.Rotate(fwd).Normalized() : Math::Vector3(0, -1, 0);
+                    cl.direction = xform ? WorldRotation(m_World, e, *xform).Rotate(fwd).Normalized() : Math::Vector3(0, -1, 0);
                     cl.outerConeAngle = light->outerConeAngle;
                 } else {
                     cl.direction = Math::Vector3(0.0f);
@@ -11352,7 +11358,7 @@ void RenderSystem::RecordComputePrePass(f32 deltaTime) {
                 auto* light = lightStor ? lightStor->Get(le) : nullptr;
                 if (light && light->type == LightType::Directional) {
                     auto* xf = m_CachedTransformStorage ? m_CachedTransformStorage->Get(le) : nullptr;
-                    if (xf) sunDir = xf->rotation.Rotate(Math::Vector3(0, 0, -1)).Normalized();
+                    if (xf) sunDir = WorldRotation(m_World, le, *xf).Rotate(Math::Vector3(0, 0, -1)).Normalized();
                     sunColor = light->color;
                     sunIntensity = light->intensity;
                     break;
@@ -11640,10 +11646,13 @@ void RenderSystem::RenderScriptTargets(VkCommandBuffer commandBuffer) {
         f32 halfW = halfH * aspect;
         cam.SetOrthographic(-halfW, halfW, -halfH, halfH, cc->nearPlane, cc->farPlane);
     }
-    Math::Vector3 fwd = ct->rotation.Rotate(Math::Vector3(0.0f, 0.0f, -1.0f));
-    Math::Vector3 up = ct->rotation.Rotate(Math::Vector3(0.0f, 1.0f, 0.0f));
-    cam.SetPosition(ct->position);
-    cam.SetLookAt(ct->position, ct->position + fwd, up);
+    // World pose: a camera under a rig is where the rig carries it
+    const Math::Vector3 camWorldPos = WorldPosition(m_World, camEntity, *ct);
+    const Math::Quaternion camWorldRot = WorldRotation(m_World, camEntity, *ct);
+    Math::Vector3 fwd = camWorldRot.Rotate(Math::Vector3(0.0f, 0.0f, -1.0f));
+    Math::Vector3 up = camWorldRot.Rotate(Math::Vector3(0.0f, 1.0f, 0.0f));
+    cam.SetPosition(camWorldPos);
+    cam.SetLookAt(camWorldPos, camWorldPos + fwd, up);
 
     // Offscreen viewport slot 2: never collides with the editor viewport (0) or
     // the game view (1). A 3+-way splitscreen recording later in the frame can
@@ -12955,11 +12964,14 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
                                         cameraComp->nearPlane, cameraComp->farPlane);
         }
 
-        viewCamera.SetPosition(cameraTransform->position);
-        Math::Vector3 forward = cameraTransform->rotation.Rotate(Math::Vector3(0.0f, 0.0f, -1.0f));
-        Math::Vector3 up = cameraTransform->rotation.Rotate(Math::Vector3(0.0f, 1.0f, 0.0f));
-        Math::Vector3 lookTarget = cameraTransform->position + forward;
-        viewCamera.SetLookAt(cameraTransform->position, lookTarget, up);
+        // World pose: a camera under a rig is where the rig carries it
+        const Math::Vector3 camWorldPos = WorldPosition(m_World, vc.entity, *cameraTransform);
+        const Math::Quaternion camWorldRot = WorldRotation(m_World, vc.entity, *cameraTransform);
+        viewCamera.SetPosition(camWorldPos);
+        Math::Vector3 forward = camWorldRot.Rotate(Math::Vector3(0.0f, 0.0f, -1.0f));
+        Math::Vector3 up = camWorldRot.Rotate(Math::Vector3(0.0f, 1.0f, 0.0f));
+        Math::Vector3 lookTarget = camWorldPos + forward;
+        viewCamera.SetLookAt(camWorldPos, lookTarget, up);
 
         m_Camera = &viewCamera;
 
@@ -16060,7 +16072,7 @@ void RenderSystem::UpdateFrameUniforms() {
                     auto& dirLight = lighting.directionalLights[lighting.directionalLightCount];
                     if (lightTransform) {
                         Math::Vector3 forward(0.0f, 0.0f, -1.0f);
-                        dirLight.direction = lightTransform->rotation.Rotate(forward).Normalized();
+                        dirLight.direction = WorldRotation(m_World, lightEntity, *lightTransform).Rotate(forward).Normalized();
                     } else {
                         dirLight.direction = Math::Vector3(-0.5f, -0.8f, -0.3f).Normalized();
                     }
@@ -16073,7 +16085,7 @@ void RenderSystem::UpdateFrameUniforms() {
             case LightType::Point: {
                 if (lighting.pointLightCount < MAX_POINT_LIGHTS) {
                     auto& pointLight = lighting.pointLights[lighting.pointLightCount];
-                    pointLight.position = lightTransform ? lightTransform->position : Math::Vector3(0.0f);
+                    pointLight.position = lightTransform ? WorldPosition(m_World, lightEntity, *lightTransform) : Math::Vector3(0.0f);
                     pointLight.range = light->range;
                     pointLight.color = light->color;
                     pointLight.intensity = light->intensity;
@@ -16087,11 +16099,11 @@ void RenderSystem::UpdateFrameUniforms() {
             case LightType::Spot: {
                 if (lighting.spotLightCount < MAX_SPOT_LIGHTS) {
                     auto& spotLight = lighting.spotLights[lighting.spotLightCount];
-                    spotLight.position = lightTransform ? lightTransform->position : Math::Vector3(0.0f);
+                    spotLight.position = lightTransform ? WorldPosition(m_World, lightEntity, *lightTransform) : Math::Vector3(0.0f);
                     spotLight.range = light->range;
                     if (lightTransform) {
                         Math::Vector3 forward(0.0f, 0.0f, -1.0f);
-                        spotLight.direction = lightTransform->rotation.Rotate(forward).Normalized();
+                        spotLight.direction = WorldRotation(m_World, lightEntity, *lightTransform).Rotate(forward).Normalized();
                     } else {
                         spotLight.direction = Math::Vector3(0.0f, -1.0f, 0.0f);
                     }
@@ -18108,10 +18120,11 @@ void RenderSystem::MirrorSceneAcrossPlane(f32 planeY, const Math::Vector3& tint,
             halfX = wv->halfExtents.x;
             halfZ = wv->halfExtents.z;
         }
-        fpMinX = stf->position.x - halfX;
-        fpMaxX = stf->position.x + halfX;
-        fpMinZ = stf->position.z - halfZ;
-        fpMaxZ = stf->position.z + halfZ;
+        const Math::Vector3 surfaceWorldPos = WorldPosition(m_World, skipEntity, *stf);
+        fpMinX = surfaceWorldPos.x - halfX;
+        fpMaxX = surfaceWorldPos.x + halfX;
+        fpMinZ = surfaceWorldPos.z - halfZ;
+        fpMaxZ = surfaceWorldPos.z + halfZ;
         haveFootprint = true;
     }
 
@@ -18165,7 +18178,7 @@ void RenderSystem::RenderPlanarReflections() {
         if (!plane || !plane->active || plane->reflectionStrength <= 0.001f) continue;
         auto* planeTf = m_World->GetComponent<TransformComponent>(planeEnt);
         if (!planeTf) continue;
-        MirrorSceneAcrossPlane(planeTf->position.y + plane->clipBias, plane->tint,
+        MirrorSceneAcrossPlane(WorldPosition(m_World, planeEnt, *planeTf).y + plane->clipBias, plane->tint,
                                plane->reflectionStrength, planeEnt);
     }
 
@@ -18210,7 +18223,7 @@ void RenderSystem::RenderPlanarReflections() {
         if (s <= 0.001f) continue;
         auto* vtf = m_World->GetComponent<TransformComponent>(volEnt);
         if (!vtf) continue;
-        MirrorSceneAcrossPlane(vtf->position.y + 0.02f, vol->waterColor, s, volEnt);
+        MirrorSceneAcrossPlane(WorldPosition(m_World, volEnt, *vtf).y + 0.02f, vol->waterColor, s, volEnt);
     }
 }
 
@@ -18684,7 +18697,7 @@ void RenderSystem::RenderShadowPass() {
         TransformComponent* lightTransform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(lightEntity) : nullptr;
         if (lightTransform) {
             Math::Vector3 forward(0.0f, 0.0f, -1.0f);
-            shadowLightDir = lightTransform->rotation.Rotate(forward).Normalized();
+            shadowLightDir = WorldRotation(m_World, lightEntity, *lightTransform).Rotate(forward).Normalized();
         }
         foundShadowLight = true;
         break;
@@ -19214,7 +19227,7 @@ void RenderSystem::SelectShadowLights() {
         TransformComponent* lightTransform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(lightEntity) : nullptr;
         if (!light || !light->castShadows || !lightTransform) continue;
 
-        Math::Vector3 pos = lightTransform->position;
+        Math::Vector3 pos = WorldPosition(m_World, lightEntity, *lightTransform);
         Math::Vector3 diff = pos - camPos;
         f32 distSq = diff.x * diff.x + diff.y * diff.y + diff.z * diff.z;
         f32 score = light->intensity / std::max(distSq, 1.0f);
@@ -19223,7 +19236,7 @@ void RenderSystem::SelectShadowLights() {
             m_ShadowPointLights.push_back({lightEntity, pos, light->range, score});
         } else if (light->type == LightType::Spot) {
             Math::Vector3 forward(0.0f, 0.0f, -1.0f);
-            Math::Vector3 dir = lightTransform->rotation.Rotate(forward).Normalized();
+            Math::Vector3 dir = WorldRotation(m_World, lightEntity, *lightTransform).Rotate(forward).Normalized();
             m_ShadowSpotLights.push_back({lightEntity, pos, dir, light->outerConeAngle, light->range, score});
         }
     }
@@ -23103,7 +23116,7 @@ void RenderSystem::DispatchRTEffects(VkCommandBuffer cmd) {
             auto* lightTransform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
             if (lightTransform) {
                 Math::Vector3 forward(0.0f, 0.0f, -1.0f);
-                lightDir = lightTransform->rotation.Rotate(forward);
+                lightDir = WorldRotation(m_World, entity, *lightTransform).Rotate(forward);
             }
             lightIntensity = light->intensity;
             lightColor = light->color;
@@ -24216,7 +24229,7 @@ void RenderSystem::CollectVegetationRTInstances() {
                 f32 pz = VegPlacementHash(i * 3u + 1u) * 2.0f - 1.0f;
                 f32 hv = VegPlacementHash(i * 3u + 2u) * 2.0f - 1.0f;
                 f32 rot = VegPlacementHash(i * 7u + 5u) * 6.28318f;
-                Math::Vector3 origin = t->position +
+                Math::Vector3 origin = WorldPosition(m_World, e, *t) +
                     Math::Vector3(px * g->halfExtents.x, 0.0f, pz * g->halfExtents.z);
                 f32 h = g->bladeHeight + hv * g->bladeHeightVariance;
                 // z scaled by height too so the baked forward arc scales with the blade
@@ -24256,7 +24269,7 @@ void RenderSystem::CollectVegetationRTInstances() {
                 f32 pz = VegPlacementHash(i * 3u + 1u) * 2.0f - 1.0f;
                 f32 hv = VegPlacementHash(i * 3u + 2u) * 2.0f - 1.0f;
                 f32 rot = VegPlacementHash(i * 7u + 5u) * 6.28318f;
-                Math::Vector3 origin = t->position +
+                Math::Vector3 origin = WorldPosition(m_World, e, *t) +
                     Math::Vector3(px * sh->halfExtents.x, 0.0f, pz * sh->halfExtents.z);
                 f32 h = sh->shrubHeight + hv * sh->heightVariance;
                 // shrub.vert scales x by width only (z keeps template extent)
@@ -24327,7 +24340,7 @@ void RenderSystem::CollectVegetationRTInstances() {
             f32 sizeVar = tv->minHeightScale +
                 VegPlacementHash(i * 3u + 2u) * (tv->maxHeightScale - tv->minHeightScale);
             f32 rot = VegPlacementHash(i * 7u + 5u) * 6.28318f;
-            Math::Vector3 origin = t->position +
+            Math::Vector3 origin = WorldPosition(m_World, e, *t) +
                 Math::Vector3(px * tv->halfExtents.x, 0.0f, pz * tv->halfExtents.z);
             m_ASManager->AddInstance(cache.blasId,
                 vegInstanceMatrix(origin, rot, sizeVar, sizeVar, sizeVar), eid);

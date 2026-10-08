@@ -1,4 +1,5 @@
 #include "Enjin/ECS/CameraMath.h"
+#include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Camera.h"
 #include "Enjin/ECS/Components/Transform.h"
@@ -41,10 +42,13 @@ bool BuildCameraFromEntity(World* world, Entity cameraEntity, f32 aspect,
         outCamera.SetOrthographic(-halfW, halfW, -halfH, halfH, cc->nearPlane, cc->farPlane);
     }
 
-    const Math::Vector3 fwd = ct->rotation.Rotate(Math::Vector3(0.0f, 0.0f, -1.0f));
-    const Math::Vector3 up = ct->rotation.Rotate(Math::Vector3(0.0f, 1.0f, 0.0f));
-    outCamera.SetPosition(ct->position);
-    outCamera.SetLookAt(ct->position, ct->position + fwd, up);
+    // World pose: a camera under a rig is where the rig carries it
+    const Math::Vector3 camWorldPos = WorldPosition(world, cameraEntity, *ct);
+    const Math::Quaternion camWorldRot = WorldRotation(world, cameraEntity, *ct);
+    const Math::Vector3 fwd = camWorldRot.Rotate(Math::Vector3(0.0f, 0.0f, -1.0f));
+    const Math::Vector3 up = camWorldRot.Rotate(Math::Vector3(0.0f, 1.0f, 0.0f));
+    outCamera.SetPosition(camWorldPos);
+    outCamera.SetLookAt(camWorldPos, camWorldPos + fwd, up);
     return true;
 }
 

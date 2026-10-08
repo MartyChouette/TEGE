@@ -3,6 +3,7 @@
 // timing, responsive canvas via ResizeObserver, all gameplay systems active.
 
 #include "Enjin/Platform/Platform.h"
+#include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/ECS/EntityEventBridge.h"
 #include "Enjin/ECS/Timers.h"
 #include "Enjin/Animation/Timeline.h"
@@ -980,7 +981,7 @@ public:
                     if (!lc || !lxf || lc->type != Enjin::ECS::LightType::Directional) continue;
                     // A light points along its forward; the shader wants the
                     // direction TOWARDS it.
-                    Enjin::Math::Vector3 fwd = lxf->rotation.GetForward();
+                    Enjin::Math::Vector3 fwd = Enjin::ECS::WorldRotation(m_World.get(), le, *lxf).GetForward();
                     sunDir = Enjin::Math::Vector3(-fwd.x, -fwd.y, -fwd.z);
                     sunCol = lc->color;
                     sunI = lc->intensity * 0.5f;
@@ -3040,7 +3041,7 @@ private:
             auto* zone = m_World->GetComponent<ECS::WeatherZoneComponent>(entity);
             auto* zoneTransform = m_World->GetComponent<ECS::TransformComponent>(entity);
             if (zone && zoneTransform && zone->priority > bestWeatherPriority) {
-                if (zone->ContainsPoint(zoneTransform->position, camPos)) {
+                if (zone->ContainsPoint(ECS::WorldPosition(m_World.get(), entity, *zoneTransform), camPos)) {
                     activeWeatherZone = zone;
                     bestWeatherPriority = zone->priority;
                 }
@@ -3053,7 +3054,7 @@ private:
             auto* zone = m_World->GetComponent<ECS::TemperatureZoneComponent>(entity);
             auto* zoneTransform = m_World->GetComponent<ECS::TransformComponent>(entity);
             if (zone && zoneTransform && zone->priority > bestTempPriority) {
-                if (zone->ContainsPoint(zoneTransform->position, camPos)) {
+                if (zone->ContainsPoint(ECS::WorldPosition(m_World.get(), entity, *zoneTransform), camPos)) {
                     activeTempZone = zone;
                     bestTempPriority = zone->priority;
                 }
