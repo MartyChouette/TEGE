@@ -26,6 +26,46 @@ ImGuiLayer::~ImGuiLayer() {
     Shutdown();
 }
 
+// The shape every theme starts from: corner radii, bar sizes, border widths.
+//
+// It is one function because it used to be two half-lists. Initialize set the
+// metrics once, and ApplyTheme set them again only inside the retro themes, so
+// Dark, Light and the two high-contrast themes never touched them: pick PS2,
+// go back to Dark, and Dark kept PS2's 2-pixel corners and 10-pixel padding
+// until the editor was restarted. ApplyTheme now calls this first and a theme
+// overrides what it wants to differ on.
+//
+// Padding and spacing are deliberately the values they always were. They decide
+// the height of every row in every panel, and a lot of hand-placed layout
+// (SetNextItemWidth, fixed column widths) was tuned against them. Only the
+// corners and the scrollbar change here.
+static void ApplyBaseMetrics(ImGuiStyle& style) {
+    style.WindowRounding    = 10.0f;
+    style.ChildRounding     = 8.0f;
+    style.FrameRounding     = 7.0f;
+    style.PopupRounding     = 9.0f;
+    style.GrabRounding      = 7.0f;
+    style.TabRounding       = 8.0f;
+    // A pill: at this radius the grab's ends are half circles at any length.
+    style.ScrollbarRounding = 12.0f;
+    style.TreeLinesRounding = 6.0f;
+    style.ImageRounding     = 0.0f;   // viewports and thumbnails stay square
+
+    style.WindowPadding     = ImVec2(12.0f, 12.0f);
+    style.FramePadding      = ImVec2(8.0f, 5.0f);
+    style.ItemSpacing       = ImVec2(10.0f, 7.0f);
+    style.ItemInnerSpacing  = ImVec2(8.0f, 5.0f);
+    style.IndentSpacing     = 22.0f;
+    style.ScrollbarSize     = 13.0f;  // was 16; the pill reads heavy at that width
+    style.ScrollbarPadding  = 3.0f;
+    style.GrabMinSize       = 12.0f;
+
+    style.WindowBorderSize  = 1.0f;
+    style.FrameBorderSize   = 0.0f;
+    style.PopupBorderSize   = 1.0f;
+    style.TabBarOverlineSize = 2.0f;
+}
+
 bool ImGuiLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer,
                             const EditorFontConfig& fontConfig) {
     if (m_Initialized) {
@@ -58,27 +98,7 @@ bool ImGuiLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer,
     ImGui::StyleColorsDark();
     ImGuiStyle& style = ImGui::GetStyle();
 
-    // Rounding
-    style.WindowRounding = 6.0f;
-    style.FrameRounding = 5.0f;
-    style.PopupRounding = 4.0f;
-    style.ScrollbarRounding = 6.0f;
-    style.GrabRounding = 5.0f;
-    style.TabRounding = 6.0f;
-
-    // Padding and spacing
-    style.WindowPadding = ImVec2(12.0f, 12.0f);
-    style.FramePadding = ImVec2(8.0f, 5.0f);
-    style.ItemSpacing = ImVec2(10.0f, 7.0f);
-    style.ItemInnerSpacing = ImVec2(8.0f, 5.0f);
-    style.IndentSpacing = 22.0f;
-    style.ScrollbarSize = 16.0f;
-    style.GrabMinSize = 12.0f;
-
-    // Borders
-    style.WindowBorderSize = 1.0f;
-    style.FrameBorderSize = 0.0f;
-    style.PopupBorderSize = 1.0f;
+    ApplyBaseMetrics(style);
 
     // Custom colors (dark sage-gray theme)
     ImVec4* colors = style.Colors;
@@ -436,6 +456,8 @@ void ImGuiLayer::ApplyTheme(Editor::EditorTheme theme, const Editor::AccentColor
     ImGuiStyle& style = ImGui::GetStyle();
     ImVec4* colors = style.Colors;
 
+    ApplyBaseMetrics(style);
+
     switch (theme) {
         case Editor::EditorTheme::Dark:
         default: {
@@ -516,13 +538,10 @@ void ImGuiLayer::ApplyTheme(Editor::EditorTheme theme, const Editor::AccentColor
             colors[ImGuiCol_Text]                 = ImVec4(0.92f, 0.95f, 0.93f, 1.00f); // Slightly warm white
             colors[ImGuiCol_TextDisabled]         = ImVec4(0.45f, 0.50f, 0.48f, 1.00f);
 
-            // Glass style adjustments — more rounding, thinner borders
-            style.WindowRounding = 8.0f;
-            style.FrameRounding = 4.0f;
-            style.PopupRounding = 6.0f;
-            style.TabRounding = 5.0f;
-            style.WindowBorderSize = 1.0f;
-            style.FrameBorderSize = 0.0f;
+            // Glass is the roundest of the set: panels read as floating cards.
+            style.WindowRounding = 12.0f;
+            style.ChildRounding  = 10.0f;
+            style.PopupRounding  = 10.0f;
             break;
         }
 
@@ -1105,6 +1124,10 @@ void ImGuiLayer::ApplyTheme(Editor::EditorTheme theme, const Editor::AccentColor
         colors[ImGuiCol_PlotHistogramHovered]  = scaled(accent, 1.25f, 1.0f);
         colors[ImGuiCol_SeparatorHovered]      = ImVec4(accent.x, accent.y, accent.z, 0.55f);
         colors[ImGuiCol_SeparatorActive]       = ImVec4(accent.x, accent.y, accent.z, 0.85f);
+        // The line over the selected tab. Unset, it is stock ImGui blue on
+        // every theme.
+        colors[ImGuiCol_TabSelectedOverline]       = ImVec4(accent.x, accent.y, accent.z, 0.90f);
+        colors[ImGuiCol_TabDimmedSelectedOverline] = ImVec4(accent.x, accent.y, accent.z, 0.35f);
 
         // Metrics no theme sets: table cell breathing room, thin docking
         // separators, a visible tab-bar edge, consistent disabled dimming
