@@ -523,6 +523,11 @@ private:
                                f32 localX, f32 localY, f32 viewW, f32 viewH);
     // Reduce: a click on whatever model is under the cursor, not a drag.
     void HandleCreativeReduce(f32 localX, f32 localY, f32 viewW, f32 viewH);
+    // Door: a click on the side of a wall cuts a doorway, a door or a window
+    // there. Found by the ray, not the ground point.
+    void HandleCreativeDoor(f32 localX, f32 localY, f32 viewW, f32 viewH);
+    // Paint: click, or hold and sweep, to colour what is under the cursor.
+    void HandleCreativePaint(f32 localX, f32 localY, f32 viewW, f32 viewH);
     // Edit: click to select something you built, then drag one of the eight
     // grips on its footprint to resize it. The only tool where a viewport click
     // selects instead of building.

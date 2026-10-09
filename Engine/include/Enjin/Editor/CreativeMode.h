@@ -29,6 +29,7 @@
 #include "Enjin/ECS/Components/BoundaryPolygon.h"
 #include "Enjin/ECS/Components/WallPath.h"
 #include "Enjin/Geometry/VoxelEdit.h"
+#include "Enjin/Editor/ScenePlacement.h"
 
 namespace Enjin {
 namespace Editor {
@@ -44,6 +45,16 @@ enum class BuildTool : u8 {
     // structure tools because that is what it makes; it is only the GESTURE
     // that differs, being the first here that is not press-drag-release.
     Path,
+    // The lid on a room. Dragged like a floor, sits at wall height, and comes
+    // flat, sloped one way, or gabled. Before this a blockout was a set of
+    // open-topped boxes, and the only roof was a Floor with its elevation
+    // typed in.
+    Roof,
+    // A doorway, a door that swings, or a window: click the side of a wall and
+    // it is cut there. The Brush verb has always said "subtract one from a wall
+    // and you have a doorway", which is true and takes a Subtract brush lined
+    // up by eye in three axes. This is that as one click.
+    Door,
     Brush,
     Water,
     Terrain,
@@ -76,6 +87,10 @@ enum class BuildTool : u8 {
     // twelve with a picker.
     Prop,
     Reduce,
+    // Colour and finish for anything already in the scene. Everything the rail
+    // builds is the default grey, and the only way to change that was the full
+    // editor's inspector. With Edit in the last band: neither makes anything.
+    Paint,
     // Not a build tool: the one that changes what is already there. Last on the
     // rail and in its own group, because everything above it makes something and
     // this one does not.
@@ -209,6 +224,29 @@ struct BuildToolSettings {
 
     f32 rungGap = 0.30f;     // Ladder: spacing of the rungs you can see
     f32 keepPercent = 50.0f; // Reduce
+
+    // Roof: 0 flat, 1 shed (one slope), 2 gable (two slopes to a ridge).
+    f32 roofKind = 2.0f;
+    // Roof: where its underside sits. 3 m because that is the Wall tool's
+    // default height, so a roof dragged over fresh walls lands on them.
+    f32 roofBase = 3.0f;
+    f32 pitch    = 30.0f;    // Roof: slope in degrees. Flat ignores it.
+    f32 overhang = 0.30f;    // Roof: how far the eaves run past the drag
+
+    // Door: 0 doorway (the hole only), 1 door (the hole and a door that swings
+    // in it), 2 window.
+    f32 openingKind = 1.0f;
+    f32 doorWidth   = 1.00f;
+    f32 doorHeight  = 2.10f;
+    // A window keeps its own numbers, so flipping Kind to look at the other
+    // does not carry a 2.1 m door height into a window.
+    f32 windowWidth  = 1.20f;
+    f32 windowHeight = 1.20f;
+    f32 sill         = 0.90f;   // Window: floor to the bottom of the glass
+
+    // Paint: an index into kCreativePaintColours and kCreativePaintFinishes.
+    f32 paintColour = 0.0f;
+    f32 paintFinish = 0.0f;
 
     // Brush: 4 is a box, more is a prism. An f32 so it is one more row in the
     // field table like everything else, rounded where it is used. It had no
@@ -445,12 +483,26 @@ ENJIN_API bool ResizeWallPath(ECS::WallPathComponent& path, ECS::BrushSolidCompo
 // The options column is drawn from these rather than from a switch per tool, so
 // adding a parameter is one row in one table and the surface picks it up. It is
 // the same reason the options menu became a row list.
+//
+// A field is one of three shapes. A NUMBER is the box you drag. A CHOICE is a
+// pick from a short named list, and it exists because every "Kind" on this rail
+// used to be a number: Water offered 0.00 to 1.00 and the verb line had to
+// explain that 0 meant surface, Plants was 0 to 2, and Prop was 0 to 4 with
+// nothing anywhere saying which number was the barrel. A SWATCH is a pick from
+// the paint colours. All three still store an f32, so the settings struct and
+// everything that reads it are unchanged.
+enum class BuildFieldKind : u8 { Number = 0, Choice, Swatch };
+
 struct BuildField {
     const char* label = "";
     f32* value = nullptr;      // points into the tool's own settings
     f32 minValue = 0.0f;
     f32 maxValue = 1.0f;
     const char* unit = "";
+    BuildFieldKind kind = BuildFieldKind::Number;
+    // Choice: one label per value, value i meaning choices[i].
+    const char* const* choices = nullptr;
+    u32 choiceCount = 0;
 };
 
 inline constexpr u32 kBuildMaxFields = 4;
@@ -460,6 +512,127 @@ inline constexpr u32 kBuildMaxFields = 4;
 // CreativeMode that owns the tool.
 ENJIN_API u32 BuildToolFields(BuildTool tool, BuildToolSettings& settings,
                                  BuildField* out, u32 maxFields);
+
+// ---------------------------------------------------------------------------
+// Prop: what a click can place
+// ---------------------------------------------------------------------------
+//
+// Five of these are built by ScenePlacement::CreateProp. The rest are entries
+// in the Entity menu, named by the same group and label that menu shows, so the
+// rail places exactly what Entity > Gameplay > Door does and there is one
+// definition of a door. `kind == PropKind::Count` means "from the Entity menu".
+//
+// `lift` is how far above the clicked ground point the thing goes. The menu
+// entries were written for "in front of the camera" and put their origin at
+// the point given, which on a ground click buries a 1.6 m capsule to its waist.
+struct RailProp {
+    const char* name;
+    PropKind kind;
+    const char* menuGroup;
+    const char* menuLabel;
+    f32 lift;
+};
+ENJIN_API const RailProp* RailProps(u32& count);
+
+// ---------------------------------------------------------------------------
+// Paint
+// ---------------------------------------------------------------------------
+struct PaintColour { const char* name; f32 r, g, b; };
+struct PaintFinish { const char* name; f32 roughness; f32 metallic; };
+
+// Sixteen, because the options column fits two rows of eight. Building
+// materials first, then the colours a blockout uses to tell rooms apart.
+inline constexpr PaintColour kCreativePaintColours[] = {
+    {"Plaster",    0.92f, 0.90f, 0.86f}, {"Concrete",  0.62f, 0.63f, 0.65f},
+    {"Charcoal",   0.16f, 0.17f, 0.19f}, {"Brick",     0.62f, 0.27f, 0.20f},
+    {"Terracotta", 0.80f, 0.47f, 0.30f}, {"Sand",      0.82f, 0.72f, 0.52f},
+    {"Wood",       0.50f, 0.35f, 0.20f}, {"Dark wood", 0.28f, 0.18f, 0.11f},
+    {"Grass",      0.32f, 0.55f, 0.25f}, {"Moss",      0.22f, 0.36f, 0.24f},
+    {"Sky",        0.38f, 0.62f, 0.85f}, {"Navy",      0.13f, 0.22f, 0.42f},
+    {"Yellow",     0.93f, 0.76f, 0.22f}, {"Red",       0.80f, 0.16f, 0.16f},
+    {"Purple",     0.48f, 0.30f, 0.62f}, {"Pink",      0.90f, 0.55f, 0.62f},
+};
+inline constexpr u32 kCreativePaintColourCount =
+    static_cast<u32>(sizeof(kCreativePaintColours) / sizeof(kCreativePaintColours[0]));
+
+inline constexpr PaintFinish kCreativePaintFinishes[] = {
+    {"Matte", 0.90f, 0.0f}, {"Satin", 0.50f, 0.0f},
+    {"Gloss", 0.15f, 0.0f}, {"Metal", 0.30f, 1.0f},
+};
+inline constexpr u32 kCreativePaintFinishCount =
+    static_cast<u32>(sizeof(kCreativePaintFinishes) / sizeof(kCreativePaintFinishes[0]));
+
+// ---------------------------------------------------------------------------
+// Roof
+// ---------------------------------------------------------------------------
+enum class RoofKind : u8 { Flat = 0, Shed, Gable, Count };
+
+// The upright edge at the eaves, before the slope starts. Without it the slope
+// meets the underside in a knife edge of zero thickness along both eaves.
+inline constexpr f32 kCreativeRoofFascia = 0.12f;
+inline constexpr f32 kCreativeRoofPitchMin = 5.0f;
+inline constexpr f32 kCreativeRoofPitchMax = 60.0f;
+
+// ---------------------------------------------------------------------------
+// Door: an opening cut where you click
+// ---------------------------------------------------------------------------
+enum class OpeningKind : u8 { Doorway = 0, Door, Window, Count };
+
+// Where a ray meets one box brush, in the space the brush is stored in.
+struct BrushRayHit {
+    f32 t = 0.0f;              // along the ray as given, so hits compare across brushes
+    Math::Vector3 point;       // brush-list space
+    u8 axis = 0;               // which LOCAL axis of the box the hit face is normal to
+};
+
+// Ray against a box brush. Refuses a prism, a ray that starts inside the box,
+// and a miss. `direction` need not be unit length.
+ENJIN_API bool RayHitBoxBrush(const ECS::BrushSolidComponent::Brush& brush,
+                              const Math::Vector3& origin, const Math::Vector3& direction,
+                              BrushRayHit& out);
+
+// Is the point inside this box brush? False for a prism.
+ENJIN_API bool PointInsideBoxBrush(const ECS::BrushSolidComponent::Brush& brush,
+                                   const Math::Vector3& point);
+
+// The nearest wall the ray lands on: an enabled Add box, hit at a point that is
+// not already inside one of the solid's cuts. That last test is what lets you
+// click THROUGH a doorway at the wall behind it. A box test knows nothing about
+// the hole, so without it the click lands on the air in the doorway and cuts
+// the same wall again.
+ENJIN_API bool FindOpeningTarget(const ECS::BrushSolidComponent& solid,
+                                 const Math::Vector3& origin, const Math::Vector3& direction,
+                                 usize& brushIndex, BrushRayHit& hit);
+
+// The jamb left either side of an opening, and the lintel left over a window.
+inline constexpr f32 kCreativeOpeningJamb   = 0.10f;
+inline constexpr f32 kCreativeOpeningLintel = 0.10f;
+// How far a cut runs past the faces it goes through. A cut exactly as deep as
+// the wall leaves its end faces coplanar with the wall's, and coplanar faces
+// are where CSG leaves slivers.
+inline constexpr f32 kCreativeOpeningOvercut = 0.02f;
+
+struct OpeningPlan {
+    ECS::BrushSolidComponent::Brush cut;   // append to the wall's brush list
+    // For a door that swings: the foot of the opening's edge, and a rotation
+    // whose local +X runs along the wall across the opening. Brush-list space.
+    Math::Vector3 hinge;
+    Math::Quaternion rotation;
+    f32 width = 0.0f;
+    f32 height = 0.0f;         // of the opening itself, without the overcut
+    f32 wallThickness = 0.0f;
+};
+
+// Turn a hit on a wall into the cut.
+//
+// The opening goes THROUGH the face that was clicked and runs ALONG the other
+// horizontal axis, so it works on any box, not only one the Wall tool made. A
+// click on the top or underside is refused: there is no door in a ceiling.
+// `gridSize` snaps the position along the wall, measured from the wall's own
+// end so an opening lands on the same grid the wall was drawn on; 0 is no snap.
+// Returns false when the wall is too short or too low to hold the opening.
+ENJIN_API bool PlanOpening(const ECS::BrushSolidComponent::Brush& wall, const BrushRayHit& hit,
+                           const BuildToolSettings& settings, f32 gridSize, OpeningPlan& out);
 
 // The labels of a tool's two modes ("Add"/"Subtract", "Raise"/"Lower"), or
 // nullptr when it has none.

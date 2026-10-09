@@ -39,6 +39,8 @@
 #include "Enjin/ECS/Components/Water3D.h"
 #include "Enjin/ECS/Components/Terrain.h"
 #include "Enjin/ECS/Components/Ladder.h"
+#include "Enjin/ECS/Components/Door.h"
+#include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Systems/BrushSolidSystem.h"
 #include "Enjin/Renderer/Camera.h"
 #include "Enjin/Renderer/MeshSimplifier.h"
@@ -50,6 +52,8 @@
 #include <cstdio>
 #include <filesystem>
 #include <functional>
+#include <unordered_set>
+#include <cstring>
 
 namespace Enjin {
 namespace Editor {
@@ -221,6 +225,28 @@ void DrawToolIcon(ImDrawList* dl, BuildTool tool, ImVec2 c, ImU32 col, f32 ui) {
             dl->AddCircle(ImVec2(c.x + r * 0.5f, c.y + r * 0.5f), r * 0.42f, col, 0, t);
             break;
         }
+        case BuildTool::Roof: {   // a gable over two short walls
+            const ImVec2 p[3] = { ImVec2(c.x - r, c.y), ImVec2(c.x, c.y - r * 0.85f),
+                                  ImVec2(c.x + r, c.y) };
+            dl->AddPolyline(p, 3, col, t, 0);
+            dl->AddLine(ImVec2(c.x - r * 0.7f, c.y), ImVec2(c.x - r * 0.7f, c.y + r * 0.8f), col, t);
+            dl->AddLine(ImVec2(c.x + r * 0.7f, c.y), ImVec2(c.x + r * 0.7f, c.y + r * 0.8f), col, t);
+            break;
+        }
+        case BuildTool::Door: {   // a door leaf in its frame, with a handle
+            dl->AddRect(ImVec2(c.x - r * 0.55f, c.y - r), ImVec2(c.x + r * 0.55f, c.y + r), col, 0, t, 0);
+            dl->AddCircleFilled(ImVec2(c.x + r * 0.25f, c.y + r * 0.1f), std::max(1.2f, r * 0.13f), col);
+            break;
+        }
+        case BuildTool::Paint: {  // a roller: head, arm, handle
+            dl->AddRect(ImVec2(c.x - r * 0.85f, c.y - r * 0.9f),
+                        ImVec2(c.x + r * 0.55f, c.y - r * 0.3f), col, r * 0.15f, t, 0);
+            dl->AddLine(ImVec2(c.x + r * 0.55f, c.y - r * 0.6f), ImVec2(c.x + r * 0.9f, c.y - r * 0.6f), col, t);
+            dl->AddLine(ImVec2(c.x + r * 0.9f, c.y - r * 0.6f), ImVec2(c.x + r * 0.9f, c.y + r * 0.05f), col, t);
+            dl->AddLine(ImVec2(c.x + r * 0.9f, c.y + r * 0.05f), ImVec2(c.x - r * 0.1f, c.y + r * 0.05f), col, t);
+            dl->AddLine(ImVec2(c.x - r * 0.1f, c.y + r * 0.05f), ImVec2(c.x - r * 0.1f, c.y + r), col, t * 1.6f);
+            break;
+        }
         case BuildTool::Edit: {   // a rectangle with grips on its edges
             dl->AddRect(ImVec2(c.x - r * 0.62f, c.y - r * 0.5f),
                         ImVec2(c.x + r * 0.62f, c.y + r * 0.5f), col, 0, t, 0);
@@ -285,6 +311,15 @@ f32 CreativeUIScale() {
     return (s > 0.01f) ? s : 1.0f;
 }
 
+// How tall one rail cell is, at 100%.
+//
+// 54 while the rail held thirteen tools. Roof, Door and Paint made it sixteen,
+// and at 54 that is 162 more pixels of rail: the fitted scale below would have
+// shrunk the WHOLE surface by a fifth to pay for three buttons. At 46 sixteen
+// cells are 736 against the old 702, so the surface draws at the size it did.
+// One constant because the rail draws with it and the budget counts with it.
+constexpr f32 kToolCell = 46.0f;
+
 // What the surface needs vertically, per unit of scale: the header, the rail
 // with its two group separators, and the footer.
 f32 CreativeNaturalHeight() {
@@ -296,7 +331,7 @@ f32 CreativeNaturalHeight() {
             BuildToolGroup(static_cast<BuildTool>(i - 1))) ++separators;
     }
     return 44.0f                                                   // header
-         + 8.0f + static_cast<f32>(BuildTool::Count) * 54.0f       // rail
+         + 8.0f + static_cast<f32>(BuildTool::Count) * kToolCell   // rail
          + static_cast<f32>(separators) * 10.0f
          + 78.0f;                                                  // footer
 }
@@ -351,7 +386,7 @@ void EditorLayer::DrawCreativeSurface() {
     // whole surface shrinks and grows as one piece.
     const f32 ui = CreativeFittedScale(surfaceH);
     const f32 kPad       = 14.0f * ui;   // surface edge -> content
-    const f32 kToolH     = 54.0f * ui;
+    const f32 kToolH     = kToolCell * ui;
     const f32 kLabelH    = 18.0f * ui;   // a small label and the gap under it
     const f32 kBoxH      = 26.0f * ui;   // a value box
     const f32 kTrackH    =  3.0f * ui;
@@ -360,6 +395,12 @@ void EditorLayer::DrawCreativeSurface() {
     const f32 kBodyText  = 17.0f * ui;   // headings and values
     const f32 kFooterH   = 78.0f * ui;
     const f32 kHeaderH   = std::max(44.0f * ui, kBodyText + kSmallText + 18.0f * ui);
+    // One corner radius for every box on the surface, and a larger one for the
+    // two things that are meant to read as buttons you press: the rail's
+    // selection and Play. They were 3 and 4 pixels at every scale, so at 190%
+    // the boxes had grown and their corners had not.
+    const f32 kRound     =  7.0f * ui;
+    const f32 kRoundBig  = 10.0f * ui;
 
     const f32 surfaceW = kCreativeSurfaceWidth * ui;
     const f32 railW    = kCreativeRailWidth * ui;
@@ -412,7 +453,8 @@ void EditorLayer::DrawCreativeSurface() {
         // --- header: identity, and the way back out -------------------------
         dl->AddRectFilled(o, ImVec2(o.x + surfaceW, o.y + kHeaderH), kRail);
         dl->AddLine(ImVec2(o.x, o.y + kHeaderH), ImVec2(o.x + surfaceW, o.y + kHeaderH), kLine, 1.0f);
-        dl->AddRectFilled(o, ImVec2(o.x + 3.0f * ui, o.y + kHeaderH), kAccent);
+        dl->AddRectFilled(ImVec2(o.x + 5.0f * ui, o.y + 9.0f * ui),
+                          ImVec2(o.x + 8.0f * ui, o.y + kHeaderH - 9.0f * ui), kAccent, 1.5f * ui);
 
         const f32 titleY = o.y + 5.0f * ui;
         // The mode's own name, not a hardcoded "Creative". Tutorial uses this
@@ -440,7 +482,8 @@ void EditorLayer::DrawCreativeSurface() {
             }
             const bool hov = ImGui::IsItemHovered();
             ImGui::PopID();
-            dl->AddRect(bMin, bMax, hov ? kInk : kLine, 3.0f, 1.0f, 0);
+            if (hov) dl->AddRectFilled(bMin, bMax, Authored(0xff, 0xff, 0xff, 12), bh * 0.5f);
+            dl->AddRect(bMin, bMax, hov ? kInk : kLine, bh * 0.5f, 1.0f, 0);
             text(kSmallText, ImVec2(bMin.x + 8.0f * ui, bMin.y + 6.0f * ui),
                  hov ? kInk : kMuted, leave);
             if (hov) ImGui::SetTooltip("Back to the full editor, with every panel (Ctrl+B)");
@@ -449,6 +492,44 @@ void EditorLayer::DrawCreativeSurface() {
         // --- rail -----------------------------------------------------------
         f32 y = o.y + kHeaderH + 8.0f * ui;
         u8 lastGroup = ToolGroup(BuildTool::Wall);
+
+        // The selection is one rounded tile that SLIDES to the tool you pick,
+        // rather than a full-width bar that jumps. Where it is going is worked
+        // out first, with the same separator arithmetic the loop below uses, so
+        // it can be drawn underneath every icon.
+        //
+        // The approach is 1 - exp(-dt * k), not a fixed fraction per frame: a
+        // fixed fraction arrives faster at 240 fps than at 60. Stored relative
+        // to the rail's top so a window move does not send it chasing. Function
+        // statics because there is one creative surface per editor.
+        {
+            f32 targetY = y;
+            u8 g = lastGroup;
+            for (u8 i = 0; i < static_cast<u8>(BuildTool::Count); ++i) {
+                const BuildTool t = static_cast<BuildTool>(i);
+                if (ToolGroup(t) != g) { targetY += 10.0f * ui; g = ToolGroup(t); }
+                if (m_Creative.GetTool() == t) break;
+                targetY += kToolH;
+            }
+            static f32 s_SelY = -1.0f;
+            static f32 s_SelScale = 0.0f;
+            const f32 target = (targetY - o.y) / ui;      // in authored units
+            if (s_SelY < 0.0f || s_SelScale != ui) { s_SelY = target; s_SelScale = ui; }
+            const f32 dt = std::min(ImGui::GetIO().DeltaTime, 0.1f);
+            s_SelY += (target - s_SelY) * (1.0f - std::exp(-dt * 22.0f));
+            if (std::fabs(target - s_SelY) < 0.25f) s_SelY = target;
+
+            const f32 sy = o.y + s_SelY * ui;
+            const f32 inX = 5.0f * ui, inY = 2.0f * ui;
+            dl->AddRectFilled(ImVec2(o.x + inX, sy + inY),
+                              ImVec2(o.x + railW - inX, sy + kToolH - inY), tintSoft, kRoundBig);
+            dl->AddRect(ImVec2(o.x + inX, sy + inY),
+                        ImVec2(o.x + railW - inX, sy + kToolH - inY),
+                        (tint & 0x00ffffffu) | (0x50u << 24), kRoundBig, 1.0f, 0);
+            // The edge marker: a short pill, not a stripe the height of the cell.
+            dl->AddRectFilled(ImVec2(o.x, sy + kToolH * 0.28f),
+                              ImVec2(o.x + 3.0f * ui, sy + kToolH * 0.72f), tint, 1.5f * ui);
+        }
 
         for (u8 i = 0; i < static_cast<u8>(BuildTool::Count); ++i) {
             const BuildTool t = static_cast<BuildTool>(i);
@@ -466,12 +547,10 @@ void EditorLayer::DrawCreativeSurface() {
             ImGui::PopID();
 
             const bool on = (m_Creative.GetTool() == t);
-            if (on) {
-                dl->AddRectFilled(ImVec2(o.x, y), ImVec2(o.x + railW, y + kToolH), tintSoft);
-                dl->AddRectFilled(ImVec2(o.x, y), ImVec2(o.x + 2.0f * ui, y + kToolH), tint);
-            } else if (hovered) {
-                dl->AddRectFilled(ImVec2(o.x, y), ImVec2(o.x + railW, y + kToolH),
-                                  Authored(0xff, 0xff, 0xff, 10));
+            if (!on && hovered) {
+                dl->AddRectFilled(ImVec2(o.x + 5.0f * ui, y + 2.0f * ui),
+                                  ImVec2(o.x + railW - 5.0f * ui, y + kToolH - 2.0f * ui),
+                                  Authored(0xff, 0xff, 0xff, 12), kRoundBig);
             }
 
             const ImU32 col = on ? tint : (hovered ? kInk : kDim);
@@ -504,9 +583,88 @@ void EditorLayer::DrawCreativeSurface() {
         text(kSmallText, ImVec2(optX + kPad, oy), kMuted, verb, innerW);
         oy += measure(kSmallText, verb, innerW).y + kRowGap + 4.0f * ui;
 
+        // A pick from a named list, or from the paint colours.
+        //
+        // Chips rather than a dropdown: every option is on screen at once, and
+        // one click is the whole interaction. Two columns once there are more
+        // than three, because three names do not fit side by side past that.
+        auto drawPick = [&](BuildField& fd, int id) {
+            const bool swatch = (fd.kind == BuildFieldKind::Swatch);
+            const u32 n = fd.choiceCount;
+            if (n == 0) return;
+            const int current = static_cast<int>(*fd.value + 0.5f);
+
+            text(kSmallText, ImVec2(optX + kPad, oy), kDim, fd.label);
+            if (swatch && current >= 0 && current < static_cast<int>(kCreativePaintColourCount)) {
+                // The colour's name, because sixteen squares 22 pixels wide do
+                // not tell brick from terracotta on their own.
+                const char* name = kCreativePaintColours[current].name;
+                const ImVec2 ns = measure(kSmallText, name);
+                text(kSmallText, ImVec2(optX + kPad + innerW - ns.x, oy), kMuted, name);
+            }
+            oy += kLabelH;
+
+            const u32 cols = swatch ? 8u : (n <= 3 ? n : 2u);
+            const f32 gap = (swatch ? 4.0f : 5.0f) * ui;
+            const f32 cw = (innerW - gap * static_cast<f32>(cols - 1)) / static_cast<f32>(cols);
+            const f32 ch = swatch ? cw : kBoxH;
+
+            ImGui::PushID(id);
+            for (u32 i = 0; i < n; ++i) {
+                const ImVec2 bMin(optX + kPad + static_cast<f32>(i % cols) * (cw + gap),
+                                  oy + static_cast<f32>(i / cols) * (ch + gap));
+                const ImVec2 bMax(bMin.x + cw, bMin.y + ch);
+                ImGui::SetCursorScreenPos(bMin);
+                ImGui::PushID(static_cast<int>(i));
+                if (ImGui::InvisibleButton("##pick", ImVec2(cw, ch))) *fd.value = static_cast<f32>(i);
+                const bool hov = ImGui::IsItemHovered();
+                ImGui::PopID();
+                const bool sel = (static_cast<int>(i) == current);
+
+                if (swatch) {
+                    const PaintColour& pc = kCreativePaintColours[i];
+                    const ImU32 fill = Authored(static_cast<u8>(pc.r * 255.0f + 0.5f),
+                                                static_cast<u8>(pc.g * 255.0f + 0.5f),
+                                                static_cast<u8>(pc.b * 255.0f + 0.5f));
+                    dl->AddRectFilled(bMin, bMax, fill, kRound * 0.7f);
+                    if (sel) {
+                        // Two rings, dark inside light, so the mark shows on
+                        // plaster and on charcoal alike.
+                        dl->AddRect(bMin, bMax, kInk, kRound * 0.7f, 2.0f * ui, 0);
+                        dl->AddRect(ImVec2(bMin.x + 2.0f * ui, bMin.y + 2.0f * ui),
+                                    ImVec2(bMax.x - 2.0f * ui, bMax.y - 2.0f * ui),
+                                    kRail, kRound * 0.5f, 1.0f, 0);
+                    } else if (hov) {
+                        dl->AddRect(bMin, bMax, kMuted, kRound * 0.7f, 1.0f, 0);
+                    }
+                    if (hov) ImGui::SetTooltip("%s", pc.name);
+                } else {
+                    dl->AddRectFilled(bMin, bMax, sel ? tintSoft : kGround, kRound);
+                    dl->AddRect(bMin, bMax, sel ? tint : (hov ? kMuted : kLine), kRound, 1.0f, 0);
+                    const char* name = (fd.choices && fd.choices[i]) ? fd.choices[i] : "?";
+                    const ImVec2 ts = measure(kSmallText, name);
+                    // Clipped to the chip: a name a few pixels too long loses
+                    // its last letter instead of running into its neighbour.
+                    dl->PushClipRect(bMin, bMax, true);
+                    text(kSmallText,
+                         ImVec2(bMin.x + std::max(4.0f * ui, (cw - ts.x) * 0.5f), bMin.y + (ch - ts.y) * 0.5f),
+                         sel ? tint : (hov ? kInk : kMuted), name);
+                    dl->PopClipRect();
+                }
+            }
+            ImGui::PopID();
+
+            const u32 rows = (n + cols - 1) / cols;
+            oy += static_cast<f32>(rows) * (ch + gap) - gap + kRowGap;
+        };
+
         // One number box with its label and track. Returns whether it is being
         // dragged this frame.
         auto drawField = [&](BuildField& fd, int id) -> bool {
+            if (fd.kind != BuildFieldKind::Number) {
+                drawPick(fd, id);
+                return false;
+            }
             text(kSmallText, ImVec2(optX + kPad, oy), kDim, fd.label);
             oy += kLabelH;
 
@@ -528,8 +686,8 @@ void EditorLayer::DrawCreativeSurface() {
             ImGui::PopID();
             if (hov || held) ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
 
-            dl->AddRectFilled(bMin, bMax, kGround, 3.0f);
-            dl->AddRect(bMin, bMax, held ? tint : (hov ? kMuted : kLine), 3.0f, 1.0f, 0);
+            dl->AddRectFilled(bMin, bMax, kGround, kRound);
+            dl->AddRect(bMin, bMax, held ? tint : (hov ? kMuted : kLine), kRound, 1.0f, 0);
 
             // A drag lands on 6.37 sides as easily as on 6, so an integral
             // field is snapped as well as printed whole. Showing "6.00 sides"
@@ -553,9 +711,9 @@ void EditorLayer::DrawCreativeSurface() {
             const f32 frac = std::clamp((*fd.value - fd.minValue) /
                                         std::max(0.0001f, fd.maxValue - fd.minValue), 0.0f, 1.0f);
             dl->AddRectFilled(ImVec2(optX + kPad, oy),
-                              ImVec2(optX + kPad + innerW, oy + kTrackH), kLine, 2.0f);
+                              ImVec2(optX + kPad + innerW, oy + kTrackH), kLine, kTrackH * 0.5f);
             dl->AddRectFilled(ImVec2(optX + kPad, oy),
-                              ImVec2(optX + kPad + innerW * frac, oy + kTrackH), tint, 2.0f);
+                              ImVec2(optX + kPad + innerW * frac, oy + kTrackH), tint, kTrackH * 0.5f);
             oy += kTrackH + kRowGap;
             return held;
         };
@@ -585,8 +743,8 @@ void EditorLayer::DrawCreativeSurface() {
 
                 const bool sel = ((m == 1) == m_Creative.IsSubtracting());
                 const ImU32 edge = sel ? (m == 1 ? kCut : kAccent) : (hov ? kMuted : kLine);
-                dl->AddRectFilled(bMin, bMax, sel ? (m == 1 ? kCutSoft : kAccentSoft) : kGround, 3.0f);
-                dl->AddRect(bMin, bMax, edge, 3.0f, 1.0f, 0);
+                dl->AddRectFilled(bMin, bMax, sel ? (m == 1 ? kCutSoft : kAccentSoft) : kGround, kRound);
+                dl->AddRect(bMin, bMax, edge, kRound, 1.0f, 0);
                 const ImVec2 ts = measure(kSmallText, modes[m]);
                 text(kSmallText, ImVec2(bMin.x + (half - ts.x) * 0.5f, bMin.y + (kBoxH - ts.y) * 0.5f),
                      sel ? edge : kMuted, modes[m]);
@@ -678,8 +836,8 @@ void EditorLayer::DrawCreativeSurface() {
 
             const bool sel = std::fabs(m_Creative.GetGridSize() - choice) < 0.001f &&
                              m_Creative.IsSnapEnabled();
-            dl->AddRectFilled(bMin, bMax, sel ? tintSoft : kGround, 3.0f);
-            dl->AddRect(bMin, bMax, sel ? tint : (hov ? kMuted : kLine), 3.0f, 1.0f, 0);
+            dl->AddRectFilled(bMin, bMax, sel ? tintSoft : kGround, kRound);
+            dl->AddRect(bMin, bMax, sel ? tint : (hov ? kMuted : kLine), kRound, 1.0f, 0);
 
             char label[16];
             std::snprintf(label, sizeof(label), "%g", static_cast<double>(choice));
@@ -729,6 +887,10 @@ void EditorLayer::DrawCreativeSurface() {
         else if (tool == BuildTool::Reduce) instruction = "Click a model to cut its triangles.";
         else if (tool == BuildTool::Edit)   instruction = "Click something, then drag a handle.";
         else if (tool == BuildTool::Path)   instruction = "Click corners. Enter finishes, Esc cancels.";
+        else if (tool == BuildTool::Door)   instruction = "Click the side of a wall.";
+        else if (tool == BuildTool::Paint)  instruction = "Click what you built to colour it.";
+        else if (tool == BuildTool::Prop)   instruction = "Click the ground to place it.";
+        else if (tool == BuildTool::Roof)   instruction = "Drag over the room to roof it.";
         text(kSmallText, ImVec2(optX + kPad, fy), kDim, instruction, innerW);
 
         {
@@ -744,8 +906,8 @@ void EditorLayer::DrawCreativeSurface() {
             const bool hov = ImGui::IsItemHovered();
             ImGui::PopID();
 
-            dl->AddRectFilled(bMin, bMax, playing ? kOk : kAccent, 4.0f);
-            if (hov) dl->AddRect(bMin, bMax, kInk, 4.0f, 1.0f, 0);
+            dl->AddRectFilled(bMin, bMax, playing ? kOk : kAccent, kRoundBig);
+            if (hov) dl->AddRect(bMin, bMax, kInk, kRoundBig, 1.0f, 0);
             const char* label = playing ? "Stop" : "Play";
             const ImVec2 ls = measure(kBodyText, label);
             text(kBodyText, ImVec2(bMin.x + (innerW - ls.x) * 0.5f, bMin.y + (btnH - ls.y) * 0.5f),
@@ -1105,7 +1267,8 @@ void EditorLayer::HandleBuildDrag() {
     // -- the cursor over the viewport image, a usable angle onto the ground, and
     // play stopped -- and when one is not, the surface now names it instead of
     // ignoring the click.
-    if (m_EditorViewportHovered && !onGround && m_Creative.GetTool() != BuildTool::Reduce) {
+    if (m_EditorViewportHovered && !onGround && m_Creative.GetTool() != BuildTool::Reduce &&
+        m_Creative.GetTool() != BuildTool::Door && m_Creative.GetTool() != BuildTool::Paint) {
         ImDrawList* dl = ImGui::GetForegroundDrawList();
         ImFont* font = ImGui::GetFont();
         const f32 ui = CreativeUIScale();
@@ -1143,6 +1306,16 @@ void EditorLayer::HandleBuildDrag() {
         case BuildTool::Reduce:
             if (m_BuildDragging || m_BrushActive) CancelCreativeGesture();
             HandleCreativeReduce(localX, localY, vpW, vpH);
+            return;
+        case BuildTool::Door:
+            // A click on a wall, found by the ray: the ground point under the
+            // cursor is on the far side of the wall you are pointing at.
+            if (m_BuildDragging || m_BrushActive) CancelCreativeGesture();
+            HandleCreativeDoor(localX, localY, vpW, vpH);
+            return;
+        case BuildTool::Paint:
+            if (m_BuildDragging || m_BrushActive) CancelCreativeGesture();
+            HandleCreativePaint(localX, localY, vpW, vpH);
             return;
         case BuildTool::Edit:
             if (m_BuildDragging || m_BrushActive) CancelCreativeGesture();
@@ -2087,6 +2260,67 @@ ECS::Entity EditorLayer::PlaceCreativeComponent(BuildTool tool,
     }
 
     const BuildToolSettings& s = m_Creative.CurrentSettings();
+
+    // Which prop, for both halves of the table.
+    u32 railPropCount = 0;
+    const RailProp* railProps = RailProps(railPropCount);
+    const u32 railPropIndex = std::min(
+        static_cast<u32>(std::max(0.0f, s.propKind) + 0.5f), railPropCount - 1);
+
+    if (tool == BuildTool::Prop && railProps[railPropIndex].kind == PropKind::Count) {
+        // One of the Entity menu's things. The menu entry makes it, so the
+        // rail's door IS Entity > Gameplay > Door and not a second one.
+        const RailProp& rp = railProps[railPropIndex];
+        const EntityMenuEntry* entry = nullptr;
+        const std::vector<EntityMenuEntry> table = BuildEntityMenuTable();
+        for (const EntityMenuEntry& e : table) {
+            if (std::strcmp(e.group, rp.menuGroup) == 0 && std::strcmp(e.label, rp.menuLabel) == 0) {
+                entry = &e;
+                break;
+            }
+        }
+        if (!entry) {
+            // The menu renamed something and this table did not follow. Said
+            // out loud: a chip that places nothing reads as a broken tool.
+            ENJIN_LOG_ERROR(Editor, "Creative: no Entity menu entry '%s' > '%s' for prop '%s'",
+                            rp.menuGroup, rp.menuLabel, rp.name);
+            ShowNotification(std::string("Could not place ") + rp.name, NotificationType::Error);
+            return ECS::INVALID_ENTITY;
+        }
+
+        // The entry may make more than one entity (a door is a hinge and a
+        // panel, a player brings a camera), and it does not say which. So the
+        // new ones are found by difference, and all of them go into ONE undo
+        // step. The Entity menu itself records no undo at all.
+        std::unordered_set<ECS::Entity> existing;
+        for (ECS::Entity e : m_World->GetEntitiesWithComponent<ECS::TransformComponent>()) existing.insert(e);
+
+        entry->create(plan.origin + Math::Vector3(0.0f, rp.lift, 0.0f));
+
+        const ECS::Entity root = m_PrimarySelected;
+        auto step = std::make_unique<CompoundCommand>(std::string("Place ") + rp.name);
+        std::vector<ECS::Entity> made;
+        for (ECS::Entity e : m_World->GetEntitiesWithComponent<ECS::TransformComponent>()) {
+            if (!existing.count(e)) made.push_back(e);
+        }
+        // Parents before children, so a redo restores the hinge before the
+        // panel that names it as parent.
+        std::stable_sort(made.begin(), made.end(), [&](ECS::Entity a, ECS::Entity b) {
+            return !ECS::HasParent(m_World, a) && ECS::HasParent(m_World, b);
+        });
+        for (ECS::Entity e : made) {
+            step->AddCommand(std::make_unique<FullCreateEntityCommand>(
+                m_World, e,
+                (e == root) ? SelectionCallback([this](ECS::Entity restored) { SelectEntity(restored); })
+                            : SelectionCallback(nullptr)));
+        }
+        if (!step->IsEmpty()) m_UndoRedo.Execute(std::move(step));
+        MarkDirty();
+        ENJIN_LOG_INFO(Editor, "Creative: placed %s (%zu entit%s)", rp.name, made.size(),
+                       made.size() == 1 ? "y" : "ies");
+        return root;
+    }
+
     ECS::Entity entity = m_World->CreateEntity();
     m_World->AddComponent<ECS::NameComponent>(entity, BuildToolName(tool));
     auto& xf = m_World->AddComponent<ECS::TransformComponent>(entity);
@@ -2214,9 +2448,9 @@ ECS::Entity EditorLayer::PlaceCreativeComponent(BuildTool tool,
     }
 
     if (tool == BuildTool::Prop) {
-        // The five ready-made objects the older Build Palette could place and
-        // this rail could not: a ball, a point light, a physics box, a barrel
-        // and a spawn point.
+        // The five ready-made objects built here: a ball, a point light, a
+        // physics box, a barrel and a spawn point. The rest of the Kind list
+        // comes from the Entity menu and was handled above.
         //
         // Same meshes, same components, same vertical offsets as that palette
         // uses. The offsets matter and are not decoration: these all land on a
@@ -2226,20 +2460,11 @@ ECS::Entity EditorLayer::PlaceCreativeComponent(BuildTool tool,
         // that never visibly falls.
         xf.position = plan.origin;
 
-        // The rail offers five of the six. Block is left out because the Brush
-        // tool already makes boxes, and two buttons for one thing on the same
-        // rail is worse than one. Mapped explicitly rather than by arithmetic,
-        // so adding a kind to either list cannot silently shift the others.
-        static constexpr PropKind kRailProps[] = {
-            PropKind::Ball, PropKind::Light, PropKind::PhysicsBox,
-            PropKind::Barrel, PropKind::SpawnPoint,
-        };
-        const int kindIndex = static_cast<int>(s.propKind + 0.5f);
-        const PropKind kind = kRailProps[
-            (kindIndex < 0) ? 0
-          : (kindIndex >= static_cast<int>(sizeof(kRailProps) / sizeof(kRailProps[0])))
-                ? static_cast<int>(sizeof(kRailProps) / sizeof(kRailProps[0])) - 1
-                : kindIndex];
+        // Which of the five comes from the rail's prop table (RailProps), the
+        // same table the Kind chips are drawn from. Block is not in it: the
+        // Brush tool already makes boxes, and two buttons for one thing on the
+        // same rail is worse than one.
+        const PropKind kind = railProps[railPropIndex].kind;
         const char* name = PropKindName(kind);
 
         // Meshes, components and the vertical drop live in ScenePlacement, which
@@ -3353,6 +3578,274 @@ void EditorLayer::CommitCreativePath() {
     RecordLayerCreate(entity);
     FinishCreativePlacement(entity);
     ENJIN_LOG_INFO(Editor, "Creative: placed Path (%zu brushes)", solid.brushes.size());
+}
+
+// ---------------------------------------------------------------------------
+// Door and Paint: a click on something already built
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// One change to a brush list, one undo step.
+//
+// Not PropertyEditCommand, which the two older cut paths use: that merges any
+// two commands with the same description, so a doorway cut in one wall and
+// then another in a second wall would fold into a single undo holding the
+// first wall's "before" and the second wall's setter.
+class BrushListCommand : public ICommand {
+public:
+    using Brushes = std::vector<ECS::BrushSolidComponent::Brush>;
+    BrushListCommand(ECS::World* world, ECS::Entity entity, Brushes before, Brushes after)
+        : m_World(world), m_Entity(entity), m_Before(std::move(before)), m_After(std::move(after)) {}
+    void Execute() override { Apply(m_After); }
+    void Undo() override { Apply(m_Before); }
+    const char* GetDescription() const override { return "Cut Opening"; }
+private:
+    void Apply(const Brushes& v) {
+        if (auto* solid = m_World->GetComponent<ECS::BrushSolidComponent>(m_Entity)) {
+            solid->brushes = v;
+            solid->dirty = true;
+            ECS::BrushSolidSystem::Rebuild(m_World, m_Entity);
+        }
+    }
+    ECS::World* m_World;
+    ECS::Entity m_Entity;
+    Brushes m_Before, m_After;
+};
+
+// What Paint changes, and nothing else: a texture or a normal map already on
+// the material is left where it is.
+struct PaintLook {
+    Math::Vector3 colour;
+    f32 roughness = 0.5f;
+    f32 metallic = 0.0f;
+};
+
+class PaintCommand : public ICommand {
+public:
+    PaintCommand(ECS::World* world, ECS::Entity entity, const PaintLook& before, const PaintLook& after)
+        : m_World(world), m_Entity(entity), m_Before(before), m_After(after) {}
+    void Execute() override { Apply(m_After); }
+    void Undo() override { Apply(m_Before); }
+    const char* GetDescription() const override { return "Paint"; }
+private:
+    void Apply(const PaintLook& look) {
+        if (auto* mat = m_World->GetComponent<ECS::MaterialComponent>(m_Entity)) {
+            mat->baseColor = look.colour;
+            mat->roughness = look.roughness;
+            mat->metallic = look.metallic;
+        }
+    }
+    ECS::World* m_World;
+    ECS::Entity m_Entity;
+    PaintLook m_Before, m_After;
+};
+
+// A brush's box as it stands in the world, turned with the brush and with the
+// entity that owns it. Draws nothing if any corner cannot be projected.
+void DrawBrushWire(ImDrawList* dl, const Renderer::Camera* cam, const ImVec2& imgMin,
+                   f32 viewW, f32 viewH, const Math::Matrix4& world,
+                   const ECS::BrushSolidComponent::Brush& brush, ImU32 col, f32 thickness) {
+    const Math::Vector3& h = brush.halfExtents;
+    ImVec2 screen[8];
+    for (u32 i = 0; i < 8; ++i) {
+        const Math::Vector3 local((i & 1) ? h.x : -h.x, (i & 2) ? h.y : -h.y, (i & 4) ? h.z : -h.z);
+        const Math::Vector3 p = XformPoint(world, brush.center + brush.rotation.Rotate(local));
+        if (!ProjectToViewport(cam, p, imgMin, viewW, viewH, screen[i])) return;
+    }
+    static const u32 edge[12][2] = {
+        {0,1},{2,3},{4,5},{6,7}, {0,2},{1,3},{4,6},{5,7}, {0,4},{1,5},{2,6},{3,7},
+    };
+    for (const auto& e : edge) dl->AddLine(screen[e[0]], screen[e[1]], col, thickness);
+}
+
+// A line of text in a box by the cursor: what this click will do, or why it
+// will do nothing.
+void CursorNote(const char* note, ImU32 col) {
+    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    ImFont* font = ImGui::GetFont();
+    const ImVec2 mouse = ImGui::GetIO().MousePos;
+    const f32 ui = CreativeUIScale();
+    const f32 size = 11.0f * ui;
+    const ImVec2 ls = font->CalcTextSizeA(size, FLT_MAX, 0.0f, note);
+    const ImVec2 boxMin(mouse.x + 14.0f * ui, mouse.y + 8.0f * ui);
+    const ImVec2 boxMax(boxMin.x + ls.x + 14.0f * ui, boxMin.y + ls.y + 10.0f * ui);
+    dl->AddRectFilled(boxMin, boxMax, Authored(0x14, 0x18, 0x1f, 0xe6), 6.0f * ui);
+    dl->AddRect(boxMin, boxMax, kLine, 6.0f * ui, 1.0f, 0);
+    dl->AddText(font, size, ImVec2(boxMin.x + 7.0f * ui, boxMin.y + 5.0f * ui), col, note);
+}
+
+} // namespace
+
+void EditorLayer::HandleCreativeDoor(f32 localX, f32 localY, f32 viewW, f32 viewH) {
+    if (!m_World || !m_Camera || !m_EditorViewportHovered) return;
+
+    const Ray ray = ScenePicker::ScreenToRay(m_Camera, localX, localY, viewW, viewH);
+
+    // The nearest wall under the cursor, across every solid. Each is tested in
+    // its own space, and `t` is along the one world ray in all of them, so the
+    // distances compare.
+    ECS::Entity target = ECS::INVALID_ENTITY;
+    usize brushIndex = 0;
+    BrushRayHit hit;
+    Math::Matrix4 targetWorld;
+    for (ECS::Entity e : m_World->GetEntitiesWithComponent<ECS::BrushSolidComponent>()) {
+        const auto* solid = m_World->GetComponent<ECS::BrushSolidComponent>(e);
+        if (!solid) continue;
+        const Math::Matrix4 world = FreshWorldMatrix(m_World, e);
+        const Math::Matrix4 inv = world.Inverse();
+        usize index = 0;
+        BrushRayHit h;
+        if (!FindOpeningTarget(*solid, XformPoint(inv, ray.origin), XformDir(inv, ray.direction),
+                               index, h)) {
+            continue;
+        }
+        if (target != ECS::INVALID_ENTITY && h.t >= hit.t) continue;
+        target = e;
+        brushIndex = index;
+        hit = h;
+        targetWorld = world;
+    }
+
+    if (target == ECS::INVALID_ENTITY) {
+        CursorNote("Point at the side of a wall", kDim);
+        return;
+    }
+    auto* solid = m_World->GetComponent<ECS::BrushSolidComponent>(target);
+    if (!solid || brushIndex >= solid->brushes.size()) return;
+
+    const BuildToolSettings& s = m_Creative.CurrentSettings();
+    const int kind = std::clamp(static_cast<int>(s.openingKind + 0.5f), 0,
+                                static_cast<int>(OpeningKind::Count) - 1);
+    static const char* const kKindNames[] = { "Doorway", "Door", "Window" };
+
+    OpeningPlan plan;
+    if (!PlanOpening(solid->brushes[brushIndex], hit, s,
+                     m_Creative.IsSnapEnabled() ? m_Creative.GetGridSize() : 0.0f, plan)) {
+        CursorNote(hit.axis == 1 ? "Click the side of a wall, not its top"
+                                 : "This wall is too small for that opening",
+                   kMuted);
+        return;
+    }
+
+    // What the click will cut, drawn where it will be cut.
+    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    const ImVec2 imgMin(m_EditorViewportImageMinX, m_EditorViewportImageMinY);
+    DrawBrushWire(dl, m_Camera, imgMin, viewW, viewH, targetWorld, plan.cut, kCut,
+                  std::max(1.0f, 1.6f * CreativeUIScale()));
+    char note[96];
+    std::snprintf(note, sizeof(note), "%s   %.2f x %.2f m", kKindNames[kind],
+                  static_cast<double>(plan.width), static_cast<double>(plan.height));
+    CursorNote(note, kCut);
+
+    if (!ImGui::IsMouseClicked(ImGuiMouseButton_Left)) return;
+
+    auto before = solid->brushes;
+    solid->brushes.push_back(plan.cut);
+    solid->dirty = true;
+    ECS::BrushSolidSystem::Rebuild(m_World, target);
+
+    // The cut and the door in it are one thing to the person who clicked, so
+    // they are one undo step.
+    auto step = std::make_unique<CompoundCommand>(kKindNames[kind]);
+    step->AddCommand(std::make_unique<BrushListCommand>(m_World, target, std::move(before), solid->brushes));
+
+    if (kind == static_cast<int>(OpeningKind::Door)) {
+        // The same shape the Entity menu's door has, and for the same reason:
+        // DoorComponent swings its own entity about its own origin, so the
+        // entity is the HINGE at the edge of the opening and the panel is a
+        // child half a door-width along. Sized to the opening that was just
+        // cut rather than to a fixed 1 x 2 m, which is the whole point of
+        // making it here.
+        const f32 gap = 0.02f;   // clear of the frame, so it does not scrape
+        const f32 leafW = std::max(0.1f, plan.width - gap * 2.0f);
+        const f32 leafH = std::max(0.1f, plan.height - gap);
+        const f32 leafT = std::min(0.08f, std::max(0.03f, plan.wallThickness * 0.5f));
+
+        ECS::Entity hinge = MakeMenuEntity("Door", XformPoint(targetWorld, plan.hinge));
+        m_World->GetComponent<ECS::TransformComponent>(hinge)->rotation =
+            ECS::WorldRotation(m_World, target) * plan.rotation;
+        m_World->AddComponent<ECS::DoorComponent>(hinge);
+
+        ECS::Entity panel = MakeMenuEntity("Door Panel",
+                                           Math::Vector3(gap + leafW * 0.5f, leafH * 0.5f, 0.0f));
+        m_World->GetComponent<ECS::TransformComponent>(panel)->scale = Math::Vector3(leafW, leafH, leafT);
+        m_World->AddComponent<ECS::MeshComponent>(panel, Renderer::MeshFactory::CreateCube(1.0f));
+        m_World->AddComponent<ECS::MaterialComponent>(panel).baseColor = Math::Vector3(0.55f, 0.4f, 0.25f);
+        // Collider sizes are world units and are not multiplied by the scale.
+        m_World->AddComponent<ECS::BoxColliderComponent>(panel).size = Math::Vector3(leafW, leafH, leafT);
+        auto& rb = m_World->AddComponent<ECS::RigidbodyComponent>(panel);
+        rb.bodyType = ECS::RigidbodyComponent::BodyType::Kinematic;
+        rb.useGravity = false;
+        ECS::SetParent(m_World, panel, hinge);
+        RecordLayerCreate(hinge);
+        RecordLayerCreate(panel);
+
+        step->AddCommand(std::make_unique<FullCreateEntityCommand>(m_World, hinge));
+        step->AddCommand(std::make_unique<FullCreateEntityCommand>(m_World, panel));
+    }
+
+    m_UndoRedo.Execute(std::move(step));
+    // The wall, not the door: the outline moving to the wall that changed is
+    // how a cut that landed in the wrong one gets noticed.
+    SelectEntity(target);
+    MarkDirty();
+    ENJIN_LOG_INFO(Editor, "Creative: cut a %s (%.2f x %.2f m)", kKindNames[kind],
+                   static_cast<double>(plan.width), static_cast<double>(plan.height));
+}
+
+void EditorLayer::HandleCreativePaint(f32 localX, f32 localY, f32 viewW, f32 viewH) {
+    // A stroke starts with a press in the viewport and ends when the button
+    // comes up. While it lasts, each thing the cursor crosses is painted once.
+    // Function statics because there is one creative surface per editor.
+    static bool s_Stroke = false;
+    static ECS::Entity s_Last = ECS::INVALID_ENTITY;
+    if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+        s_Stroke = false;
+        s_Last = ECS::INVALID_ENTITY;
+    }
+    if (!m_World || !m_Camera || !m_EditorViewportHovered) return;
+    if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) s_Stroke = true;
+
+    const ECS::Entity hovered =
+        ScenePicker::PickEntity(m_World, m_Camera, localX, localY, viewW, viewH);
+    if (hovered == ECS::INVALID_ENTITY) return;
+    // Something with a surface. A light or a spawn point has nothing to colour.
+    if (!m_World->HasComponent<ECS::MeshComponent>(hovered) &&
+        !m_World->HasComponent<ECS::BrushSolidComponent>(hovered)) {
+        return;
+    }
+
+    const BuildToolSettings& s = m_Creative.CurrentSettings();
+    const u32 ci = std::min(static_cast<u32>(std::max(0.0f, s.paintColour) + 0.5f),
+                            kCreativePaintColourCount - 1);
+    const u32 fi = std::min(static_cast<u32>(std::max(0.0f, s.paintFinish) + 0.5f),
+                            kCreativePaintFinishCount - 1);
+    const PaintColour& colour = kCreativePaintColours[ci];
+    const PaintFinish& finish = kCreativePaintFinishes[fi];
+
+    const char* name = "this";
+    if (auto* nc = m_World->GetComponent<ECS::NameComponent>(hovered)) {
+        if (!nc->name.empty()) name = nc->name.c_str();
+    }
+    char note[160];
+    std::snprintf(note, sizeof(note), "%s   ->   %s, %s", name, colour.name, finish.name);
+    CursorNote(note, kAccent);
+
+    if (!s_Stroke || hovered == s_Last) return;
+    s_Last = hovered;
+
+    auto* mat = m_World->GetComponent<ECS::MaterialComponent>(hovered);
+    if (!mat) mat = &m_World->AddComponent<ECS::MaterialComponent>(hovered);
+
+    const PaintLook before{ mat->baseColor, mat->roughness, mat->metallic };
+    const PaintLook after{ Math::Vector3(colour.r, colour.g, colour.b), finish.roughness, finish.metallic };
+    if (before.colour == after.colour && before.roughness == after.roughness &&
+        before.metallic == after.metallic) {
+        return;
+    }
+    m_UndoRedo.Execute(std::make_unique<PaintCommand>(m_World, hovered, before, after));
+    MarkDirty();
 }
 
 } // namespace Editor

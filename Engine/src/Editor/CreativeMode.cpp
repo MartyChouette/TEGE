@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <utility>
 
 namespace Enjin {
 namespace Editor {
@@ -106,6 +107,9 @@ const char* BuildToolName(BuildTool tool) {
         case BuildTool::Floor:   return "Floor";
         case BuildTool::Stairs:  return "Stairs";
         case BuildTool::Path:    return "Path";
+        case BuildTool::Roof:    return "Roof";
+        case BuildTool::Door:    return "Door";
+        case BuildTool::Paint:   return "Paint";
         case BuildTool::Brush:   return "Brush";
         case BuildTool::Water:   return "Water";
         case BuildTool::Plants:  return "Plants";
@@ -124,7 +128,9 @@ u8 BuildToolGroup(BuildTool tool) {
         case BuildTool::Wall:
         case BuildTool::Floor:
         case BuildTool::Stairs:
-        case BuildTool::Path:    return 0;   // structure
+        case BuildTool::Path:
+        case BuildTool::Roof:
+        case BuildTool::Door:    return 0;   // structure
         case BuildTool::Brush:
         case BuildTool::Water:
         case BuildTool::Plants:
@@ -151,10 +157,16 @@ const char* BuildToolVerb(BuildTool tool) {
             return "Drag the run. Treads and a collider come with it.";
         case BuildTool::Path:
             return "Click corners along the wall. Pull a span sideways to bow it. Enter finishes.";
+        case BuildTool::Roof:
+            return "Drag over a room. Sits at wall height; the ridge runs the long way.";
+        case BuildTool::Door:
+            return "Click the side of a wall. It is cut there, and a door swings in it.";
+        case BuildTool::Paint:
+            return "Pick a colour, then click what you built. Hold and sweep to do several.";
         case BuildTool::Brush:
             return "A convex solid. Subtract one from a wall and you have a doorway.";
         case BuildTool::Water:
-            return "Drag a rectangle. Swimmable by default; Kind 0 is a surface only.";
+            return "Drag a rectangle. Swimmable has depth to swim in; Surface is the top only.";
         case BuildTool::Terrain:
             return "Drag over the ground to raise or lower it. Makes a terrain if there is none.";
         case BuildTool::Cave:
@@ -180,6 +192,7 @@ bool BuildToolMakesBrushes(BuildTool tool) {
         case BuildTool::Wall:
         case BuildTool::Floor:
         case BuildTool::Stairs:
+        case BuildTool::Roof:
         case BuildTool::Brush:
             return true;
         default:
@@ -188,6 +201,10 @@ bool BuildToolMakesBrushes(BuildTool tool) {
 }
 
 bool BuildToolCanSubtract(BuildTool tool) {
+    // A roof is brushes, and two of them are already cuts: the slopes are made
+    // by taking wedges off a block. Subtracting the whole thing from something
+    // else would turn those cuts inside out, so it has no second mode.
+    if (tool == BuildTool::Roof) return false;
     // Strictly CSG subtraction. Terrain also has a second mode, but Raise/Lower
     // is its own pair and not a cut; Water, Ladder and Reduce have no second
     // mode at all, and offering the toggle on those would be a switch that does
@@ -218,6 +235,24 @@ u32 BuildToolFields(BuildTool tool, BuildToolSettings& s,
         if (count >= kBuildMaxFields) return;
         fields[count++] = BuildField{label, value, lo, hi, unit};
     };
+    // A pick from a named list. The range is derived from the list, so a name
+    // added to it is selectable without touching a second number.
+    auto choice = [&](const char* label, f32* value, const char* const* names, u32 n) {
+        if (count >= kBuildMaxFields || n == 0) return;
+        BuildField f{label, value, 0.0f, static_cast<f32>(n - 1), ""};
+        f.kind = BuildFieldKind::Choice;
+        f.choices = names;
+        f.choiceCount = n;
+        // A value left over from a longer list (or typed past the end by a
+        // script) is brought back in range here, where every reader passes.
+        *value = std::clamp(std::round(*value), 0.0f, static_cast<f32>(n - 1));
+        fields[count++] = f;
+    };
+
+    static const char* const kWaterKinds[]   = { "Surface", "Swimmable" };
+    static const char* const kPlantKinds[]   = { "Grass", "Shrubs", "Trees" };
+    static const char* const kRoofKinds[]    = { "Flat", "Shed", "Gable" };
+    static const char* const kOpeningKinds[] = { "Doorway", "Door", "Window" };
 
     switch (tool) {
         case BuildTool::Wall:
@@ -250,7 +285,7 @@ u32 BuildToolFields(BuildTool tool, BuildToolSettings& s,
         case BuildTool::Water:
             // Kind first, because it decides what the rest of these mean.
             // 0 = Surface (a Water3D plane), 1 = Swimmable (a WaterVolume body).
-            add("Kind",    &s.waterKind,   0.0f,  1.0f, "");
+            choice("Kind", &s.waterKind, kWaterKinds, 2);
             add("Surface", &s.elevation, -20.0f, 20.0f, "m");
             // Depth belongs to the swimmable body only. A Water3D plane has no
             // depth -- how deep THAT water looks is the basin you cut under it,
@@ -271,8 +306,16 @@ u32 BuildToolFields(BuildTool tool, BuildToolSettings& s,
             // Bore is the space you walk through; Rough is how far the wall
             // wanders from a perfect tube -- the difference between a cave and
             // a drainpipe; Depth is how far a Shaft sinks or a Ramp descends.
-            add("Brush", &s.caveBrush,
-                0.0f, static_cast<f32>(static_cast<u8>(Geometry::VoxelBrush::Count) - 1), "");
+            {
+                // Named from VoxelBrushName, so the rail and the carve cannot
+                // call the same brush two things.
+                static const char* names[static_cast<usize>(Geometry::VoxelBrush::Count)];
+                for (u8 i = 0; i < static_cast<u8>(Geometry::VoxelBrush::Count); ++i) {
+                    names[i] = Geometry::VoxelBrushName(static_cast<Geometry::VoxelBrush>(i));
+                }
+                choice("Brush", &s.caveBrush, names,
+                       static_cast<u32>(Geometry::VoxelBrush::Count));
+            }
             add("Bore",  &s.radius,    0.75f, 12.0f, "m");
             add("Depth", &s.caveDepth, 1.00f, 30.0f, "m");
             add("Rough", &s.roughness, 0.00f,  1.5f, "m");
@@ -280,12 +323,54 @@ u32 BuildToolFields(BuildTool tool, BuildToolSettings& s,
         case BuildTool::Plants:
             // Kind is a 0..2 pick rendered as a slider, for the same reason the
             // rest of this rail is sliders: one row shape, one interaction.
-            add("Kind",    &s.plantKind,    0.0f, 2.0f, "");
+            choice("Kind", &s.plantKind, kPlantKinds, 3);
             add("Density", &s.plantDensity, 0.1f, 4.0f, "x");
             break;
-        case BuildTool::Prop:
-            add("Kind", &s.propKind, 0.0f, 4.0f, "");
+        case BuildTool::Prop: {
+            u32 n = 0;
+            const RailProp* props = RailProps(n);
+            static const char* names[64];
+            n = std::min<u32>(n, 64);
+            for (u32 i = 0; i < n; ++i) names[i] = props[i].name;
+            choice("Kind", &s.propKind, names, n);
             break;
+        }
+        case BuildTool::Roof:
+            choice("Kind", &s.roofKind, kRoofKinds, 3);
+            add("Height", &s.roofBase, 0.0f, 20.0f, "m");
+            if (static_cast<int>(s.roofKind + 0.5f) == static_cast<int>(RoofKind::Flat)) {
+                // A flat roof has no slope to set, and a Pitch box that did
+                // nothing would be the switch-that-does-nothing again.
+                add("Thickness", &s.thickness, 0.05f, 1.0f, "m");
+            } else {
+                add("Pitch", &s.pitch, kCreativeRoofPitchMin, kCreativeRoofPitchMax, "deg");
+            }
+            add("Overhang", &s.overhang, 0.0f, 2.0f, "m");
+            break;
+        case BuildTool::Door:
+            choice("Kind", &s.openingKind, kOpeningKinds, 3);
+            if (static_cast<int>(s.openingKind + 0.5f) == static_cast<int>(OpeningKind::Window)) {
+                add("Width",  &s.windowWidth,  0.30f, 6.0f, "m");
+                add("Height", &s.windowHeight, 0.30f, 4.0f, "m");
+                add("Sill",   &s.sill,         0.10f, 4.0f, "m");
+            } else {
+                add("Width",  &s.doorWidth,  0.50f, 6.0f, "m");
+                add("Height", &s.doorHeight, 1.00f, 6.0f, "m");
+            }
+            break;
+        case BuildTool::Paint: {
+            BuildField f{"Colour", &s.paintColour, 0.0f,
+                         static_cast<f32>(kCreativePaintColourCount - 1), ""};
+            f.kind = BuildFieldKind::Swatch;
+            f.choiceCount = kCreativePaintColourCount;
+            s.paintColour = std::clamp(std::round(s.paintColour), 0.0f, f.maxValue);
+            if (count < kBuildMaxFields) fields[count++] = f;
+
+            static const char* names[kCreativePaintFinishCount];
+            for (u32 i = 0; i < kCreativePaintFinishCount; ++i) names[i] = kCreativePaintFinishes[i].name;
+            choice("Finish", &s.paintFinish, names, kCreativePaintFinishCount);
+            break;
+        }
         case BuildTool::Ladder:
             add("Height",   &s.height,  0.50f, 20.0f, "m");
             add("Rung gap", &s.rungGap, 0.10f,  1.0f, "m");
@@ -471,9 +556,286 @@ bool CreativeMode::BuildBrushes(BuildTool tool,
             return true;
         }
 
+        case BuildTool::Roof: {
+            if (spanX < kCreativeMinDragLength || spanZ < kCreativeMinDragLength) return false;
+
+            const f32 over = std::max(0.0f, settings.overhang);
+            const f32 hx = spanX * 0.5f + over;
+            const f32 hz = spanZ * 0.5f + over;
+            const f32 cx = (dragStart.x + dragEnd.x) * 0.5f;
+            const f32 cz = (dragStart.z + dragEnd.z) * 0.5f;
+            const f32 base = settings.roofBase;
+
+            int kind = static_cast<int>(settings.roofKind + 0.5f);
+            kind = std::max(0, std::min(kind, static_cast<int>(RoofKind::Count) - 1));
+
+            if (kind == static_cast<int>(RoofKind::Flat)) {
+                const f32 thickness = std::max(kMinHalf * 2.0f, settings.thickness);
+                ECS::BrushSolidComponent::Brush slab;
+                slab.shape = ECS::BrushSolidComponent::Shape::Box;
+                // Sits ON its height, the opposite of a floor: the number is
+                // where the walls stop, and the roof starts there.
+                slab.center = Math::Vector3(cx, base + thickness * 0.5f, cz);
+                slab.halfExtents = Math::Vector3(hx, thickness * 0.5f, hz);
+                out.brushes.push_back(slab);
+                return true;
+            }
+
+            // A sloped roof is a block with the corners taken off.
+            //
+            // Brush CSG has boxes and prisms and no wedge, and a three-sided
+            // prism is equilateral, which fixes the pitch at 60 degrees. So the
+            // slope is made the way a doorway is: an Add block the size of the
+            // whole roof, and one big Subtract box per slope, turned so its
+            // underside lies exactly on the slope. That gives any pitch, closed
+            // gable ends, and a solid the collider can stand on.
+            //
+            // The ridge runs along the LONGER side of the drag, which is the
+            // way a real roof spans: across the short dimension.
+            const bool ridgeAlongX = spanX >= spanZ;
+            const f32 halfLength = ridgeAlongX ? hx : hz;
+            const f32 halfSpan   = ridgeAlongX ? hz : hx;
+
+            const f32 pitchDeg = std::clamp(settings.pitch, kCreativeRoofPitchMin, kCreativeRoofPitchMax);
+            const f32 pitch = pitchDeg * 0.01745329252f;
+            const bool gable = (kind == static_cast<int>(RoofKind::Gable));
+            // A gable climbs half the span to the ridge; a shed climbs all of it.
+            const f32 run  = gable ? halfSpan : halfSpan * 2.0f;
+            const f32 rise = run * std::tan(pitch);
+            const f32 fascia = kCreativeRoofFascia;
+
+            ECS::BrushSolidComponent::Brush body;
+            body.shape = ECS::BrushSolidComponent::Shape::Box;
+            body.center = Math::Vector3(cx, base + (fascia + rise) * 0.5f, cz);
+            body.halfExtents = ridgeAlongX
+                ? Math::Vector3(halfLength, (fascia + rise) * 0.5f, halfSpan)
+                : Math::Vector3(halfSpan, (fascia + rise) * 0.5f, halfLength);
+            out.brushes.push_back(body);
+
+            // Half the cutter's size. Only has to be bigger than what it cuts.
+            const f32 reach = run + rise + 1.0f;
+            const int slopes = gable ? 2 : 1;
+            for (int i = 0; i < slopes; ++i) {
+                const f32 side = (i == 0) ? 1.0f : -1.0f;
+                // The slope runs from the eave at `side * halfSpan` up to the
+                // ridge, `run` further in. Its outward normal leans to `side`.
+                const f32 midAcross = side * (halfSpan - run * 0.5f);
+                const f32 midY = base + fascia + rise * 0.5f;
+                const f32 nAcross = side * std::sin(pitch);
+                const f32 nY = std::cos(pitch);
+
+                ECS::BrushSolidComponent::Brush cutter;
+                cutter.shape = ECS::BrushSolidComponent::Shape::Box;
+                cutter.op = Geometry::BrushOp::Subtract;
+                if (ridgeAlongX) {
+                    cutter.center = Math::Vector3(cx, midY + nY * reach, cz + midAcross + nAcross * reach);
+                    // About X by a: local +Y goes to (0, cos a, sin a).
+                    cutter.rotation = Math::Quaternion::FromEuler(Math::Vector3(side * pitch, 0.0f, 0.0f));
+                    cutter.halfExtents = Math::Vector3(halfLength + 1.0f, reach, reach);
+                } else {
+                    cutter.center = Math::Vector3(cx + midAcross + nAcross * reach, midY + nY * reach, cz);
+                    // About Z by b: local +Y goes to (-sin b, cos b, 0).
+                    cutter.rotation = Math::Quaternion::FromEuler(Math::Vector3(0.0f, 0.0f, -side * pitch));
+                    cutter.halfExtents = Math::Vector3(reach, reach, halfLength + 1.0f);
+                }
+                out.brushes.push_back(cutter);
+            }
+            return true;
+        }
+
         default:
             return false;
     }
+}
+
+// --------------------------------------------------------------------------
+// Prop table
+// --------------------------------------------------------------------------
+
+const RailProp* RailProps(u32& count) {
+    // Names are what the chip on the surface says, so they are short: the
+    // options column is two chips wide.
+    static const RailProp kProps[] = {
+        {"Ball",        PropKind::Ball,       nullptr, nullptr, 0.0f},
+        {"Light",       PropKind::Light,      nullptr, nullptr, 0.0f},
+        {"Physics Box", PropKind::PhysicsBox, nullptr, nullptr, 0.0f},
+        {"Barrel",      PropKind::Barrel,     nullptr, nullptr, 0.0f},
+        {"Spawn Point", PropKind::SpawnPoint, nullptr, nullptr, 0.0f},
+        // From the Entity menu. The lift is half the thing's height where its
+        // origin is its centre, and nothing where its origin is its foot.
+        {"Player 3rd",   PropKind::Count, "Player Character", "Third Person", 0.80f},
+        {"Player 1st",   PropKind::Count, "Player Character", "First Person", 0.80f},
+        {"Door",         PropKind::Count, "Gameplay", "Door",         0.00f},
+        {"Trigger Zone", PropKind::Count, "Gameplay", "Trigger Zone", 1.00f},
+        {"Save Point",   PropKind::Count, "Gameplay", "Save Point",   0.10f},
+        // A rope hangs DOWN from its entity, so it starts overhead.
+        {"Rope",         PropKind::Count, "Gameplay", "Rope",         4.00f},
+        {"Sound",        PropKind::Count, "", "Audio Source",         1.00f},
+        {"Particles",    PropKind::Count, "", "Particle Emitter",     0.10f},
+    };
+    count = static_cast<u32>(sizeof(kProps) / sizeof(kProps[0]));
+    return kProps;
+}
+
+// --------------------------------------------------------------------------
+// Door: an opening cut where you click
+// --------------------------------------------------------------------------
+
+bool RayHitBoxBrush(const ECS::BrushSolidComponent::Brush& brush,
+                    const Math::Vector3& origin, const Math::Vector3& direction,
+                    BrushRayHit& out) {
+    if (brush.shape != ECS::BrushSolidComponent::Shape::Box) return false;
+
+    // Into the box's own frame, where it is axis-aligned and the test is three
+    // pairs of planes.
+    const Math::Quaternion inv = brush.rotation.Inverse();
+    const Math::Vector3 o = inv.Rotate(origin - brush.center);
+    const Math::Vector3 d = inv.Rotate(direction);
+    const Math::Vector3& h = brush.halfExtents;
+
+    f32 tNear = -1e30f, tFar = 1e30f;
+    u8 nearAxis = 0;
+    for (usize a = 0; a < 3; ++a) {
+        if (std::fabs(d[a]) < 1e-8f) {
+            // Parallel to this pair of faces: either between them all the way,
+            // or never.
+            if (o[a] < -h[a] || o[a] > h[a]) return false;
+            continue;
+        }
+        f32 t0 = (-h[a] - o[a]) / d[a];
+        f32 t1 = ( h[a] - o[a]) / d[a];
+        if (t0 > t1) std::swap(t0, t1);
+        if (t0 > tNear) { tNear = t0; nearAxis = static_cast<u8>(a); }
+        tFar = std::min(tFar, t1);
+        if (tNear > tFar) return false;
+    }
+    // Behind the origin, or the origin is inside: there is no face in front
+    // to put a door in.
+    if (tNear <= 0.0f) return false;
+
+    out.t = tNear;
+    out.point = origin + direction * tNear;
+    out.axis = nearAxis;
+    return true;
+}
+
+bool PointInsideBoxBrush(const ECS::BrushSolidComponent::Brush& brush, const Math::Vector3& point) {
+    if (brush.shape != ECS::BrushSolidComponent::Shape::Box) return false;
+    const Math::Vector3 p = brush.rotation.Inverse().Rotate(point - brush.center);
+    const Math::Vector3& h = brush.halfExtents;
+    return std::fabs(p.x) <= h.x && std::fabs(p.y) <= h.y && std::fabs(p.z) <= h.z;
+}
+
+bool FindOpeningTarget(const ECS::BrushSolidComponent& solid,
+                       const Math::Vector3& origin, const Math::Vector3& direction,
+                       usize& brushIndex, BrushRayHit& hit) {
+    bool found = false;
+    for (usize i = 0; i < solid.brushes.size(); ++i) {
+        const auto& b = solid.brushes[i];
+        if (!b.enabled || b.op != Geometry::BrushOp::Add) continue;
+
+        BrushRayHit h;
+        if (!RayHitBoxBrush(b, origin, direction, h)) continue;
+        if (found && h.t >= hit.t) continue;
+
+        // Nudged a hair into the wall before asking whether a cut owns that
+        // spot, because the point is ON the face and a cut that overruns the
+        // face by its overcut would otherwise always claim it.
+        const Math::Vector3 inside = h.point + direction * (1e-3f / std::max(1e-6f,
+            std::sqrt(direction.x * direction.x + direction.y * direction.y + direction.z * direction.z)));
+        bool inACut = false;
+        for (const auto& c : solid.brushes) {
+            if (!c.enabled || c.op != Geometry::BrushOp::Subtract) continue;
+            if (PointInsideBoxBrush(c, inside)) { inACut = true; break; }
+        }
+        if (inACut) continue;
+
+        hit = h;
+        brushIndex = i;
+        found = true;
+    }
+    return found;
+}
+
+bool PlanOpening(const ECS::BrushSolidComponent::Brush& wall, const BrushRayHit& hit,
+                 const BuildToolSettings& s, f32 gridSize, OpeningPlan& out) {
+    if (wall.shape != ECS::BrushSolidComponent::Shape::Box) return false;
+    if (hit.axis == 1) return false;   // the top or the underside
+
+    const usize through = hit.axis;          // 0 or 2
+    const usize along = 2 - through;
+    const Math::Vector3& half = wall.halfExtents;
+    const f32 halfAlong = half[along];
+    const f32 halfY = half.y;
+
+    int kind = static_cast<int>(s.openingKind + 0.5f);
+    kind = std::max(0, std::min(kind, static_cast<int>(OpeningKind::Count) - 1));
+    const bool window = (kind == static_cast<int>(OpeningKind::Window));
+
+    const f32 width = std::max(0.2f, window ? s.windowWidth : s.doorWidth);
+    if (halfAlong * 2.0f < width + kCreativeOpeningJamb * 2.0f) return false;
+
+    // Where along the wall, in its own frame.
+    const Math::Vector3 local = wall.rotation.Inverse().Rotate(hit.point - wall.center);
+    f32 a = local[along];
+    if (gridSize > 0.001f) {
+        // From the wall's END, not its middle. A 5 m wall drawn on a 1 m grid
+        // has its middle at 2.5, and snapping from there would put every
+        // opening half a cell off the grid the wall itself sits on.
+        a = -halfAlong + std::round((a + halfAlong) / gridSize) * gridSize;
+    }
+    const f32 limit = halfAlong - kCreativeOpeningJamb - width * 0.5f;
+    a = std::max(-limit, std::min(limit, a));
+
+    const f32 foot = -halfY;
+    f32 y0, y1;      // the cut, with its overcut
+    f32 open0, open1; // the opening you see
+    if (window) {
+        open0 = foot + std::max(0.0f, s.sill);
+        open1 = std::min(open0 + std::max(0.2f, s.windowHeight), halfY - kCreativeOpeningLintel);
+        if (open1 - open0 < 0.2f) return false;
+        y0 = open0;
+        y1 = open1;
+    } else {
+        open0 = foot;
+        open1 = foot + std::max(0.2f, s.doorHeight);
+        // Out through the floor line, so the threshold is not a coplanar face.
+        y0 = foot - kCreativeOpeningOvercut;
+        if (open1 >= halfY - kCreativeOpeningLintel) {
+            // The wall is no taller than the door: the gap goes all the way up
+            // rather than leaving a lintel too thin to see.
+            open1 = halfY;
+            y1 = halfY + kCreativeOpeningOvercut;
+        } else {
+            y1 = open1;
+        }
+    }
+
+    Math::Vector3 centre(0.0f, (y0 + y1) * 0.5f, 0.0f);
+    centre[along] = a;
+    Math::Vector3 cutHalf(0.0f, (y1 - y0) * 0.5f, 0.0f);
+    cutHalf[along] = width * 0.5f;
+    cutHalf[through] = half[through] + kCreativeOpeningOvercut;
+
+    out = OpeningPlan{};
+    out.cut.shape = ECS::BrushSolidComponent::Shape::Box;
+    out.cut.op = Geometry::BrushOp::Subtract;
+    out.cut.center = wall.center + wall.rotation.Rotate(centre);
+    out.cut.rotation = wall.rotation;
+    out.cut.halfExtents = cutHalf;
+
+    Math::Vector3 hinge(0.0f, open0, 0.0f);
+    hinge[along] = a - width * 0.5f;
+    out.hinge = wall.center + wall.rotation.Rotate(hinge);
+    // A door panel is built along its own +X. When the opening runs along the
+    // wall's Z, turn it a quarter about Y so +X lands on +Z.
+    out.rotation = (along == 0)
+        ? wall.rotation
+        : wall.rotation * Math::Quaternion::FromEuler(Math::Vector3(0.0f, -1.57079632679f, 0.0f));
+    out.width = width;
+    out.height = open1 - open0;
+    out.wallThickness = half[through] * 2.0f;
+    return true;
 }
 
 bool CreativeMode::PlanPlacement(BuildTool tool,

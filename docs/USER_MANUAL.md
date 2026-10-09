@@ -278,16 +278,26 @@ options column; click that line to turn snapping off.
 | **Wall** | Drag a line | A wall standing on the line you drew, at the set height and thickness. |
 | **Floor** | Drag a region | A slab filling the region, hanging below the set elevation, so elevation 0 is a floor you stand on. |
 | **Stairs** | Drag the run | One tread per step of the set run, each reaching the ground so there is nothing to fall between. Capped at 256 treads. |
+| **Path** | Click corners, Enter to finish | A run of joined walls. Pull the middle of a span sideways to bow it. |
+| **Roof** | Drag over a room | A roof whose underside sits at **Height** (3 m by default, the Wall tool's default height). **Kind** is Flat, Shed (one slope) or Gable (two slopes to a ridge). The ridge runs along the longer side of the drag. **Pitch** is the slope in degrees and **Overhang** is how far the eaves run past the drag. |
+| **Door** | Click the side of a wall | Cuts an opening there. **Kind** is Doorway (the hole only), Door (the hole and a door that swings in it, opened with Interact) or Window (a hole that starts at **Sill**). An outline shows the cut before you click. |
 | **Brush** | Drag a region | A convex solid. Sides above 4 makes a prism instead of a box. |
-| **Water** | Drag a rectangle | A Water 3D surface covering the rectangle, sitting at the height set by **Surface**. **Waves** is the wave height; 0 gives a still pool. |
+| **Water** | Drag a rectangle | **Kind** Swimmable makes a body of water with **Depth** that a character can swim in. Surface makes only the top, with **Waves** as the wave height; 0 gives a still pool. Both sit at the height set by **Surface**. |
+| **Plants** | Drag a patch | Grass, shrubs or trees scattered inside the patch. |
+| **Cave** | Drag where the tunnel runs | Digs into the ground or into rock already opened. **Fill** puts rock back. |
 | **Terrain** | Drag over the ground | Raises or lowers the terrain under the cursor within the set radius. In a scene with no terrain, the first stroke creates a 64 x 64 m one centred on where you pressed. |
 | **Ladder** | Drag along a wall | A climbable ladder with visible rails and rungs. Character controllers already handle climbing; the rails and rungs are visual and carry no collision. |
+| **Prop** | Click the ground | Places the thing picked under **Kind**: a ball, light, physics box, barrel, spawn point, a third or first person player, a door, trigger zone, save point, rope, sound or particle emitter. The last eight are the same objects the Entity menu makes. |
 | **Reduce** | Click a model | Cuts the model's triangles down to the **Keep** percentage. A label under the cursor shows the before and after counts first. |
+| **Paint** | Click, or hold and sweep | Gives what is under the cursor the picked **Colour** and **Finish** (Matte, Satin, Gloss or Metal). A texture already on it is kept. |
+| **Edit** | Click, then drag a handle | Selects something you built and shows handles to resize or reshape it. |
 
-Wall, Floor, Stairs and Brush have an **Add** / **Subtract** mode. Subtract cuts
-into the entity currently selected, which is how a doorway is made: select the
-wall, switch to Subtract, then drag the opening. Terrain's second mode is
-**Raise** / **Lower** instead.
+Wall, Floor, Stairs, Path and Brush have an **Add** / **Subtract** mode. Subtract
+cuts into whatever the drag crosses, for openings the Door tool does not cover.
+Terrain's second mode is **Raise** / **Lower** and Cave's is **Dig** / **Fill**.
+
+A setting with a short list of options, such as **Kind**, is a row of named
+buttons. A setting that is a number is a box: drag left or right on it.
 
 Every placement is one undo step, so `Ctrl` + `Z` removes a stray drag without
 hunting for it in a hierarchy the mode has hidden.

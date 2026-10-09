@@ -535,9 +535,14 @@ ENJIN_TEST(CreativeMode, EachToolBelongsToExactlyOneOfTheTwoPaths) {
         // terrain above it open. PlanPlacement describes a footprint for one
         // entity, which is not what either half of that is. The carve lives in
         // Geometry::VoxelEdit and is covered by TestVoxelEdit.
+        //
+        // Door and Paint belong to neither because they act on what the cursor
+        // RAY lands on, a wall or a model, and the ground points a drag hands
+        // out are on the far side of it. PlanOpening is Door's builder.
         const bool notFromADrag =
             (tool == BuildTool::Reduce) || BuildToolIsEdit(tool) ||
-            BuildToolIsPath(tool) || (tool == BuildTool::Cave);
+            BuildToolIsPath(tool) || (tool == BuildTool::Cave) ||
+            (tool == BuildTool::Door) || (tool == BuildTool::Paint);
         if (notFromADrag) {
             ENJIN_EXPECT_FALSE(brushed || planned);
         } else {
@@ -1669,6 +1674,539 @@ ENJIN_TEST(CreativeShape, AnOldWallWithADoorwayKeepsTheDoorway) {
     // An Add after the cut is not a wall with a door in it.
     wall.brushes.push_back(wall.brushes[0]);
     ENJIN_EXPECT_FALSE(RecoverWallPath(wall, path));
+}
+
+// ---------------------------------------------------------------------------
+// Roof
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// Is the point still roof, after the cuts? Inside an Add box and inside no cut.
+bool InRoof(const ECS::BrushSolidComponent& roof, const Vector3& p) {
+    bool solid = false;
+    for (const auto& b : roof.brushes) {
+        if (b.op == Geometry::BrushOp::Add && PointInsideBoxBrush(b, p)) solid = true;
+    }
+    for (const auto& b : roof.brushes) {
+        if (b.op == Geometry::BrushOp::Subtract && PointInsideBoxBrush(b, p)) return false;
+    }
+    return solid;
+}
+
+} // namespace
+
+ENJIN_TEST(CreativeMode, AFlatRoofSitsOnItsHeightAndOverhangsTheDrag) {
+    BuildToolSettings s;
+    s.roofKind = static_cast<f32>(RoofKind::Flat);
+    s.roofBase = 3.0f;
+    s.thickness = 0.2f;
+    s.overhang = 0.5f;
+
+    const auto roof = Build(BuildTool::Roof, s, false, Vector3(0, 0, 0), Vector3(6, 0, 4));
+
+    ENJIN_ASSERT_EQ(roof.brushes.size(), static_cast<usize>(1));
+    const auto& b = roof.brushes[0];
+    // On top of the walls, not hanging into the room the way a floor hangs
+    // below its elevation.
+    ENJIN_EXPECT_FLOAT_NEAR(b.center.y - b.halfExtents.y, 3.0f, 0.001f);
+    ENJIN_EXPECT_FLOAT_NEAR(b.halfExtents.x * 2.0f, 6.0f + 1.0f, 0.001f);
+    ENJIN_EXPECT_FLOAT_NEAR(b.halfExtents.z * 2.0f, 4.0f + 1.0f, 0.001f);
+}
+
+// The pitch is real: the slope is where the angle says, and both ends are
+// closed. This is the test that fails if a cutter is turned the wrong way,
+// which leaves a roof-shaped HOLE in a block instead of a roof.
+ENJIN_TEST(CreativeMode, AGableSlopesBothWaysToARidgeAlongTheLongSide) {
+    BuildToolSettings s;
+    s.roofKind = static_cast<f32>(RoofKind::Gable);
+    s.roofBase = 3.0f;
+    s.pitch = 45.0f;
+    s.overhang = 0.0f;
+
+    // 8 long in X, 4 across in Z: ridge along X, at z = 2, rising 2 at 45 deg.
+    const auto roof = Build(BuildTool::Roof, s, false, Vector3(0, 0, 0), Vector3(8, 0, 4));
+
+    ENJIN_ASSERT_EQ(roof.brushes.size(), static_cast<usize>(3));
+    ENJIN_EXPECT_TRUE(roof.brushes[0].op == Geometry::BrushOp::Add);
+    ENJIN_EXPECT_TRUE(roof.brushes[1].op == Geometry::BrushOp::Subtract);
+    ENJIN_EXPECT_TRUE(roof.brushes[2].op == Geometry::BrushOp::Subtract);
+
+    const f32 eave = 3.0f + kCreativeRoofFascia;
+    // Under the ridge, almost at the top.
+    ENJIN_EXPECT_TRUE(InRoof(roof, Vector3(4.0f, eave + 1.9f, 2.0f)));
+    // At the same height over an eave: that corner is cut away, on both sides.
+    ENJIN_EXPECT_FALSE(InRoof(roof, Vector3(4.0f, eave + 1.9f, 0.3f)));
+    ENJIN_EXPECT_FALSE(InRoof(roof, Vector3(4.0f, eave + 1.9f, 3.7f)));
+    // Either side of the slope, a quarter of the way in: 1 m in is 1 m up.
+    ENJIN_EXPECT_TRUE(InRoof(roof, Vector3(4.0f, eave + 0.9f, 1.0f)));
+    ENJIN_EXPECT_FALSE(InRoof(roof, Vector3(4.0f, eave + 1.1f, 1.0f)));
+    ENJIN_EXPECT_TRUE(InRoof(roof, Vector3(4.0f, eave + 0.9f, 3.0f)));
+    ENJIN_EXPECT_FALSE(InRoof(roof, Vector3(4.0f, eave + 1.1f, 3.0f)));
+    // The gable END is closed: solid right up to the end wall, under the ridge.
+    ENJIN_EXPECT_TRUE(InRoof(roof, Vector3(0.05f, eave + 1.5f, 2.0f)));
+    ENJIN_EXPECT_TRUE(InRoof(roof, Vector3(7.95f, eave + 1.5f, 2.0f)));
+    // And the fascia under the eave is left standing.
+    ENJIN_EXPECT_TRUE(InRoof(roof, Vector3(4.0f, 3.0f + kCreativeRoofFascia * 0.5f, 0.05f)));
+}
+
+ENJIN_TEST(CreativeMode, TheRidgeTurnsWhenTheDragIsLongerTheOtherWay) {
+    BuildToolSettings s;
+    s.roofKind = static_cast<f32>(RoofKind::Gable);
+    s.roofBase = 0.0f;
+    s.pitch = 45.0f;
+    s.overhang = 0.0f;
+
+    // 4 across in X, 8 long in Z: ridge along Z, at x = 2.
+    const auto roof = Build(BuildTool::Roof, s, false, Vector3(0, 0, 0), Vector3(4, 0, 8));
+
+    ENJIN_ASSERT_EQ(roof.brushes.size(), static_cast<usize>(3));
+    const f32 eave = kCreativeRoofFascia;
+    ENJIN_EXPECT_TRUE(InRoof(roof, Vector3(2.0f, eave + 1.9f, 4.0f)));
+    ENJIN_EXPECT_FALSE(InRoof(roof, Vector3(0.3f, eave + 1.9f, 4.0f)));
+    ENJIN_EXPECT_FALSE(InRoof(roof, Vector3(3.7f, eave + 1.9f, 4.0f)));
+    ENJIN_EXPECT_TRUE(InRoof(roof, Vector3(1.0f, eave + 0.9f, 4.0f)));
+    ENJIN_EXPECT_FALSE(InRoof(roof, Vector3(1.0f, eave + 1.1f, 4.0f)));
+    ENJIN_EXPECT_TRUE(InRoof(roof, Vector3(3.0f, eave + 0.9f, 4.0f)));
+    ENJIN_EXPECT_FALSE(InRoof(roof, Vector3(3.0f, eave + 1.1f, 4.0f)));
+}
+
+ENJIN_TEST(CreativeMode, AShedHasOneSlopeAndClimbsTheWholeSpan) {
+    BuildToolSettings s;
+    s.roofKind = static_cast<f32>(RoofKind::Shed);
+    s.roofBase = 0.0f;
+    s.pitch = 45.0f;
+    s.overhang = 0.0f;
+
+    const auto roof = Build(BuildTool::Roof, s, false, Vector3(0, 0, 0), Vector3(8, 0, 4));
+
+    ENJIN_ASSERT_EQ(roof.brushes.size(), static_cast<usize>(2));
+    const f32 eave = kCreativeRoofFascia;
+    // Low at z = 4, high at z = 0, rising 4 over the 4 m span.
+    ENJIN_EXPECT_TRUE(InRoof(roof, Vector3(4.0f, eave + 3.8f, 0.1f)));
+    ENJIN_EXPECT_FALSE(InRoof(roof, Vector3(4.0f, eave + 0.5f, 3.9f)));
+    ENJIN_EXPECT_TRUE(InRoof(roof, Vector3(4.0f, eave + 1.9f, 2.0f)));
+    ENJIN_EXPECT_FALSE(InRoof(roof, Vector3(4.0f, eave + 2.1f, 2.0f)));
+}
+
+ENJIN_TEST(CreativeMode, ARoofNeedsBothDimensionsAndCannotBeSubtracted) {
+    BuildToolSettings s;
+    bool ok = true;
+    Build(BuildTool::Roof, s, false, Vector3(0, 0, 0), Vector3(6, 0, 0), &ok);
+    ENJIN_EXPECT_FALSE(ok);
+    // Its slopes are already cuts. Subtracting the whole roof from something
+    // would turn them inside out, so the toggle is not offered.
+    ENJIN_EXPECT_FALSE(BuildToolCanSubtract(BuildTool::Roof));
+    ENJIN_EXPECT_TRUE(BuildToolModeLabels(BuildTool::Roof) == nullptr);
+}
+
+// ---------------------------------------------------------------------------
+// Door: where the click lands
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// The Wall tool's own wall, 6 m along X, 3 m tall, 0.25 thick, foot on y = 0.
+ECS::BrushSolidComponent::Brush StraightWall() {
+    BuildToolSettings s;
+    return Build(BuildTool::Wall, s, false, Vector3(0, 0, 0), Vector3(6, 0, 0)).brushes[0];
+}
+
+} // namespace
+
+ENJIN_TEST(CreativeMode, ARayLandsOnTheNearFaceOfAWall) {
+    const auto wall = StraightWall();
+
+    BrushRayHit hit;
+    ENJIN_ASSERT_TRUE(RayHitBoxBrush(wall, Vector3(2.0f, 1.0f, 5.0f), Vector3(0, 0, -1), hit));
+
+    ENJIN_EXPECT_FLOAT_NEAR(hit.point.x, 2.0f, 0.001f);
+    ENJIN_EXPECT_FLOAT_NEAR(hit.point.y, 1.0f, 0.001f);
+    ENJIN_EXPECT_FLOAT_NEAR(hit.point.z, 0.125f, 0.001f);   // the face toward the ray
+    ENJIN_EXPECT_EQ(static_cast<int>(hit.axis), 2);
+    ENJIN_EXPECT_FLOAT_NEAR(hit.t, 4.875f, 0.001f);
+}
+
+ENJIN_TEST(CreativeMode, ARayThatMissesOrStartsInsideTheWallHitsNothing) {
+    const auto wall = StraightWall();
+    BrushRayHit hit;
+
+    ENJIN_EXPECT_FALSE(RayHitBoxBrush(wall, Vector3(9.0f, 1.0f, 5.0f), Vector3(0, 0, -1), hit));
+    // Pointing away from it.
+    ENJIN_EXPECT_FALSE(RayHitBoxBrush(wall, Vector3(2.0f, 1.0f, 5.0f), Vector3(0, 0, 1), hit));
+    // From inside: there is no face in front to put a door in.
+    ENJIN_EXPECT_FALSE(RayHitBoxBrush(wall, Vector3(2.0f, 1.0f, 0.0f), Vector3(0, 0, -1), hit));
+    // Parallel to the faces and outside them.
+    ENJIN_EXPECT_FALSE(RayHitBoxBrush(wall, Vector3(-2.0f, 1.0f, 1.0f), Vector3(1, 0, 0), hit));
+
+    ECS::BrushSolidComponent::Brush prism;
+    prism.shape = ECS::BrushSolidComponent::Shape::Prism;
+    ENJIN_EXPECT_FALSE(RayHitBoxBrush(prism, Vector3(0, 0, 5), Vector3(0, 0, -1), hit));
+}
+
+ENJIN_TEST(CreativeMode, ADoorIsCutThroughTheWallWhereYouClicked) {
+    const auto wall = StraightWall();
+    BuildToolSettings s;
+    s.openingKind = static_cast<f32>(OpeningKind::Door);
+    s.doorWidth = 1.0f;
+    s.doorHeight = 2.1f;
+
+    BrushRayHit hit;
+    ENJIN_ASSERT_TRUE(RayHitBoxBrush(wall, Vector3(2.0f, 1.0f, 5.0f), Vector3(0, 0, -1), hit));
+    OpeningPlan plan;
+    ENJIN_ASSERT_TRUE(PlanOpening(wall, hit, s, 0.0f, plan));
+
+    ENJIN_EXPECT_TRUE(plan.cut.op == Geometry::BrushOp::Subtract);
+    // Centred on the click along the wall, whatever height was clicked.
+    ENJIN_EXPECT_FLOAT_NEAR(plan.cut.center.x, 2.0f, 0.001f);
+    ENJIN_EXPECT_FLOAT_NEAR(plan.cut.halfExtents.x * 2.0f, 1.0f, 0.001f);
+    // From just under the floor line to the door's height.
+    ENJIN_EXPECT_FLOAT_NEAR(plan.cut.center.y - plan.cut.halfExtents.y, -kCreativeOpeningOvercut, 0.001f);
+    ENJIN_EXPECT_FLOAT_NEAR(plan.cut.center.y + plan.cut.halfExtents.y, 2.1f, 0.001f);
+    // All the way through, and a little past both faces.
+    ENJIN_EXPECT_TRUE(plan.cut.halfExtents.z > wall.halfExtents.z);
+    ENJIN_EXPECT_FLOAT_NEAR(plan.cut.center.z, 0.0f, 0.001f);
+
+    ENJIN_EXPECT_FLOAT_NEAR(plan.width, 1.0f, 0.001f);
+    ENJIN_EXPECT_FLOAT_NEAR(plan.height, 2.1f, 0.001f);
+    ENJIN_EXPECT_FLOAT_NEAR(plan.wallThickness, 0.25f, 0.001f);
+    // The hinge is the foot of the opening's edge.
+    ENJIN_EXPECT_FLOAT_NEAR(plan.hinge.x, 1.5f, 0.001f);
+    ENJIN_EXPECT_FLOAT_NEAR(plan.hinge.y, 0.0f, 0.001f);
+    ENJIN_EXPECT_FLOAT_NEAR(plan.hinge.z, 0.0f, 0.001f);
+    const Vector3 leaf = plan.rotation.Rotate(Vector3(1, 0, 0));
+    ENJIN_EXPECT_FLOAT_NEAR(leaf.x, 1.0f, 0.001f);
+}
+
+ENJIN_TEST(CreativeMode, AnOpeningStaysInsideTheWallsEnds) {
+    const auto wall = StraightWall();
+    BuildToolSettings s;
+    s.doorWidth = 1.0f;
+
+    BrushRayHit hit;
+    ENJIN_ASSERT_TRUE(RayHitBoxBrush(wall, Vector3(0.1f, 1.0f, 5.0f), Vector3(0, 0, -1), hit));
+    OpeningPlan plan;
+    ENJIN_ASSERT_TRUE(PlanOpening(wall, hit, s, 0.0f, plan));
+
+    // Clicked 10 cm from the end; pushed in until a jamb is left.
+    ENJIN_EXPECT_FLOAT_NEAR(plan.cut.center.x - plan.cut.halfExtents.x, kCreativeOpeningJamb, 0.001f);
+}
+
+ENJIN_TEST(CreativeMode, AnOpeningSnapsFromTheWallsEndNotItsMiddle) {
+    // 5 m long, so its middle is at 2.5: half a cell off a 1 m grid.
+    BuildToolSettings ws;
+    const auto wall = Build(BuildTool::Wall, ws, false, Vector3(0, 0, 0), Vector3(5, 0, 0)).brushes[0];
+    BuildToolSettings s;
+    s.doorWidth = 1.0f;
+
+    BrushRayHit hit;
+    ENJIN_ASSERT_TRUE(RayHitBoxBrush(wall, Vector3(2.2f, 1.0f, 5.0f), Vector3(0, 0, -1), hit));
+    OpeningPlan plan;
+    ENJIN_ASSERT_TRUE(PlanOpening(wall, hit, s, 1.0f, plan));
+
+    ENJIN_EXPECT_FLOAT_NEAR(plan.cut.center.x, 2.0f, 0.001f);
+}
+
+ENJIN_TEST(CreativeMode, AWallTooShortForTheOpeningIsRefused) {
+    BuildToolSettings ws;
+    const auto wall = Build(BuildTool::Wall, ws, false, Vector3(0, 0, 0), Vector3(1, 0, 0)).brushes[0];
+    BuildToolSettings s;
+    s.doorWidth = 1.0f;   // a 1 m door in a 1 m wall leaves no jambs
+
+    BrushRayHit hit;
+    ENJIN_ASSERT_TRUE(RayHitBoxBrush(wall, Vector3(0.5f, 1.0f, 5.0f), Vector3(0, 0, -1), hit));
+    OpeningPlan plan;
+    ENJIN_EXPECT_FALSE(PlanOpening(wall, hit, s, 0.0f, plan));
+}
+
+ENJIN_TEST(CreativeMode, ADoorTallerThanTheWallOpensItToTheTop) {
+    BuildToolSettings ws;
+    ws.height = 2.0f;
+    const auto wall = Build(BuildTool::Wall, ws, false, Vector3(0, 0, 0), Vector3(6, 0, 0)).brushes[0];
+    BuildToolSettings s;
+    s.doorHeight = 2.1f;
+
+    BrushRayHit hit;
+    ENJIN_ASSERT_TRUE(RayHitBoxBrush(wall, Vector3(3.0f, 1.0f, 5.0f), Vector3(0, 0, -1), hit));
+    OpeningPlan plan;
+    ENJIN_ASSERT_TRUE(PlanOpening(wall, hit, s, 0.0f, plan));
+
+    // Past the top, so no paper-thin lintel is left across the gap.
+    ENJIN_EXPECT_TRUE(plan.cut.center.y + plan.cut.halfExtents.y > 2.0f);
+    ENJIN_EXPECT_FLOAT_NEAR(plan.height, 2.0f, 0.001f);
+}
+
+ENJIN_TEST(CreativeMode, AWindowSitsOnItsSillAndLeavesALintel) {
+    const auto wall = StraightWall();   // 3 m tall
+    BuildToolSettings s;
+    s.openingKind = static_cast<f32>(OpeningKind::Window);
+    s.windowWidth = 1.2f;
+    s.windowHeight = 1.2f;
+    s.sill = 0.9f;
+
+    BrushRayHit hit;
+    ENJIN_ASSERT_TRUE(RayHitBoxBrush(wall, Vector3(3.0f, 2.5f, 5.0f), Vector3(0, 0, -1), hit));
+    OpeningPlan plan;
+    ENJIN_ASSERT_TRUE(PlanOpening(wall, hit, s, 0.0f, plan));
+
+    // The sill sets the height, not where on the wall the click landed.
+    ENJIN_EXPECT_FLOAT_NEAR(plan.cut.center.y - plan.cut.halfExtents.y, 0.9f, 0.001f);
+    ENJIN_EXPECT_FLOAT_NEAR(plan.cut.center.y + plan.cut.halfExtents.y, 2.1f, 0.001f);
+
+    // Asked for more than the wall has: stops short of the top.
+    s.windowHeight = 4.0f;
+    ENJIN_ASSERT_TRUE(PlanOpening(wall, hit, s, 0.0f, plan));
+    ENJIN_EXPECT_FLOAT_NEAR(plan.cut.center.y + plan.cut.halfExtents.y,
+                            3.0f - kCreativeOpeningLintel, 0.001f);
+
+    // A sill above the wall leaves nothing to cut.
+    s.sill = 3.5f;
+    ENJIN_EXPECT_FALSE(PlanOpening(wall, hit, s, 0.0f, plan));
+}
+
+ENJIN_TEST(CreativeMode, TheTopOfAWallIsNotADoor) {
+    const auto wall = StraightWall();
+    BuildToolSettings s;
+
+    BrushRayHit hit;
+    ENJIN_ASSERT_TRUE(RayHitBoxBrush(wall, Vector3(3.0f, 9.0f, 0.0f), Vector3(0, -1, 0), hit));
+    ENJIN_EXPECT_EQ(static_cast<int>(hit.axis), 1);
+    OpeningPlan plan;
+    ENJIN_EXPECT_FALSE(PlanOpening(wall, hit, s, 0.0f, plan));
+}
+
+ENJIN_TEST(CreativeMode, ADoorInADiagonalWallTurnsWithIt) {
+    BuildToolSettings ws;
+    const auto wall = Build(BuildTool::Wall, ws, false, Vector3(0, 0, 0), Vector3(4, 0, 4)).brushes[0];
+    BuildToolSettings s;
+    s.doorWidth = 1.0f;
+
+    // Square on to the wall, from its (+x, -z) side, aimed at its middle.
+    const Vector3 mid(2.0f, 1.0f, 2.0f);
+    const Vector3 dir(-0.70710678f, 0.0f, 0.70710678f);
+    BrushRayHit hit;
+    ENJIN_ASSERT_TRUE(RayHitBoxBrush(wall, mid - dir * 5.0f, dir, hit));
+    OpeningPlan plan;
+    ENJIN_ASSERT_TRUE(PlanOpening(wall, hit, s, 0.0f, plan));
+
+    // On the wall's line (x == z), and turned the way the wall is.
+    ENJIN_EXPECT_FLOAT_NEAR(plan.cut.center.x, 2.0f, 0.01f);
+    ENJIN_EXPECT_FLOAT_NEAR(plan.cut.center.z, 2.0f, 0.01f);
+    const Vector3 a = plan.cut.rotation.Rotate(Vector3(1, 0, 0));
+    const Vector3 b = wall.rotation.Rotate(Vector3(1, 0, 0));
+    ENJIN_EXPECT_FLOAT_NEAR(a.x, b.x, 0.001f);
+    ENJIN_EXPECT_FLOAT_NEAR(a.z, b.z, 0.001f);
+    // The hinge is half a door back along the wall from the middle.
+    ENJIN_EXPECT_FLOAT_NEAR(plan.hinge.x, plan.hinge.z, 0.01f);
+    const f32 back = std::sqrt((plan.hinge.x - 2.0f) * (plan.hinge.x - 2.0f) * 2.0f);
+    ENJIN_EXPECT_FLOAT_NEAR(back, 0.5f, 0.01f);
+}
+
+// Any box, not only one the Wall tool made: the opening goes through the face
+// that was clicked. Here that face is across X, so the door runs along Z and
+// its leaf has to turn a quarter to follow.
+ENJIN_TEST(CreativeMode, ADoorGoesThroughWhicheverFaceWasClicked) {
+    ECS::BrushSolidComponent::Brush block;
+    block.center = Vector3(0.0f, 1.5f, 0.0f);
+    block.halfExtents = Vector3(0.2f, 1.5f, 3.0f);
+    BuildToolSettings s;
+    s.doorWidth = 1.0f;
+
+    BrushRayHit hit;
+    ENJIN_ASSERT_TRUE(RayHitBoxBrush(block, Vector3(5.0f, 1.0f, 1.0f), Vector3(-1, 0, 0), hit));
+    ENJIN_EXPECT_EQ(static_cast<int>(hit.axis), 0);
+    OpeningPlan plan;
+    ENJIN_ASSERT_TRUE(PlanOpening(block, hit, s, 0.0f, plan));
+
+    ENJIN_EXPECT_FLOAT_NEAR(plan.cut.halfExtents.z * 2.0f, 1.0f, 0.001f);   // width along Z
+    ENJIN_EXPECT_TRUE(plan.cut.halfExtents.x > block.halfExtents.x);        // through X
+    ENJIN_EXPECT_FLOAT_NEAR(plan.cut.center.z, 1.0f, 0.001f);
+    ENJIN_EXPECT_FLOAT_NEAR(plan.wallThickness, 0.4f, 0.001f);
+
+    ENJIN_EXPECT_FLOAT_NEAR(plan.hinge.z, 0.5f, 0.001f);
+    const Vector3 leaf = plan.rotation.Rotate(Vector3(1, 0, 0));
+    ENJIN_EXPECT_FLOAT_NEAR(leaf.z, 1.0f, 0.001f);
+    ENJIN_EXPECT_FLOAT_NEAR(leaf.x, 0.0f, 0.001f);
+}
+
+// A box test knows nothing about the hole already in it. Without the cut check
+// a click through a doorway lands on the air in the doorway and cuts the same
+// wall again, instead of reaching the wall behind.
+ENJIN_TEST(CreativeMode, AClickThroughADoorwayDoesNotHitTheWallItIsIn) {
+    ECS::BrushSolidComponent solid;
+    solid.brushes.push_back(StraightWall());
+    BuildToolSettings s;
+    s.doorWidth = 1.0f;
+
+    usize index = 99;
+    BrushRayHit hit;
+    const Vector3 from(2.0f, 1.0f, 5.0f), dir(0, 0, -1);
+    ENJIN_ASSERT_TRUE(FindOpeningTarget(solid, from, dir, index, hit));
+    ENJIN_EXPECT_EQ(index, static_cast<usize>(0));
+
+    OpeningPlan plan;
+    ENJIN_ASSERT_TRUE(PlanOpening(solid.brushes[0], hit, s, 0.0f, plan));
+    solid.brushes.push_back(plan.cut);
+
+    // Through the doorway now: nothing.
+    ENJIN_EXPECT_FALSE(FindOpeningTarget(solid, from, dir, index, hit));
+    // Beside it: still the wall.
+    ENJIN_EXPECT_TRUE(FindOpeningTarget(solid, Vector3(4.5f, 1.0f, 5.0f), dir, index, hit));
+    // Above it, on the lintel: still the wall.
+    ENJIN_EXPECT_TRUE(FindOpeningTarget(solid, Vector3(2.0f, 2.6f, 5.0f), dir, index, hit));
+
+    // A wall behind is reached through the doorway.
+    BuildToolSettings ws;
+    solid.brushes.push_back(
+        Build(BuildTool::Wall, ws, false, Vector3(0, 0, -3), Vector3(6, 0, -3)).brushes[0]);
+    ENJIN_ASSERT_TRUE(FindOpeningTarget(solid, from, dir, index, hit));
+    ENJIN_EXPECT_EQ(index, static_cast<usize>(2));
+}
+
+ENJIN_TEST(CreativeMode, TheNearestWallWinsAndDisabledOnesAreSkipped) {
+    BuildToolSettings ws;
+    ECS::BrushSolidComponent solid;
+    solid.brushes.push_back(
+        Build(BuildTool::Wall, ws, false, Vector3(0, 0, -3), Vector3(6, 0, -3)).brushes[0]);
+    solid.brushes.push_back(StraightWall());
+
+    usize index = 99;
+    BrushRayHit hit;
+    ENJIN_ASSERT_TRUE(FindOpeningTarget(solid, Vector3(2, 1, 5), Vector3(0, 0, -1), index, hit));
+    ENJIN_EXPECT_EQ(index, static_cast<usize>(1));
+
+    solid.brushes[1].enabled = false;
+    ENJIN_ASSERT_TRUE(FindOpeningTarget(solid, Vector3(2, 1, 5), Vector3(0, 0, -1), index, hit));
+    ENJIN_EXPECT_EQ(index, static_cast<usize>(0));
+}
+
+// ---------------------------------------------------------------------------
+// Named choices, props and paint
+// ---------------------------------------------------------------------------
+
+// A Kind used to be a number box: Water 0..1, Plants 0..2, Prop 0..4, with
+// nothing saying which number was the barrel. Every choice now carries a name
+// for every value it can take.
+ENJIN_TEST(CreativeMode, EveryChoiceHasANameForEveryValue) {
+    for (u8 i = 0; i < static_cast<u8>(BuildTool::Count); ++i) {
+        BuildToolSettings s;
+        BuildField fields[kBuildMaxFields];
+        const u32 n = BuildToolFields(static_cast<BuildTool>(i), s, fields, kBuildMaxFields);
+        for (u32 f = 0; f < n; ++f) {
+            if (fields[f].kind != BuildFieldKind::Choice) continue;
+            ENJIN_ASSERT_TRUE(fields[f].choices != nullptr);
+            ENJIN_EXPECT_TRUE(fields[f].choiceCount >= 2);
+            ENJIN_EXPECT_FLOAT_NEAR(fields[f].maxValue,
+                                    static_cast<f32>(fields[f].choiceCount - 1), 0.001f);
+            for (u32 c = 0; c < fields[f].choiceCount; ++c) {
+                ENJIN_ASSERT_TRUE(fields[f].choices[c] != nullptr);
+                ENJIN_EXPECT_TRUE(fields[f].choices[c][0] != '\0');
+            }
+        }
+    }
+}
+
+ENJIN_TEST(CreativeMode, NoKindIsABareNumberAnyMore) {
+    const BuildTool withKinds[] = { BuildTool::Water, BuildTool::Plants, BuildTool::Prop,
+                                    BuildTool::Cave, BuildTool::Roof, BuildTool::Door };
+    for (BuildTool tool : withKinds) {
+        BuildToolSettings s;
+        BuildField fields[kBuildMaxFields];
+        const u32 n = BuildToolFields(tool, s, fields, kBuildMaxFields);
+        ENJIN_ASSERT_TRUE(n >= 1);
+        ENJIN_EXPECT_TRUE(fields[0].kind == BuildFieldKind::Choice);
+    }
+}
+
+ENJIN_TEST(CreativeMode, AChoiceLeftOutOfRangeIsBroughtBackIn) {
+    BuildToolSettings s;
+    s.propKind = 400.0f;
+    s.plantKind = -3.0f;
+    BuildField fields[kBuildMaxFields];
+
+    BuildToolFields(BuildTool::Prop, s, fields, kBuildMaxFields);
+    u32 count = 0;
+    RailProps(count);
+    ENJIN_EXPECT_FLOAT_NEAR(s.propKind, static_cast<f32>(count - 1), 0.001f);
+
+    BuildToolFields(BuildTool::Plants, s, fields, kBuildMaxFields);
+    ENJIN_EXPECT_FLOAT_NEAR(s.plantKind, 0.0f, 0.001f);
+}
+
+ENJIN_TEST(CreativeMode, EveryPropSaysWhereItComesFrom) {
+    u32 count = 0;
+    const RailProp* props = RailProps(count);
+    ENJIN_ASSERT_TRUE(count >= 5);
+
+    for (u32 i = 0; i < count; ++i) {
+        ENJIN_EXPECT_TRUE(props[i].name && props[i].name[0] != '\0');
+        if (props[i].kind == PropKind::Count) {
+            // From the Entity menu: it has to name the entry.
+            ENJIN_ASSERT_TRUE(props[i].menuGroup != nullptr);
+            ENJIN_ASSERT_TRUE(props[i].menuLabel != nullptr);
+            ENJIN_EXPECT_TRUE(props[i].menuLabel[0] != '\0');
+        } else {
+            // Block is the Brush tool's job, not a second button for a box.
+            ENJIN_EXPECT_TRUE(props[i].kind != PropKind::Block);
+        }
+        for (u32 j = i + 1; j < count; ++j) {
+            ENJIN_EXPECT_TRUE(std::strcmp(props[i].name, props[j].name) != 0);
+        }
+    }
+}
+
+ENJIN_TEST(CreativeMode, ThePropPickerOffersTheWholeTable) {
+    BuildToolSettings s;
+    BuildField fields[kBuildMaxFields];
+    const u32 n = BuildToolFields(BuildTool::Prop, s, fields, kBuildMaxFields);
+    u32 count = 0;
+    const RailProp* props = RailProps(count);
+
+    ENJIN_ASSERT_EQ(n, 1u);
+    ENJIN_ASSERT_EQ(fields[0].choiceCount, count);
+    for (u32 i = 0; i < count; ++i) ENJIN_EXPECT_STR_EQ(fields[0].choices[i], props[i].name);
+}
+
+ENJIN_TEST(CreativeMode, PaintOffersAColourAndAFinish) {
+    BuildToolSettings s;
+    BuildField fields[kBuildMaxFields];
+    const u32 n = BuildToolFields(BuildTool::Paint, s, fields, kBuildMaxFields);
+
+    ENJIN_ASSERT_EQ(n, 2u);
+    ENJIN_EXPECT_TRUE(fields[0].kind == BuildFieldKind::Swatch);
+    ENJIN_EXPECT_EQ(fields[0].choiceCount, kCreativePaintColourCount);
+    ENJIN_EXPECT_TRUE(fields[1].kind == BuildFieldKind::Choice);
+    ENJIN_EXPECT_EQ(fields[1].choiceCount, kCreativePaintFinishCount);
+
+    for (u32 i = 0; i < kCreativePaintColourCount; ++i) {
+        const PaintColour& c = kCreativePaintColours[i];
+        ENJIN_EXPECT_TRUE(c.name[0] != '\0');
+        ENJIN_EXPECT_TRUE(c.r >= 0.0f && c.r <= 1.0f && c.g >= 0.0f && c.g <= 1.0f &&
+                          c.b >= 0.0f && c.b <= 1.0f);
+    }
+}
+
+// A flat roof has no slope and a doorway has no sill. A box for either would be
+// a control that does nothing.
+ENJIN_TEST(CreativeMode, FieldsFollowTheKindTheyBelongTo) {
+    auto has = [](BuildTool tool, BuildToolSettings& s, const char* label) {
+        BuildField fields[kBuildMaxFields];
+        const u32 n = BuildToolFields(tool, s, fields, kBuildMaxFields);
+        for (u32 i = 0; i < n; ++i) if (std::strcmp(fields[i].label, label) == 0) return true;
+        return false;
+    };
+    BuildToolSettings s;
+
+    s.roofKind = static_cast<f32>(RoofKind::Flat);
+    ENJIN_EXPECT_FALSE(has(BuildTool::Roof, s, "Pitch"));
+    ENJIN_EXPECT_TRUE(has(BuildTool::Roof, s, "Thickness"));
+    s.roofKind = static_cast<f32>(RoofKind::Gable);
+    ENJIN_EXPECT_TRUE(has(BuildTool::Roof, s, "Pitch"));
+
+    s.openingKind = static_cast<f32>(OpeningKind::Door);
+    ENJIN_EXPECT_FALSE(has(BuildTool::Door, s, "Sill"));
+    s.openingKind = static_cast<f32>(OpeningKind::Window);
+    ENJIN_EXPECT_TRUE(has(BuildTool::Door, s, "Sill"));
 }
 
 ENJIN_TEST_MAIN()
